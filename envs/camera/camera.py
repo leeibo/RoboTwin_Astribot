@@ -57,6 +57,10 @@ class Camera:
 
         self.collect_head_camera = kwags["camera"].get("collect_head_camera", True)
         self.collect_wrist_camera = kwags["camera"].get("collect_wrist_camera", True)
+        # Head-mounted camera (URDF link camera_head/head_camera), moving with robot head.
+        self.collect_head_link_camera = kwags["camera"].get("collect_head_link_camera", True)
+        self.has_head_link_camera = bool(kwags.get("has_head_link_camera", False))
+        self.camera_head = None
 
         # embodiment = kwags.get('embodiment')
         # embodiment_config_path = os.path.join(CONFIGS_PATH, '_embodiment_config.yml')
@@ -140,12 +144,22 @@ class Camera:
                 near=near,
                 far=far,
             )
-
             self.right_camera = scene.add_camera(
                 name="right_camera",
                 width=wrist_camera_config["w"],
                 height=wrist_camera_config["h"],
                 fovy=np.deg2rad(wrist_camera_config["fovy"]),
+                near=near,
+                far=far,
+            )
+
+        if self.collect_head_link_camera and self.has_head_link_camera:
+            head_link_camera_config = camera_args[self.head_camera_type]
+            self.camera_head = scene.add_camera(
+                name="camera_head",
+                width=head_link_camera_config["w"],
+                height=head_link_camera_config["h"],
+                fovy=np.deg2rad(head_link_camera_config["fovy"]),
                 near=near,
                 far=far,
             )
@@ -179,6 +193,10 @@ class Camera:
                     -camera_info["forward"][1],
                     camera_info["forward"][0],
                 ] + [0]
+
+            if camera_info["name"] == "camera_head" and self.camera_head is not None:
+                print("[Camera] skip static camera_head; using URDF head-mounted camera_head instead")
+                continue
 
             if camera_info["name"] == "head_camera":
                 if self.collect_head_camera:
@@ -275,6 +293,8 @@ class Camera:
         if self.collect_wrist_camera:
             self.left_camera.take_picture()
             self.right_camera.take_picture()
+        if self.camera_head is not None:
+            self.camera_head.take_picture()
 
         for camera in self.static_camera_list:
             camera.take_picture()
@@ -283,7 +303,7 @@ class Camera:
         # self.head_sensor.take_picture()
         # self.head_sensor.compute_depth()
 
-    def update_wrist_camera(self, left_pose, right_pose):
+    def update_wrist_camera(self, left_pose, right_pose, head_pose=None):
         """
         Update rendering to refresh the camera's RGBD information
         (rendering must be updated even when disabled, otherwise data cannot be collected).
@@ -291,6 +311,8 @@ class Camera:
         if self.collect_wrist_camera:
             self.left_camera.entity.set_pose(left_pose)
             self.right_camera.entity.set_pose(right_pose)
+        if self.camera_head is not None and head_pose is not None:
+            self.camera_head.entity.set_pose(head_pose)
 
     def get_config(self) -> dict:
         res = {}
@@ -308,6 +330,8 @@ class Camera:
         if self.collect_wrist_camera:
             res["left_camera"] = _get_config(self.left_camera)
             res["right_camera"] = _get_config(self.right_camera)
+        if self.camera_head is not None:
+            res["camera_head"] = _get_config(self.camera_head)
 
         for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
             if camera_name == "head_camera":
@@ -349,6 +373,9 @@ class Camera:
             res["right_camera"] = {}
             res["left_camera"]["rgba"] = _get_rgba(self.left_camera)
             res["right_camera"]["rgba"] = _get_rgba(self.right_camera)
+        if self.camera_head is not None:
+            res["camera_head"] = {}
+            res["camera_head"]["rgba"] = _get_rgba(self.camera_head)
 
         for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
             if camera_name == "head_camera":
@@ -397,6 +424,9 @@ class Camera:
             res["right_camera"] = {}
             res["left_camera"][f"{level}_segmentation"] = _get_segmentation(self.left_camera, level=level)
             res["right_camera"][f"{level}_segmentation"] = _get_segmentation(self.right_camera, level=level)
+        if self.camera_head is not None:
+            res["camera_head"] = {}
+            res["camera_head"][f"{level}_segmentation"] = _get_segmentation(self.camera_head, level=level)
 
         for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
             if camera_name == "head_camera":
@@ -432,6 +462,10 @@ class Camera:
             res["right_camera"]["depth"] = _get_depth(self.right_camera)
             res["left_camera"]["depth"] *= rgba["left_camera"]["rgba"][:, :, 3] / 255
             res["right_camera"]["depth"] *= rgba["right_camera"]["rgba"][:, :, 3] / 255
+        if self.camera_head is not None:
+            res["camera_head"] = {}
+            res["camera_head"]["depth"] = _get_depth(self.camera_head)
+            res["camera_head"]["depth"] *= rgba["camera_head"]["rgba"][:, :, 3] / 255
         
         for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
             if camera_name == "head_camera":

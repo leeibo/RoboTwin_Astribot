@@ -2,6 +2,13 @@ render_freq: 0
 episode_num: 50
 use_seed: false
 save_freq: 15
+# Table options:
+# table_shape: rect  # rect or fan
+# fan_center_on_robot: true
+# fan_outer_radius: 0.9
+# fan_inner_radius: 0.3
+# fan_angle_deg: 200
+# fan_center_deg: 90
 embodiment:
 - aloha-agilex
 language_num: 100

@@ -1,0 +1,1409 @@
+[32mRender Well[0m
+missing pytorch3d
+============= Config =============
+
+[95mMessy Table:[0m False
+[95mRandom Background:[0m False
+[95mRandom Light:[0m False
+[95mRandom Table Height:[0m 0
+[95mRandom Head Camera Distance:[0m 0
+[94mHead Camera Config:[0m D435, True
+[94mWrist Camera Config:[0m D435, True
+[94mEmbodiment Config:[0m astribot
+
+==================================
+Task Name: [34mbeat_block_hammer[0m
+[93m[Start Seed and Pre Motion Data Collection][0m
+Exist seed file, Start from: 0 / 0
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+[CuroboPlanner] T_root_to_base:
+[[ 1.00000e-06  1.00000e+00 -3.00000e-06  3.00000e-06]
+ [-3.42024e-01  4.00000e-06  9.39691e-01  6.44890e-02]
+ [ 9.39691e-01  0.00000e+00  3.42024e-01  1.25823e+00]
+ [ 0.00000e+00  0.00000e+00  0.00000e+00  1.00000e+00]]
+[CuroboPlanner] T_base_to_root:
+[[ 1.000000e-06 -3.420240e-01  9.396910e-01 -1.160291e+00]
+ [ 1.000000e+00  4.000000e-06  0.000000e+00 -3.000000e-06]
+ [-3.000000e-06  9.396910e-01  3.420240e-01 -4.909440e-01]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+[CuroboPlanner] table in base_link: pos=[-0.2488, 0.45, -0.1592], q=[0.8192, -0.0, 0.5736, -0.0]
+[CuroboPlanner] WARNING: table obstacle DISABLED (original pos=[-0.2488, 0.45, -0.1592])
+Warp DeprecationWarning: The namespace `warp.torch` will soon be removed from the public API. It can still be accessed from `warp._src.torch` but might be changed or removed without notice.
+Warp DeprecationWarning: The symbol `warp.torch.device_from_torch` will soon be removed from the public API. Use `warp.device_from_torch` instead.
+[CuroboPlanner] FK model ready for astribot_arm_left, dof=7
+[CuroboPlanner] T_root_to_base:
+[[-1.00000e-06 -1.00000e+00  3.00000e-06  3.00000e-06]
+ [ 3.42017e-01 -4.00000e-06 -9.39694e-01 -6.44910e-02]
+ [ 9.39694e-01  0.00000e+00  3.42017e-01  1.25823e+00]
+ [ 0.00000e+00  0.00000e+00  0.00000e+00  1.00000e+00]]
+[CuroboPlanner] T_base_to_root:
+[[-1.000000e-06  3.420170e-01  9.396940e-01 -1.160293e+00]
+ [-1.000000e+00 -4.000000e-06  0.000000e+00  3.000000e-06]
+ [ 3.000000e-06 -9.396940e-01  3.420170e-01 -4.909380e-01]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+[CuroboPlanner] table in base_link: pos=[-0.2488, -0.45, -0.1592], q=[0.0, 0.5736, 0.0, 0.8192]
+[CuroboPlanner] WARNING: table obstacle DISABLED (original pos=[-0.2488, -0.45, -0.1592])
+[CuroboPlanner] FK model ready for astribot_arm_right, dof=7
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d884d23b0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[_trans] world target p=[-0.12, 0.0, 0.9]
+[_trans] in ROOT frame  p=[0.45, 0.12, 1.15]
+[_trans] in BASE frame  p=[-0.1207, 0.45, 0.0151]
+[plan_path] astribot_arm_left target_pose_p: [0.0, 0.19444, 0.41667] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.0, 0.19444, 0.41667], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.696701 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.0, 0.19444, 0.41667], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.0, 0.19445, 0.41667], q=[1.0, -0.0, 0.0, -1e-05]
+  pos error (base_link): 0.000010 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.45604, -0.25555, 1.15074], q=[0.81915, 0.0, -0.57357, -0.0]
+  pos error (world):    0.491016 m
+[plan_path] astribot_arm_left SUCCESS, 270 steps, world_err=0.491016m
+[JOINT_DIAG] left: max_abs=0.689381 rad, l2=0.737617
+  planned: [2.07706, -2.76503, 0.31404, 1.6833, 0.55366, -2.14875, 2.03869]
+  drive:   [2.07706, -2.76503, 0.31404, 1.6833, 0.55366, -2.14875, 2.03869]
+  actual:  [2.01732, -2.73452, 0.32604, 1.75099, 0.32048, -2.22108, 1.34931]
+  diff:    [-0.05974, 0.03051, 0.012, 0.06769, -0.23319, -0.07233, -0.68938]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.45604, -0.25555, 1.15074, 0.81915, 0.0, -0.57357, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.26975, -0.2917, 1.09349], q=[0.44095, -0.87127, 0.12923, 0.17252]
+  error: pos=0.413303 m, rot=127.672 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.44209, -0.27783, 1.17227], q=[0.73807, 0.22042, -0.49409, -0.40317]
+  error: pos=0.505033 m, rot=132.447 deg
+simulate data episode 0 fail! (seed = 0)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d8ebd0ac0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[_trans] world target p=[-0.12, 0.0, 0.9]
+[_trans] in ROOT frame  p=[0.45, 0.12, 1.15]
+[_trans] in BASE frame  p=[-0.1207, 0.45, 0.0151]
+[plan_path] astribot_arm_left target_pose_p: [0.46667, 0.08333, 0.33333] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.46667, 0.08333, 0.33333], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 1.081035 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.46667, 0.08333, 0.33333], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.46667, 0.08333, 0.33333], q=[1.0, -0.0, -0.0, -0.0]
+  pos error (base_link): 0.000003 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.21811, -0.36667, 1.56076], q=[0.81915, 0.0, -0.57358, 0.0]
+  pos error (world):    0.762020 m
+[plan_path] astribot_arm_left SUCCESS, 296 steps, world_err=0.762020m
+[JOINT_DIAG] left: max_abs=0.650075 rad, l2=0.736831
+  planned: [3.47389, 0.19099, -2.8822, 1.18276, -0.44009, -0.93837, -1.48977]
+  drive:   [3.47389, 0.19099, -2.8822, 1.18276, -0.44009, -0.93837, -1.48977]
+  actual:  [3.4203, 0.14842, -2.80203, 1.10238, -0.75172, -0.8633, -2.13984]
+  diff:    [-0.05359, -0.04257, 0.08017, -0.08038, -0.31163, 0.07507, -0.65007]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.21811, -0.36667, 1.56076, 0.81915, 0.0, -0.57358, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.03922, -0.43361, 1.50616], q=[0.43067, -0.88011, 0.14428, 0.13824]
+  error: pos=0.745363 m, rot=128.980 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.21405, -0.40798, 1.576], q=[0.72008, 0.2025, -0.52458, -0.40655]
+  error: pos=0.795158 m, rot=132.023 deg
+simulate data episode 0 fail! (seed = 1)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d8835b610>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.54444, 0.11111, 0.27778] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.54444, 0.11111, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 1.150498 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.54444, 0.11111, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.54444, 0.11111, 0.27778], q=[1.0, -0.0, 0.0, 0.0]
+  pos error (base_link): 0.000003 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.1393, -0.33888, 1.61485], q=[0.81916, -0.0, -0.57357, 0.0]
+  pos error (world):    0.791341 m
+[plan_path] astribot_arm_left SUCCESS, 310 steps, world_err=0.791341m
+[JOINT_DIAG] left: max_abs=0.468288 rad, l2=0.492696
+  planned: [3.5442, -0.00239, -2.45478, 0.55176, -0.76744, -0.41959, -1.60089]
+  drive:   [3.5442, -0.00239, -2.45478, 0.55176, -0.76744, -0.41959, -1.60089]
+  actual:  [3.48092, -0.02645, -2.45582, 0.50182, -0.89539, -0.41741, -2.06917]
+  diff:    [-0.06328, -0.02406, -0.00105, -0.04994, -0.12796, 0.00217, -0.46829]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.1393, -0.33888, 1.61485, 0.81916, -0.0, -0.57357, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.03507, -0.3888, 1.55466], q=[0.25685, -0.94755, 0.10749, 0.15695]
+  error: pos=0.766151 m, rot=150.234 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.14118, -0.36542, 1.62167], q=[0.78099, 0.10561, -0.55904, -0.25763]
+  error: pos=0.809184 m, rot=150.142 deg
+simulate data episode 0 fail! (seed = 2)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729e3fd842e0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.31111, 0.33333, 0.0] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.33333, 0.0], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.972728 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.33333, 0.0], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.31111, 0.33333, -0.0], q=[1.0, -0.0, -0.0, 0.0]
+  pos error (base_link): 0.000002 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[0.04192, -0.11666, 1.30058], q=[0.81915, 0.0, -0.57357, 0.0]
+  pos error (world):    0.447540 m
+[plan_path] astribot_arm_left SUCCESS, 211 steps, world_err=0.447540m
+[JOINT_DIAG] left: max_abs=0.590821 rad, l2=0.598503
+  planned: [-1.602, 0.28741, -1.43824, 1.40538, -1.30504, 0.17254, -1.66267]
+  drive:   [-1.602, 0.28741, -1.43824, 1.40538, -1.30504, 0.17254, -1.66267]
+  actual:  [-1.68745, 0.29836, -1.4449, 1.41571, -1.26637, 0.16419, -2.25349]
+  diff:    [-0.08545, 0.01094, -0.00665, 0.01033, 0.03867, -0.00835, -0.59082]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[0.04192, -0.11666, 1.30058, 0.81915, 0.0, -0.57358, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.23083, -0.14292, 1.26117], q=[0.3353, -0.92585, 0.04732, 0.16771]
+  error: pos=0.479309 m, rot=140.818 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[0.05237, -0.14764, 1.32621], q=[0.77327, 0.20364, -0.53609, -0.27055]
+  error: pos=0.482867 m, rot=148.606 deg
+simulate data episode 0 fail! (seed = 3)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d886f7820>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.35, 0.05556, 0.5] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.35, 0.05556, 0.5], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 1.016506 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.35, 0.05556, 0.5], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.35, 0.05555, 0.5], q=[1.0, -1e-05, -0.0, 0.0]
+  pos error (base_link): 0.000006 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.41463, -0.39444, 1.50814], q=[0.81915, -1e-05, -0.57357, -0.0]
+  pos error (world):    0.782449 m
+[plan_path] astribot_arm_left SUCCESS, 199 steps, world_err=0.782449m
+[JOINT_DIAG] left: max_abs=0.520111 rad, l2=0.543249
+  planned: [0.24407, -1.85009, -0.17195, -0.85638, 0.05211, -0.43852, -1.67159]
+  drive:   [0.24407, -1.85009, -0.17195, -0.85638, 0.05211, -0.43852, -1.67159]
+  actual:  [0.16154, -1.89195, -0.2761, -0.81607, 0.00046, -0.46852, -2.1917]
+  diff:    [-0.08253, -0.04187, -0.10416, 0.04031, -0.05164, -0.03, -0.52011]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.41463, -0.39444, 1.50814, -0.81915, 1e-05, 0.57357, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.23044, -0.45377, 1.45008], q=[0.34016, -0.92021, 0.10511, 0.16263]
+  error: pos=0.735563 m, rot=140.227 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.40619, -0.43804, 1.52053], q=[-0.76569, -0.16621, 0.53569, 0.31485]
+  error: pos=0.811693 m, rot=143.296 deg
+simulate data episode 0 fail! (seed = 4)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d891f9ed0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.31111, 0.11111, 0.27778] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.11111, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.922393 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.11111, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.31111, 0.11111, 0.27778], q=[1.0, -0.0, 0.0, -0.0]
+  pos error (base_link): 0.000001 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.21911, -0.33889, 1.39559], q=[0.81916, -0.0, -0.57357, -0.0]
+  pos error (world):    0.608500 m
+[plan_path] astribot_arm_left SUCCESS, 314 steps, world_err=0.608500m
+[JOINT_DIAG] left: max_abs=0.651976 rad, l2=0.700050
+  planned: [2.44059, -1.01051, 1.26094, 1.79845, -3.71212, 0.35655, -2.29958]
+  drive:   [2.44059, -1.01051, 1.26094, 1.79845, -3.71212, 0.35655, -2.29958]
+  actual:  [2.43383, -0.99348, 1.07305, 1.68139, -3.58701, 0.35531, -2.95156]
+  diff:    [-0.00676, 0.01704, -0.18789, -0.11707, 0.12511, -0.00124, -0.65198]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.21911, -0.33889, 1.39559, 0.81915, -0.0, -0.57357, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.02505, -0.38289, 1.35851], q=[0.44041, -0.87564, 0.05324, 0.19095]
+  error: pos=0.597880 m, rot=127.740 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.20012, -0.39713, 1.43096], q=[0.75419, 0.27377, -0.48415, -0.34906]
+  error: pos=0.667870 m, rot=139.140 deg
+simulate data episode 0 fail! (seed = 5)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d886bcca0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.31111, 0.22222, 0.27778] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.22222, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.945473 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.22222, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.31111, 0.22222, 0.27778], q=[1.0, 0.0, -0.0, 0.0]
+  pos error (base_link): 0.000002 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.21911, -0.22778, 1.39559], q=[0.81915, 0.0, -0.57358, 0.0]
+  pos error (world):    0.554356 m
+[plan_path] astribot_arm_left SUCCESS, 282 steps, world_err=0.554356m
+[JOINT_DIAG] left: max_abs=0.620375 rad, l2=0.881335
+  planned: [0.70903, 3.14669, -2.99823, -1.30499, -0.51058, -1.86751, 1.35278]
+  drive:   [0.70903, 3.14669, -2.99823, -1.30499, -0.51058, -1.86751, 1.35278]
+  actual:  [0.65272, 3.17298, -2.89251, -1.31753, -1.11046, -1.99725, 0.73241]
+  diff:    [-0.05631, 0.02629, 0.10573, -0.01255, -0.59988, -0.12974, -0.62038]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.21911, -0.22778, 1.39559, -0.81915, -0.0, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.03641, -0.29228, 1.36387], q=[0.56725, -0.80927, 0.12874, 0.08204]
+  error: pos=0.548443 m, rot=110.882 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.21756, -0.27037, 1.41685], q=[-0.63025, -0.31008, 0.51423, 0.49214]
+  error: pos=0.591400 m, rot=121.037 deg
+simulate data episode 0 fail! (seed = 6)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d8ebd0d00>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.07778, 0.38889, 0.13889] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.07778, 0.38889, 0.13889], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.783508 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.07778, 0.38889, 0.13889], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.07778, 0.38889, 0.13889], q=[1.0, 0.0, -0.0, 0.0]
+  pos error (base_link): 0.000000 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.1684, -0.06111, 1.12882], q=[0.81915, 0.0, -0.57358, 0.0]
+  pos error (world):    0.241735 m
+[plan_path] astribot_arm_left SUCCESS, 335 steps, world_err=0.241735m
+[JOINT_DIAG] left: max_abs=0.670863 rad, l2=0.751114
+  planned: [-4.57486, -2.05155, 2.67677, 1.91444, 0.28966, 2.38294, 0.48308]
+  drive:   [-4.57486, -2.05155, 2.67677, 1.91444, 0.28966, 2.38294, 0.48308]
+  actual:  [-4.62637, -2.06445, 2.50104, 1.9886, 0.56272, 2.40172, -0.18778]
+  diff:    [-0.05151, -0.0129, -0.17573, 0.07416, 0.27306, 0.01879, -0.67086]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.1684, -0.06111, 1.12882, -0.81915, -0.0, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.02896, -0.08922, 1.10176], q=[0.50704, -0.83167, 0.09301, 0.20636]
+  error: pos=0.234308 m, rot=119.066 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.14157, -0.09958, 1.1849], q=[-0.734, -0.29276, 0.44216, 0.4243]
+  error: pos=0.302567 m, rot=129.788 deg
+simulate data episode 0 fail! (seed = 7)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d88109420>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.15556, 0.13889, 0.13889] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.15556, 0.13889, 0.13889], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.759928 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.15556, 0.13889, 0.13889], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.15556, 0.13889, 0.1389], q=[1.0, -0.0, 0.0, 0.0]
+  pos error (base_link): 0.000007 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.1418, -0.31111, 1.20191], q=[0.81915, -0.0, -0.57357, 0.0]
+  pos error (world):    0.434068 m
+[plan_path] astribot_arm_left SUCCESS, 355 steps, world_err=0.434068m
+[JOINT_DIAG] left: max_abs=5.779515 rad, l2=5.852680
+  planned: [0.6189, -3.90589, -0.10001, 2.33923, 1.5934, 4.78454, 2.43071]
+  drive:   [0.6189, -3.90589, -0.10001, 2.33923, 1.5934, 4.78454, 2.43071]
+  actual:  [0.57826, -3.9132, 0.01191, 2.20674, -4.18612, 4.65978, 1.53421]
+  diff:    [-0.04064, -0.00731, 0.11192, -0.13249, -5.77952, -0.12476, -0.8965]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.1418, -0.31111, 1.20191, -0.81915, 0.0, 0.57357, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.05147, -0.3357, 1.1716], q=[0.23772, -0.9476, 0.09534, 0.19093]
+  error: pos=0.443569 m, rot=152.496 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.12122, -0.31861, 1.24896], q=[-0.80506, -0.10068, 0.53505, 0.23551]
+  error: pos=0.472533 m, rot=152.756 deg
+simulate data episode 0 fail! (seed = 8)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d891e9150>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.0, 0.16667, 0.5] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.0, 0.16667, 0.5], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.729205 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.0, 0.16667, 0.5], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.0, 0.16666, 0.49999], q=[1.0, -0.0, -1e-05, 0.0]
+  pos error (base_link): 0.000009 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.53433, -0.28334, 1.17924], q=[0.81915, -0.0, -0.57358, 0.0]
+  pos error (world):    0.574392 m
+[plan_path] astribot_arm_left SUCCESS, 288 steps, world_err=0.574392m
+[JOINT_DIAG] left: max_abs=0.944445 rad, l2=1.008445
+  planned: [1.60757, -2.37848, -3.11501, -1.22439, 0.04745, -1.15349, -0.09854]
+  drive:   [1.60757, -2.37848, -3.11501, -1.22439, 0.04745, -1.15349, -0.09854]
+  actual:  [1.5496, -2.3662, -3.0955, -1.29525, -0.29028, -1.10862, -1.04298]
+  diff:    [-0.05797, 0.01228, 0.01951, -0.07086, -0.33773, 0.04487, -0.94444]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.53433, -0.28334, 1.17924, -0.81915, 0.0, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.35756, -0.29615, 1.09725], q=[0.58539, -0.77, 0.13099, 0.21739]
+  error: pos=0.470320 m, rot=108.339 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.52308, -0.30618, 1.18999], q=[-0.69819, -0.32131, 0.39076, 0.50656]
+  error: pos=0.583363 m, rot=119.131 deg
+simulate data episode 0 fail! (seed = 9)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d882aa050>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.35, 0.30556, 0.22222] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.35, 0.30556, 0.22222], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.999125 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.35, 0.30556, 0.22222], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.35001, 0.30557, 0.22222], q=[1.0, -0.0, 0.0, 0.0]
+  pos error (base_link): 0.000011 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.1536, -0.14443, 1.41313], q=[0.81915, 0.0, -0.57357, 0.0]
+  pos error (world):    0.534130 m
+[plan_path] astribot_arm_left SUCCESS, 297 steps, world_err=0.534130m
+[JOINT_DIAG] left: max_abs=0.668709 rad, l2=0.827999
+  planned: [0.49064, -3.33022, -0.37751, 1.15825, 0.59247, -0.86534, -2.60923]
+  drive:   [0.49064, -3.33022, -0.37751, 1.15825, 0.59247, -0.86534, -2.60923]
+  actual:  [0.45248, -3.31623, -0.24424, 1.1202, 0.12616, -0.85504, -3.27794]
+  diff:    [-0.03816, 0.01399, 0.13327, -0.03805, -0.46631, 0.0103, -0.66871]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.1536, -0.14443, 1.41313, 0.81915, -0.0, -0.57357, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.03265, -0.20628, 1.41259], q=[0.51321, -0.85089, 0.09459, 0.06038]
+  error: pos=0.558685 m, rot=118.244 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.15256, -0.18747, 1.45056], q=[-0.64437, -0.29601, 0.55897, 0.42978]
+  error: pos=0.582514 m, rot=129.092 deg
+simulate data episode 0 fail! (seed = 10)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d884d23b0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.03889, 0.13889, 0.05556] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.03889, 0.13889, 0.05556], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.648451 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[plan_path] astribot_arm_left FAILED
+simulate data episode 0 fail! (seed = 11)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729e3fd84910>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.31111, 0.25, 0.02778] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.25, 0.02778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.942147 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.31111, 0.25, 0.02778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.31111, 0.25, 0.02777], q=[1.0, 0.0, 0.0, -0.0]
+  pos error (base_link): 0.000006 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[0.01582, -0.2, 1.31008], q=[0.81915, 0.0, -0.57357, -0.0]
+  pos error (world):    0.476036 m
+[plan_path] astribot_arm_left SUCCESS, 318 steps, world_err=0.476036m
+[JOINT_DIAG] left: max_abs=0.621884 rad, l2=0.678339
+  planned: [1.10703, -2.3983, -3.74394, 1.88158, 0.73791, 2.23962, 1.5189]
+  drive:   [1.10703, -2.3983, -3.74394, 1.88158, 0.73791, 2.23962, 1.5189]
+  actual:  [1.04305, -2.4321, -3.85195, 1.86327, 0.96191, 2.31701, 0.89701]
+  diff:    [-0.06399, -0.03381, -0.108, -0.01831, 0.224, 0.07739, -0.62188]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[0.01582, -0.2, 1.31008, -0.81915, -0.0, 0.57357, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.20102, -0.22505, 1.27969], q=[0.44289, -0.87955, 0.03329, 0.17067]
+  error: pos=0.507759 m, rot=127.424 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[0.02251, -0.24265, 1.34233], q=[-0.74262, -0.28963, 0.50125, 0.33671]
+  error: pos=0.524255 m, rot=140.647 deg
+simulate data episode 0 fail! (seed = 12)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d891ea020>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.35, 0.33333, 0.27778] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.35, 0.33333, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 1.016350 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.35, 0.33333, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.35, 0.33333, 0.27778], q=[1.0, 0.0, -0.0, -0.0]
+  pos error (base_link): 0.000002 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.20581, -0.11667, 1.43213], q=[0.81915, 0.0, -0.57357, 0.0]
+  pos error (world):    0.551485 m
+[plan_path] astribot_arm_left SUCCESS, 321 steps, world_err=0.551485m
+[JOINT_DIAG] left: max_abs=0.583207 rad, l2=0.610579
+  planned: [-2.13917, -0.53065, -3.88206, -0.81343, -2.51581, -3.25676, 1.08447]
+  drive:   [-2.13917, -0.53065, -3.88206, -0.81343, -2.51581, -3.25676, 1.08447]
+  actual:  [-2.22375, -0.50142, -3.99163, -0.81073, -2.40858, -3.22274, 0.50126]
+  diff:    [-0.08458, 0.02923, -0.10957, 0.00269, 0.10723, 0.03402, -0.58321]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.20581, -0.11667, 1.43213, 0.81915, 0.0, -0.57358, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.01406, -0.15447, 1.39911], q=[0.35223, -0.91869, 0.06051, 0.16818]
+  error: pos=0.523705 m, rot=138.752 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.19192, -0.15586, 1.46592], q=[0.76853, 0.20628, -0.53069, -0.29185]
+  error: pos=0.591382 m, rot=146.062 deg
+simulate data episode 0 fail! (seed = 13)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d8877ae90>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.35, 0.13889, 0.25] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.35, 0.13889, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.960218 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.35, 0.13889, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.35, 0.13889, 0.25], q=[1.0, 0.0, -0.0, -0.0]
+  pos error (base_link): 0.000005 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.1797, -0.31111, 1.42263], q=[0.81915, 0.0, -0.57358, 0.0]
+  pos error (world):    0.611141 m
+[plan_path] astribot_arm_left SUCCESS, 296 steps, world_err=0.611141m
+[JOINT_DIAG] left: max_abs=0.683117 rad, l2=0.752222
+  planned: [0.75883, 2.94833, 0.47372, 1.55817, 1.99666, -2.08474, -4.28251]
+  drive:   [0.75883, 2.94833, 0.47372, 1.55817, 1.99666, -2.08474, -4.28251]
+  actual:  [0.70111, 2.9821, 0.55951, 1.53725, 1.71468, -2.17081, -4.96563]
+  diff:    [-0.05772, 0.03378, 0.08579, -0.02092, -0.28198, -0.08607, -0.68312]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.1797, -0.31111, 1.42263, -0.81915, -0.0, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.00301, -0.36818, 1.36624], q=[0.45371, -0.86661, 0.13651, 0.15651]
+  error: pos=0.596449 m, rot=126.037 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.1706, -0.35021, 1.44132], q=[-0.72346, -0.22429, 0.50212, 0.41734]
+  error: pos=0.646712 m, rot=130.666 deg
+simulate data episode 0 fail! (seed = 14)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d8835bf10>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.58333, 0.13889, 0.08333] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.58333, 0.13889, 0.08333], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 1.180860 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.58333, 0.13889, 0.08333], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.57993, 0.13808, 0.08338], q=[1.0, 0.0, -0.0, 0.0]
+  pos error (base_link): 0.003501 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[0.05551, -0.31192, 1.5817], q=[0.81915, 0.0, -0.57357, 0.0]
+  pos error (world):    0.769943 m
+[plan_path] astribot_arm_left SUCCESS, 306 steps, world_err=0.769943m
+[JOINT_DIAG] left: max_abs=0.329839 rad, l2=0.333940
+  planned: [3.37522, 0.26604, -3.14232, 0.25316, 0.00071, 0.01288, -1.8046]
+  drive:   [3.37522, 0.26604, -3.14232, 0.25316, 0.00071, 0.01288, -1.8046]
+  actual:  [3.34332, 0.26689, -3.10924, 0.25557, -0.02381, 0.0143, -2.13444]
+  diff:    [-0.03191, 0.00085, 0.03308, 0.00241, -0.02452, 0.00142, -0.32984]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[0.05551, -0.31192, 1.5817, -0.81915, -0.0, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.23566, -0.33225, 1.52147], q=[0.18193, -0.96797, 0.02806, 0.17073]
+  error: pos=0.760408 m, rot=159.035 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[0.05704, -0.33373, 1.58621], q=[0.80518, 0.10881, -0.56374, -0.14849]
+  error: pos=0.783329 m, rot=162.922 deg
+simulate data episode 0 fail! (seed = 15)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d884d2620>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.35, 0.13889, 0.25] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.35, 0.13889, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.960218 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.35, 0.13889, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.35, 0.13889, 0.25], q=[1.0, -1e-05, 0.0, -0.0]
+  pos error (base_link): 0.000002 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.17971, -0.31111, 1.42263], q=[0.81915, -0.0, -0.57357, -0.0]
+  pos error (world):    0.611143 m
+[plan_path] astribot_arm_left SUCCESS, 316 steps, world_err=0.611143m
+[JOINT_DIAG] left: max_abs=0.717708 rad, l2=0.741602
+  planned: [-3.69916, -0.36718, 1.63069, 1.72782, 1.94261, 0.00096, -2.75198]
+  drive:   [-3.69916, -0.36718, 1.63069, 1.72782, 1.94261, 0.00096, -2.75198]
+  actual:  [-3.75996, -0.37878, 1.55352, 1.57343, 1.97499, 0.01505, -3.46969]
+  diff:    [-0.0608, -0.0116, -0.07717, -0.15439, 0.03238, 0.01409, -0.71771]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.17971, -0.31111, 1.42263, 0.81915, -0.0, -0.57357, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.017, -0.35384, 1.39756], q=[0.45086, -0.87332, 0.07861, 0.16689]
+  error: pos=0.614207 m, rot=126.402 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.16007, -0.35634, 1.46641], q=[-0.73554, -0.26322, 0.49952, 0.37439]
+  error: pos=0.670375 m, rot=136.026 deg
+simulate data episode 0 fail! (seed = 16)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729e3fd84580>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.35, 0.22222, 0.25] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.35, 0.22222, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.978094 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.35, 0.22222, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.35, 0.22223, 0.25], q=[1.0, -0.0, -0.0, -0.0]
+  pos error (base_link): 0.000006 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.17971, -0.22777, 1.42262], q=[0.81915, 0.0, -0.57358, -0.0]
+  pos error (world):    0.573221 m
+[plan_path] astribot_arm_left SUCCESS, 291 steps, world_err=0.573221m
+[JOINT_DIAG] left: max_abs=0.585071 rad, l2=0.597182
+  planned: [-1.78476, -0.59761, -1.29776, 1.49338, 0.94259, 2.96189, 1.56424]
+  drive:   [-1.78476, -0.59761, -1.29776, 1.49338, 0.94259, 2.96189, 1.56424]
+  actual:  [-1.88569, -0.57905, -1.31458, 1.47352, 0.99345, 2.98473, 0.97917]
+  diff:    [-0.10093, 0.01856, -0.01683, -0.01986, 0.05086, 0.02284, -0.58507]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.17971, -0.22777, 1.42263, 0.81915, 0.0, -0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[0.00494, -0.25394, 1.38004], q=[0.33454, -0.92623, 0.0436, 0.16818]
+  error: pos=0.545841 m, rot=140.911 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.17359, -0.25997, 1.44477], q=[0.77386, 0.20572, -0.53603, -0.26738]
+  error: pos=0.606001 m, rot=148.983 deg
+simulate data episode 0 fail! (seed = 17)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d891ea020>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.11667, 0.41667, 0.27778] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.11667, 0.41667, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.847305 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.11667, 0.41667, 0.27778], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.11667, 0.41666, 0.27778], q=[1.0, -0.0, -0.0, 0.0]
+  pos error (base_link): 0.000003 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.28561, -0.03333, 1.21287], q=[0.81915, -0.0, -0.57358, 0.0]
+  pos error (world):    0.355565 m
+[plan_path] astribot_arm_left SUCCESS, 352 steps, world_err=0.355565m
+[JOINT_DIAG] left: max_abs=0.696809 rad, l2=0.752159
+  planned: [-1.99591, -0.93307, 0.22809, 1.21803, -3.28173, 0.2699, -2.93844]
+  drive:   [-1.99591, -0.93307, 0.22809, 1.21803, -3.28173, 0.2699, -2.93844]
+  actual:  [-2.07334, -0.94696, 0.02598, 1.25496, -3.10404, 0.285, -3.63525]
+  diff:    [-0.07743, -0.01388, -0.2021, 0.03693, 0.17769, 0.0151, -0.69681]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.28561, -0.03333, 1.21287, -0.81915, 0.0, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.07492, -0.07042, 1.21309], q=[0.46385, -0.86279, 0.09358, 0.178]
+  error: pos=0.321876 m, rot=124.729 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.24955, -0.07111, 1.28794], q=[-0.73595, -0.26182, 0.48422, 0.39416]
+  error: pos=0.415137 m, rot=133.573 deg
+simulate data episode 0 fail! (seed = 18)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d882aa080>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.15556, 0.41667, 0.36111] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.15556, 0.41667, 0.36111], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.899331 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.15556, 0.41667, 0.36111], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.15556, 0.41667, 0.36111], q=[1.0, 0.0, 0.0, -0.0]
+  pos error (base_link): 0.000002 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.35062, -0.03333, 1.27791], q=[0.81915, 0.0, -0.57357, 0.0]
+  pos error (world):    0.443975 m
+[plan_path] astribot_arm_left SUCCESS, 317 steps, world_err=0.443975m
+[JOINT_DIAG] left: max_abs=0.693678 rad, l2=0.732227
+  planned: [-1.45445, -0.82847, -0.90584, 0.96556, 3.70437, -0.07632, -2.5516]
+  drive:   [-1.45445, -0.82847, -0.90584, 0.96556, 3.70437, -0.07632, -2.5516]
+  actual:  [-1.53924, -0.81507, -1.08548, 1.06197, 3.78037, -0.09231, -3.24528]
+  diff:    [-0.08479, 0.0134, -0.17964, 0.09641, 0.076, -0.01599, -0.69368]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.35062, -0.03333, 1.27791, 0.81915, 0.0, -0.57357, 0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.14745, -0.08651, 1.28155], q=[0.45269, -0.87423, 0.09071, 0.15018]
+  error: pos=0.403188 m, rot=126.167 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.32576, -0.08221, 1.34705], q=[-0.72437, -0.25596, 0.51198, 0.38425]
+  error: pos=0.498942 m, rot=134.806 deg
+simulate data episode 0 fail! (seed = 19)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d882a82e0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.23333, 0.22222, 0.25] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.23333, 0.22222, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.867184 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.36898, -0.47733, 0.49604], q=[0.52077, 0.34197, 0.74413, 0.24111]
+  pos error (world):    0.673068 m
+[plan_path] astribot_arm_left planning...
+[FK-END] astribot_arm_left
+  target  in base_link: p=[0.23333, 0.22222, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[0.23333, 0.22223, 0.24999], q=[1.0, 1e-05, -0.0, -0.0]
+  pos error (base_link): 0.000012 m
+  target  in world:     p=[-0.12, 0.0, 0.9]
+  FK      in world:     p=[-0.2196, -0.22777, 1.31299], q=[0.81915, 1e-05, -0.57358, 0.0]
+  pos error (world):    0.482037 m
+[plan_path] astribot_arm_left SUCCESS, 324 steps, world_err=0.482037m
+[JOINT_DIAG] left: max_abs=3.228293 rad, l2=3.364457
+  planned: [3.89572, 0.62814, -3.1499, 2.10786, -3.06767, -1.66214, 0.73816]
+  drive:   [3.89572, 0.62814, -3.1499, 2.10786, -3.06767, -1.66214, 0.73816]
+  actual:  [3.73986, 0.54882, -3.17889, 2.28723, -3.9501, -1.42676, -2.49013]
+  diff:    [-0.15586, -0.07932, -0.02899, 0.17937, -0.88244, 0.23538, -3.22829]
+  drive-target diff: max_abs=0.000000 rad, l2=0.000000
+[DIRECT_FK] left: endlink=[-0.2196, -0.22777, 1.31299, -0.81915, -1e-05, 0.57358, -0.0]
+[TCP_DEBUG:take_dense_action] arm=left
+  target tcp: p=[-0.05, 0.0, 0.9], q=[1.0, 0.0, 0.0, 0.0]
+  actual tcp: p=[-0.06917, -0.27817, 1.23499], q=[0.83498, 0.52208, 0.16762, -0.04631]
+  error: pos=0.435852 m, rot=66.773 deg
+[ENDLINK_DEBUG:take_dense_action] arm=left
+  target endlink: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+  actual endlink: p=[-0.24767, -0.29673, 1.29736], q=[-0.40191, 0.47189, 0.33642, -0.70894]
+  error: pos=0.512102 m, rot=89.702 deg
+simulate data episode 0 fail! (seed = 20)
+[Robot.drive] left stiffness/damping=(10000, 100), right stiffness/damping=(10000, 100)
+[Robot.symmetry_check] ===== left/right config =====
+[Robot.symmetry_check] left robot root:  p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] right robot root: p=[0.0, -0.45, -0.25], q=[0.707, 0.0, 0.0, 0.707]
+[Robot.symmetry_check] left gripper_bias=0.19, right gripper_bias=0.19, diff=0.000000
+[Robot.symmetry_check] left delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] right delta_matrix:
+[[-1  0  0]
+ [ 0 -1  0]
+ [ 0  0  1]]
+[Robot.symmetry_check] left global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] right global_trans_matrix:
+[[1 0 0]
+ [0 1 0]
+ [0 0 1]]
+[Robot.symmetry_check] =================================
+No left camera link
+No right camera link
+move actions:  (ArmTag('left'), [<envs.utils.action.Action object at 0x729d882d77f0>]) None
+left move to pose:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+left plan path:  [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+[Robot.left_plan_path] gripper target: [-0.05, 0.0, 0.9, 1.0, 0.0, 0.0, 0.0]
+gripper_pose_pos: [-0.05  0.    0.9 ], gripper_pose_quat: [1. 0. 0. 0.]
+[Robot.left_plan_path] endlink target: p=[-0.12, 0.0, 0.9], q=[0.0, 0.0, 0.0, 1.0]
+[plan_path] astribot_arm_left target_pose_p: [0.15556, 0.22222, 0.25] target_pose_q: [1.0, 0.0, 0.0, 0.0]
+[plan_path] astribot_arm_left check_start_state: valid=True, status=None
+[FK-START] astribot_arm_left
+  target  in base_link: p=[0.15556, 0.22222, 0.25], q=[1.0, 0.0, 0.0, 0.0]
+  FK      in base_link: p=[-0.58544, -0.02733, 0.11095], q=[0.00022, -0.41842, -0.90825, -0.00136]
+  pos error (base_link): 0.794162 m

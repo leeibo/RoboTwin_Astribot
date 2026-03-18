@@ -145,7 +145,7 @@ def run(TASK_ENV, args):
             except UnStableError as e:
                 print(" -------------")
                 print(f"simulate data episode {suc_num} fail! (seed = {epid})")
-                print("Error: ", e)
+                traceback.print_exc()
                 print(" -------------")
                 fail_num += 1
                 TASK_ENV.close_env()
@@ -157,7 +157,7 @@ def run(TASK_ENV, args):
                 # stack_trace = traceback.format_exc()
                 print(" -------------")
                 print(f"simulate data episode {suc_num} fail! (seed = {epid})")
-                print("Error: ", e)
+                traceback.print_exc()
                 print(" -------------")
                 fail_num += 1
                 TASK_ENV.close_env()

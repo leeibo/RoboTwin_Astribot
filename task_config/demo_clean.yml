@@ -1,10 +1,19 @@
 # if you want to modify the config, please check the following tutorial first:
 # https://robotwin-platform.github.io/doc/usage/configurations.html
 render_freq: 0
-episode_num: 50
+lock_arm_when_gripper_only: false
+gripper_hold_ratio: 0.0
+table_shape: fan
+fan_center_on_robot: true
+fan_outer_radius: 0.9
+fan_inner_radius: 0.3
+fan_angle_deg: 200
+fan_center_deg: 90
+table_thickness: 0.05
+episode_num: 30
 use_seed: false
 save_freq: 15
-embodiment: [aloha-agilex]
+embodiment: [astribot]
 language_num: 100
 domain_randomization:
   random_background: false
@@ -15,7 +24,7 @@ domain_randomization:
   random_light: false
   crazy_random_light_rate: 0
 camera:
-  head_camera_type: D435
+  head_camera_type: Large
   wrist_camera_type: D435
   collect_head_camera: true
   collect_wrist_camera: true

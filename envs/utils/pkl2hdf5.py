@@ -7,6 +7,12 @@ import shutil
 from .images_to_video import images_to_video
 
 
+_CAMERA_ALIASES = {
+    "camera_head": ["head_camera"],
+    "head_camera": ["camera_head"],
+}
+
+
 def images_encoding(imgs):
     encode_data = []
     padded_data = []
@@ -74,20 +80,109 @@ def create_hdf5_from_dict(hdf5_group, data_dict):
             except Exception as e:
                 print(f"Error storing value for key '{key}': {e}")
 
+def _resolve_camera_key(observation_dict, camera_name):
+    if not isinstance(observation_dict, Mapping):
+        return None
+    candidates = [camera_name] + _CAMERA_ALIASES.get(camera_name, [])
+    for key in candidates:
+        cam_data = observation_dict.get(key, None)
+        if isinstance(cam_data, Mapping) and "rgb" in cam_data:
+            return key
+    return None
 
-def pkl_files_to_hdf5_and_video(pkl_files, hdf5_path, video_path):
+
+def _dump_videos(data_list, video_path=None, video_camera_names=None, video_path_map=None, main_video_camera="camera_head"):
+    if video_path is None and not video_path_map:
+        return
+    observation_dict = data_list.get("observation", {})
+    if not isinstance(observation_dict, Mapping):
+        print("[pkl2hdf5] observation is missing, skip video export")
+        return
+
+    video_jobs = []
+
+    # Main legacy video path for compatibility.
+    if video_path is not None:
+        main_key = _resolve_camera_key(observation_dict, main_video_camera)
+        if main_key is None:
+            main_key = _resolve_camera_key(observation_dict, "camera_head")
+        if main_key is None:
+            main_key = _resolve_camera_key(observation_dict, "head_camera")
+        if main_key is None and video_camera_names:
+            for name in video_camera_names:
+                main_key = _resolve_camera_key(observation_dict, name)
+                if main_key is not None:
+                    break
+        if main_key is not None:
+            video_jobs.append((main_key, video_path))
+        else:
+            print(f"[pkl2hdf5] no RGB camera found for legacy video path: {video_path}")
+
+    # Multi-view camera videos.
+    if video_path_map:
+        for camera_name, out_path in video_path_map.items():
+            cam_key = _resolve_camera_key(observation_dict, camera_name)
+            if cam_key is None:
+                print(f"[pkl2hdf5] skip video for {camera_name}: camera stream not found")
+                continue
+            video_jobs.append((cam_key, out_path))
+    elif video_path is not None and video_camera_names:
+        base, ext = os.path.splitext(video_path)
+        if ext == "":
+            ext = ".mp4"
+        for camera_name in video_camera_names:
+            cam_key = _resolve_camera_key(observation_dict, camera_name)
+            if cam_key is None:
+                print(f"[pkl2hdf5] skip video for {camera_name}: camera stream not found")
+                continue
+            video_jobs.append((cam_key, f"{base}_{camera_name}{ext}"))
+
+    # Deduplicate by output path.
+    dedup = {}
+    for cam_key, out_path in video_jobs:
+        dedup[out_path] = cam_key
+
+    for out_path, cam_key in dedup.items():
+        imgs = np.array(observation_dict[cam_key]["rgb"])
+        if imgs.ndim != 4 or imgs.shape[-1] not in (3, 4):
+            print(f"[pkl2hdf5] invalid RGB tensor for {cam_key}, skip {out_path}")
+            continue
+        images_to_video(imgs, out_path=out_path)
+
+
+def pkl_files_to_hdf5_and_video(
+    pkl_files,
+    hdf5_path,
+    video_path=None,
+    video_camera_names=None,
+    video_path_map=None,
+    main_video_camera="camera_head",
+):
     data_list = parse_dict_structure(load_pkl_file(pkl_files[0]))
     for pkl_file_path in pkl_files:
         pkl_file = load_pkl_file(pkl_file_path)
         append_data_to_structure(data_list, pkl_file)
 
-    images_to_video(np.array(data_list["observation"]["head_camera"]["rgb"]), out_path=video_path)
+    _dump_videos(
+        data_list=data_list,
+        video_path=video_path,
+        video_camera_names=video_camera_names,
+        video_path_map=video_path_map,
+        main_video_camera=main_video_camera,
+    )
 
     with h5py.File(hdf5_path, "w") as f:
         create_hdf5_from_dict(f, data_list)
 
 
-def process_folder_to_hdf5_video(folder_path, hdf5_path, video_path):
+def process_folder_to_hdf5_video(
+    folder_path,
+    hdf5_path,
+    video_path=None,
+    video_camera_names=None,
+    video_path_map=None,
+    main_video_camera="camera_head",
+):
     pkl_files = []
     for fname in os.listdir(folder_path):
         if fname.endswith(".pkl") and fname[:-4].isdigit():
@@ -106,4 +201,11 @@ def process_folder_to_hdf5_video(folder_path, hdf5_path, video_path):
             raise ValueError(f"Missing file {expected}.pkl")
         expected += 1
 
-    pkl_files_to_hdf5_and_video(pkl_files, hdf5_path, video_path)
+    pkl_files_to_hdf5_and_video(
+        pkl_files,
+        hdf5_path,
+        video_path=video_path,
+        video_camera_names=video_camera_names,
+        video_path_map=video_path_map,
+        main_video_camera=main_video_camera,
+    )

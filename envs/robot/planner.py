@@ -1,20 +1,134 @@
+import json
 import mplib.planner
 import mplib
 import numpy as np
 import pdb
 import traceback
 import numpy as np
+import sapien
 import toppra as ta
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 import transforms3d as t3d
+import random
 import envs._GLOBAL_CONFIGS as CONFIGS
+left_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_left_identity.json'))
+right_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_right_identity.json'))
+left_pose = left_pose['success_points']
+right_pose = right_pose['success_points']
+
+left_pose_list = random.sample(left_pose, 1000)
+right_pose_list = random.sample(right_pose, 1000)
+
+
+def _plan_gripper_profile(
+    now_val,
+    target_val,
+    dt=1 / 250,
+    max_vel=4.0,
+    acc=30.0,
+    min_steps=6,
+    max_steps=180,
+):
+    now_val = float(now_val)
+    target_val = float(target_val)
+    dis_val = target_val - now_val
+    dis_abs = abs(dis_val)
+    if dis_abs < 1e-9:
+        return {"num_step": 1, "per_step": 0.0, "result": np.array([target_val], dtype=np.float64)}
+
+    dt = max(float(dt), 1e-6)
+    max_vel = max(float(max_vel), 1e-6)
+    acc = max(float(acc), 1e-6)
+    min_steps = max(int(min_steps), 1)
+    max_steps = max(int(max_steps), min_steps)
+
+    t_acc_nom = max_vel / acc
+    d_acc_nom = 0.5 * acc * (t_acc_nom**2)
+    if dis_abs <= 2.0 * d_acc_nom:
+        t_acc = np.sqrt(dis_abs / acc)
+        t_flat = 0.0
+        v_peak = acc * t_acc
+    else:
+        t_acc = t_acc_nom
+        t_flat = (dis_abs - 2.0 * d_acc_nom) / max_vel
+        v_peak = max_vel
+
+    d_acc = 0.5 * acc * (t_acc**2)
+    total_time = max(2.0 * t_acc + t_flat, dt)
+    num_step = int(np.ceil(total_time / dt))
+    num_step = int(np.clip(num_step, min_steps, max_steps))
+    times = np.linspace(total_time / num_step, total_time, num=num_step, dtype=np.float64)
+
+    s = np.zeros_like(times, dtype=np.float64)
+    t_switch = t_acc + t_flat
+    for i, t in enumerate(times):
+        if t <= t_acc:
+            s[i] = 0.5 * acc * (t**2)
+        elif t <= t_switch:
+            s[i] = d_acc + v_peak * (t - t_acc)
+        else:
+            t_dec = t - t_switch
+            s[i] = d_acc + v_peak * t_flat + v_peak * t_dec - 0.5 * acc * (t_dec**2)
+    s = np.clip(s, 0.0, dis_abs)
+    s[-1] = dis_abs
+
+    direction = 1.0 if dis_val >= 0 else -1.0
+    vals = now_val + direction * s
+    vals[-1] = target_val
+    per_step = dis_val / num_step
+    return {"num_step": num_step, "per_step": per_step, "result": vals}
+
+
+def create_rgb_axis_marker(
+    scene: sapien.Scene,
+    axis_len=0.1,
+    axis_radius=0.003,
+    name="target_pose_marker",
+):
+    mat_x = sapien.render.RenderMaterial()
+    mat_x.set_base_color([1.0, 0.0, 0.0, 1.0])
+
+    mat_y = sapien.render.RenderMaterial()
+    mat_y.set_base_color([0.0, 1.0, 0.0, 1.0])
+
+    mat_z = sapien.render.RenderMaterial()
+    mat_z.set_base_color([0.0, 0.0, 1.0, 1.0])
+
+    builder = scene.create_actor_builder()
+
+    def quat_from_axis_angle(axis, angle):
+        axis = np.asarray(axis, dtype=np.float64)
+        axis = axis / (np.linalg.norm(axis) + 1e-12)
+        s = np.sin(angle / 2.0)
+        return [np.cos(angle / 2.0), axis[0] * s, axis[1] * s, axis[2] * s]
+
+    q_x = [1.0, 0.0, 0.0, 0.0]
+    q_y = quat_from_axis_angle([0, 0, 1], np.pi / 2)
+    q_z = quat_from_axis_angle([0, 1, 0], -np.pi / 2)
+    half = axis_len / 2
+
+    builder.add_capsule_visual(
+        pose=sapien.Pose([half, 0, 0], q_x),
+        radius=axis_radius, half_length=half, material=mat_x,
+    )
+    builder.add_capsule_visual(
+        pose=sapien.Pose([0, half, 0], q_y),
+        radius=axis_radius, half_length=half, material=mat_y,
+    )
+    builder.add_capsule_visual(
+        pose=sapien.Pose([0, 0, half], q_z),
+        radius=axis_radius, half_length=half, material=mat_z,
+    )
+    return builder.build_static(name=name)
 
 
 try:
     # ********************** CuroboPlanner (optional) **********************
     from curobo.types.math import Pose as CuroboPose
     import time
-    from curobo.types.robot import JointState
+    from curobo.types.robot import JointState, RobotConfig
+    from curobo.cuda_robot_model.cuda_robot_model import CudaRobotModel
+    from curobo.types.base import TensorDeviceType
     from curobo.wrap.reacher.motion_gen import (
         MotionGen,
         MotionGenConfig,
@@ -22,6 +136,7 @@ try:
         PoseCostMetric,
     )
     from curobo.util import logger
+    from curobo.util_file import load_yaml
     import torch
     import yaml
     from curobo.util import logger
@@ -35,10 +150,12 @@ try:
             active_joints_name,
             all_joints,
             yml_path=None,
+            verbose=False,
         ):
             super().__init__()
             ta.setup_logging("CRITICAL")  # hide logging
             logger.setup_logger(level="error", logger_name="'curobo")
+            self.verbose = bool(verbose)
 
             if yml_path != None:
                 self.yml_path = yml_path
@@ -48,29 +165,42 @@ try:
             self.active_joints_name = active_joints_name
             self.all_joints = all_joints
 
-            # translate from baselink to arm's base
             with open(self.yml_path, "r") as f:
                 yml_data = yaml.safe_load(f)
-            self.frame_bias = yml_data["planner"]["frame_bias"]
 
-            # motion generation
-            if True:
-                world_config = {
-                    "cuboid": {
-                        "table": {
-                            "dims": [0.7, 2, 0.04],  # x, y, z
-                            "pose": [
-                                self.robot_origion_pose.p[1],
-                                0.0,
-                                0.74 - self.robot_origion_pose.p[2],
-                                1,
-                                0,
-                                0,
-                                0.0,
-                            ],  # x, y, z, qw, qx, qy, qz
-                        },
-                    }
+            self.T_root_to_base = self._compute_urdf_root_to_base_transform(yml_data)
+            self.T_base_to_root = np.linalg.inv(self.T_root_to_base)
+            self._log(f"[CuroboPlanner] T_root_to_base:\n{np.round(self.T_root_to_base, 6)}")
+            self._log(f"[CuroboPlanner] T_base_to_root:\n{np.round(self.T_base_to_root, 6)}")
+
+            # motion generation — table obstacle: world frame -> base_link frame (full rigid-body)
+            table_world_pos = np.array([0.0, 0.0, 0.72])
+            robot_p = np.array(self.robot_origion_pose.p)
+            robot_q = np.array(self.robot_origion_pose.q)
+            wRb = t3d.quaternions.quat2mat(robot_q)
+            T_table_in_root = np.eye(4)
+            T_table_in_root[:3, :3] = wRb.T                              # rotation: world -> URDF root
+            T_table_in_root[:3, 3] = wRb.T @ (table_world_pos - robot_p) # position: world -> URDF root
+            T_table_in_base = self.T_base_to_root @ T_table_in_root       # URDF root -> base_link
+            table_pos = T_table_in_base[:3, 3]
+            table_q = t3d.quaternions.mat2quat(T_table_in_base[:3, :3])
+            self._log(
+                f"[CuroboPlanner] table in base_link: "
+                f"pos={list(np.round(table_pos, 4))}, q={list(np.round(table_q, 4))}"
+            )
+
+            world_config = {
+                "cuboid": {
+                    "table": {
+                        "dims": [0.7, 2, 0.04],
+                        "pose": list(table_pos.tolist()) + list(table_q.tolist()),
+                    },
                 }
+            }
+            self._log(
+                f"[CuroboPlanner] table obstacle ENABLED: "
+                f"pos={list(np.round(table_pos, 4))}, q={list(np.round(table_q, 4))}"
+            )
             motion_gen_config = MotionGenConfig.load_from_robot_config(
                 self.yml_path,
                 world_config,
@@ -80,6 +210,17 @@ try:
 
             self.motion_gen = MotionGen(motion_gen_config)
             self.motion_gen.warmup()
+
+            config_data = load_yaml(self.yml_path)
+            urdf_file = config_data["robot_cfg"]["kinematics"]["urdf_path"]
+            base_link_name = config_data["robot_cfg"]["kinematics"]["base_link"]
+            ee_link_name = config_data["robot_cfg"]["kinematics"]["ee_link"]
+            tensor_args = TensorDeviceType()
+            fk_robot_cfg = RobotConfig.from_basic(urdf_file, base_link_name, ee_link_name, tensor_args)
+            self.fk_model = CudaRobotModel(fk_robot_cfg.kinematics)
+            self._fk_arm_name = base_link_name.replace("_base_link", "")
+            self._log(f"[CuroboPlanner] FK model ready for {self._fk_arm_name}, dof={self.fk_model.get_dof()}")
+
             motion_gen_config = MotionGenConfig.load_from_robot_config(
                 self.yml_path,
                 world_config,
@@ -90,6 +231,70 @@ try:
             self.motion_gen_batch = MotionGen(motion_gen_config)
             self.motion_gen_batch.warmup(batch=CONFIGS.ROTATE_NUM)
 
+        _trans_debug_count = 0
+
+        def _log(self, msg: str):
+            if self.verbose:
+                print(msg)
+
+        def _trans_world_to_curobo_frame(self, target_gripper_pose):
+            """Transform a world-frame sapien.Pose to the CuRobo base_link frame."""
+            world_base_pose = np.concatenate([
+                np.array(self.robot_origion_pose.p),
+                np.array(self.robot_origion_pose.q),
+            ])
+            world_target_pose = np.concatenate([
+                np.array(target_gripper_pose.p),
+                np.array(target_gripper_pose.q),
+            ])
+            root_p, root_q = self._trans_from_world_to_base(world_base_pose, world_target_pose)
+
+            T_in_root = np.eye(4)
+            T_in_root[:3, :3] = t3d.quaternions.quat2mat(root_q)
+            T_in_root[:3, 3] = root_p
+            T_in_base = self.T_base_to_root @ T_in_root
+
+            if self.verbose and CuroboPlanner._trans_debug_count < 2:
+                CuroboPlanner._trans_debug_count += 1
+                self._log(f"[_trans] world target p={list(np.round(np.array(target_gripper_pose.p), 4))}")
+                self._log(f"[_trans] in ROOT frame  p={list(np.round(root_p, 4))}")
+                self._log(f"[_trans] in BASE frame  p={list(np.round(T_in_base[:3, 3], 4))}")
+
+            return T_in_base[:3, 3], t3d.quaternions.mat2quat(T_in_base[:3, :3])
+
+        def _fk_verify(self, joint_angles_list, target_pose_p, target_pose_q, target_world_pose, label=""):
+            """Use FK to verify the planned result and print diagnostics."""
+            q = torch.tensor(joint_angles_list, dtype=torch.float32).cuda().reshape(1, -1)
+            fk_state = self.fk_model.get_state(q)
+            fk_pos = fk_state.ee_position[0].cpu().numpy()
+            fk_quat = fk_state.ee_quaternion[0].cpu().numpy()
+
+            pos_err = np.linalg.norm(fk_pos - np.array(target_pose_p))
+            self._log(f"[FK-{label}] {self._fk_arm_name}")
+            self._log(f"  target  in base_link: p={list(np.round(target_pose_p, 5))}, q={list(np.round(target_pose_q, 5))}")
+            self._log(f"  FK      in base_link: p={list(np.round(fk_pos, 5))}, q={list(np.round(fk_quat, 5))}")
+            self._log(f"  pos error (base_link): {pos_err:.6f} m")
+
+            T_fk_base = np.eye(4)
+            T_fk_base[:3, :3] = t3d.quaternions.quat2mat(fk_quat)
+            T_fk_base[:3, 3] = fk_pos
+            T_fk_root = self.T_root_to_base @ T_fk_base
+            fk_root_p = T_fk_root[:3, 3]
+            fk_root_q = t3d.quaternions.mat2quat(T_fk_root[:3, :3])
+
+            robot_p = np.array(self.robot_origion_pose.p)
+            robot_q = np.array(self.robot_origion_pose.q)
+            wRb = t3d.quaternions.quat2mat(robot_q)
+            fk_world_p = wRb @ fk_root_p + robot_p
+            fk_world_q = t3d.quaternions.mat2quat(wRb @ T_fk_root[:3, :3])
+
+            target_world_p = np.array(target_world_pose.p)
+            world_err = np.linalg.norm(fk_world_p - target_world_p)
+            self._log(f"  target  in world:     p={list(np.round(target_world_p, 5))}")
+            self._log(f"  FK      in world:     p={list(np.round(fk_world_p, 5))}, q={list(np.round(fk_world_q, 5))}")
+            self._log(f"  pos error (world):    {world_err:.6f} m")
+            return fk_world_p, world_err
+
         def plan_path(
             self,
             curr_joint_pos,
@@ -97,41 +302,34 @@ try:
             constraint_pose=None,
             arms_tag=None,
         ):  
-            world_base_pose = np.concatenate([
-                np.array(self.robot_origion_pose.p),
-                np.array(self.robot_origion_pose.q),
-            ])
-            world_target_pose = np.concatenate([np.array(target_gripper_pose.p), np.array(target_gripper_pose.q)])
-            target_pose_p, target_pose_q = self._trans_from_world_to_base(world_base_pose, world_target_pose)
-            if not ("aloha-agilex" in self.yml_path):
-                target_pose_p[0] += self.frame_bias[0]
-                target_pose_p[1] += self.frame_bias[1]
-                target_pose_p[2] += self.frame_bias[2]
-            else: # patch for aloha-agilex
-                T_target = t3d.affines.compose(target_pose_p, t3d.quaternions.quat2mat(target_pose_q), [1, 1, 1])
-                T_bias = t3d.affines.compose(self.frame_bias, np.eye(3), [1, 1, 1])
-
-                if arms_tag == "left":
-                    rot = t3d.axangles.axangle2mat([0, 0, 1], -0.02)
-                elif arms_tag == "right":
-                    rot = t3d.axangles.axangle2mat([0, 0, 1], -0.01)
-                else:
-                    raise ValueError(f"Invalid arms_tag: {arms_tag}")
-
-                T_rot = t3d.affines.compose([0, 0, 0], rot, [1, 1, 1])
-                T_new = T_rot @ T_bias @ T_target
-                target_pose_p = T_new[:3, 3]
-                target_pose_q = t3d.quaternions.mat2quat(T_new[:3, :3])
-
+            target_pose_p, target_pose_q = self._trans_world_to_curobo_frame(target_gripper_pose)
+            ## Temporarily add the successful xyz coordinates ##
+            # target_pose_p = [0.35, 0.23, 0.09]  # Example: using 0.35, 0.23, 0.09
+            # target_pose_q = [1., 0., 0., 0.]
+            # ## End temporary addition ## 
+            # # goal_pose_of_gripper = CuroboPose.from_list(list(target_pose_p) + list(target_pose_q))
+            # print(f'[plan_path] {self._fk_arm_name} target_pose_p: {list(np.round(target_pose_p, 5))} target_pose_q: {list(np.round(target_pose_q, 5))}')
+            # Remove the hardcoded position and quaternion
+            # target_pose_p = np.array([0.25, 0.3, 0.09] )
+            # target_pose_q = np.array([1.0, 0.0, 0.0, 0.0])
+            # print('[debug]: target_pose_q: ', target_pose_q)
             goal_pose_of_ee = CuroboPose.from_list(list(target_pose_p) + list(target_pose_q))
+
             joint_indices = [self.all_joints.index(name) for name in self.active_joints_name if name in self.all_joints]
             joint_angles = [curr_joint_pos[index] for index in joint_indices]
-            joint_angles = [round(angle, 5) for angle in joint_angles]  # avoid the precision problem
+            joint_angles = [round(angle, 5) for angle in joint_angles]
             start_joint_states = JointState.from_position(
                 torch.tensor(joint_angles).cuda().reshape(1, -1),
                 joint_names=self.active_joints_name,
             )
-            # plan
+            try:
+                vq, vq_status = self.motion_gen.check_start_state(start_joint_states)
+                self._log(f"[plan_path] {self._fk_arm_name} check_start_state: valid={vq}, status={vq_status}")
+            except Exception as diag_e:
+                self._log(f"[plan_path] {self._fk_arm_name} check_start_state error: {diag_e}")
+
+            self._fk_verify(joint_angles, target_pose_p, target_pose_q, target_gripper_pose, label="START")
+
             plan_config = MotionGenPlanConfig(max_attempts=10)
             if constraint_pose is not None:
                 pose_cost_metric = PoseCostMetric(
@@ -139,18 +337,27 @@ try:
                     hold_vec_weight=self.motion_gen.tensor_args.to_device(constraint_pose),
                 )
                 plan_config.pose_cost_metric = pose_cost_metric
-
+            self._log(f"[plan_path] {self._fk_arm_name} planning...")
             result = self.motion_gen.plan_single(start_joint_states, goal_pose_of_ee, plan_config)
-
-            # output
+            
             res_result = dict()
             if result.success.item() == False:
                 res_result["status"] = "Fail"
+                self._log(f"[plan_path] {self._fk_arm_name} FAILED")
                 return res_result
             else:
                 res_result["status"] = "Success"
                 res_result["position"] = np.array(result.interpolated_plan.position.to("cpu"))
                 res_result["velocity"] = np.array(result.interpolated_plan.velocity.to("cpu"))
+
+                final_joints = res_result["position"][-1].tolist()
+                fk_world_p, world_err = self._fk_verify(
+                    final_joints, target_pose_p, target_pose_q, target_gripper_pose, label="END"
+                )
+                self._log(
+                    f"[plan_path] {self._fk_arm_name} SUCCESS, "
+                    f"{res_result['position'].shape[0]} steps, world_err={world_err:.6f}m"
+                )
                 return res_result
 
         def plan_batch(
@@ -175,45 +382,33 @@ try:
             """
 
             num_poses = len(target_gripper_pose_list)
-            # transformation from world to arm's base
-            world_base_pose = np.concatenate([
-                np.array(self.robot_origion_pose.p),
-                np.array(self.robot_origion_pose.q),
-            ])
+            self._log(f"[plan_batch] num_poses={num_poses}")
             poses_list = []
-            for target_gripper_pose in target_gripper_pose_list:
-                world_target_pose = np.concatenate([np.array(target_gripper_pose.p), np.array(target_gripper_pose.q)])
-                base_target_pose_p, base_target_pose_q = self._trans_from_world_to_base(world_base_pose, world_target_pose)
-
-                if not ("aloha-agilex" in self.yml_path):
-                    base_target_pose_p[0] += self.frame_bias[0]
-                    base_target_pose_p[1] += self.frame_bias[1]
-                    base_target_pose_p[2] += self.frame_bias[2]
-                else: # patch for aloha-agilex
-                    T_target = t3d.affines.compose(base_target_pose_p, t3d.quaternions.quat2mat(base_target_pose_q), [1, 1, 1])
-                    T_bias = t3d.affines.compose(self.frame_bias, np.eye(3), [1, 1, 1])
-
-                    if arms_tag == "left":
-                        rot = t3d.axangles.axangle2mat([0, 0, 1], -0.02)
-                    elif arms_tag == "right":
-                        rot = t3d.axangles.axangle2mat([0, 0, 1], -0.01)
-                    else:
-                        raise ValueError(f"Invalid arms_tag: {arms_tag}")
-
-                    T_rot = t3d.affines.compose([0, 0, 0], rot, [1, 1, 1])
-                    T_new = T_rot @ T_bias @ T_target
-                    base_target_pose_p = T_new[:3, 3]
-                    base_target_pose_q = t3d.quaternions.mat2quat(T_new[:3, :3])
-
-                base_target_pose_list = list(base_target_pose_p) + list(base_target_pose_q)
-                poses_list.append(base_target_pose_list)
+            for idx, target_gripper_pose in enumerate(target_gripper_pose_list):
+                p, q = self._trans_world_to_curobo_frame(target_gripper_pose)
+                poses_list.append(list(p) + list(q))
+                if idx == 0:
+                    self._log(
+                        f"[plan_batch] first target in base_link: "
+                        f"p={list(np.round(p, 4))}, q={list(np.round(q, 4))}"
+                    )
 
             poses_cuda = torch.tensor(poses_list, dtype=torch.float32).cuda()
             goal_pose_of_ee = CuroboPose(poses_cuda[:, :3], poses_cuda[:, 3:])
             joint_indices = [self.all_joints.index(name) for name in self.active_joints_name if name in self.all_joints]
             joint_angles = [curr_joint_pos[index] for index in joint_indices]
             joint_angles = [round(angle, 5) for angle in joint_angles]  # avoid the precision problem
+            self._log(f"[plan_batch] start joints ({len(joint_angles)}): {[round(a,4) for a in joint_angles]}")
             joint_angles_cuda = (torch.tensor(joint_angles, dtype=torch.float32).cuda().reshape(1, -1))
+
+            # diagnose start state with single-target MotionGen
+            single_start = JointState.from_position(joint_angles_cuda.clone(), joint_names=self.active_joints_name)
+            try:
+                vq, vq_status = self.motion_gen.check_start_state(single_start)
+                self._log(f"[plan_batch] check_start_state: valid={vq}, status={vq_status}")
+            except Exception as diag_e:
+                self._log(f"[plan_batch] check_start_state error: {diag_e}")
+
             joint_angles_cuda = torch.cat([joint_angles_cuda] * num_poses, dim=0)
             start_joint_states = JointState.from_position(joint_angles_cuda, joint_names=self.active_joints_name)
             # plan
@@ -228,6 +423,9 @@ try:
             try:
                 result = self.motion_gen_batch.plan_batch(start_joint_states, goal_pose_of_ee, plan_config)
             except Exception as e:
+                import traceback
+                print(f"[plan_batch] EXCEPTION: {e}")
+                traceback.print_exc()
                 return {"status": ["Failure" for i in range(10)]}
 
             # output
@@ -236,6 +434,14 @@ try:
             success_array = result.success.cpu().numpy()
             status_array = np.array(["Success" if s else "Failure" for s in success_array], dtype=object)
             res_result["status"] = status_array
+            n_success = np.sum(success_array)
+            self._log(f"[plan_batch] {n_success}/{len(success_array)} succeeded")
+            if n_success == 0:
+                try:
+                    self._log(f"[plan_batch] valid_query: {result.valid_query}")
+                    if hasattr(result, 'status') and result.status is not None:
+                        self._log(f"[plan_batch] status: {result.status}")
+                except: pass
 
             if np.all(res_result["status"] == "Failure"):
                 return res_result
@@ -245,15 +451,53 @@ try:
             return res_result
 
         def plan_grippers(self, now_val, target_val):
-            num_step = 200
-            dis_val = target_val - now_val
-            step = dis_val / num_step
-            res = {}
-            vals = np.linspace(now_val, target_val, num_step)
-            res["num_step"] = num_step
-            res["per_step"] = step
-            res["result"] = vals
-            return res
+            return _plan_gripper_profile(
+                now_val=now_val,
+                target_val=target_val,
+                dt=1 / 250,
+                max_vel=4.0,
+                acc=30.0,
+                min_steps=6,
+                max_steps=180,
+            )
+
+        @staticmethod
+        def _compute_urdf_root_to_base_transform(yml_data):
+            """Parse URDF and compute the 4x4 transform from URDF root link to CuRobo base_link."""
+            import xml.etree.ElementTree as ET
+
+            urdf_path = yml_data['robot_cfg']['kinematics']['urdf_path']
+            base_link = yml_data['robot_cfg']['kinematics']['base_link']
+
+            tree = ET.parse(urdf_path)
+            urdf_root = tree.getroot()
+
+            parent_map = {}
+            joint_map = {}
+            for j in urdf_root.findall('.//joint'):
+                parent_link = j.find('parent').get('link')
+                child_link = j.find('child').get('link')
+                parent_map[child_link] = parent_link
+                joint_map[child_link] = j
+
+            chain = []
+            current = base_link
+            while current in parent_map:
+                j = joint_map[current]
+                origin = j.find('origin')
+                xyz = [float(v) for v in (origin.get('xyz', '0 0 0') if origin is not None else '0 0 0').split()]
+                rpy = [float(v) for v in (origin.get('rpy', '0 0 0') if origin is not None else '0 0 0').split()]
+                chain.append((xyz, rpy))
+                current = parent_map[current]
+            chain.reverse()
+
+            T = np.eye(4)
+            for xyz, rpy in chain:
+                T_joint = np.eye(4)
+                T_joint[:3, :3] = t3d.euler.euler2mat(rpy[0], rpy[1], rpy[2], axes='sxyz')
+                T_joint[:3, 3] = xyz
+                T = T @ T_joint
+            return T
 
         def _trans_from_world_to_base(self, base_pose, target_pose):
             '''
@@ -423,12 +667,12 @@ class MplibPlanner:
         return result
 
     def plan_grippers(self, now_val, target_val):
-        num_step = 200  # TODO
-        dis_val = target_val - now_val
-        per_step = dis_val / num_step
-        res = {}
-        vals = np.linspace(now_val, target_val, num_step)
-        res["num_step"] = num_step
-        res["per_step"] = per_step  # dis per step
-        res["result"] = vals
-        return res
+        return _plan_gripper_profile(
+            now_val=now_val,
+            target_val=target_val,
+            dt=1 / 250,
+            max_vel=4.0,
+            acc=30.0,
+            min_steps=6,
+            max_steps=180,
+        )
