@@ -10,7 +10,7 @@ fan_inner_radius: 0.3
 fan_angle_deg: 200
 fan_center_deg: 90
 table_thickness: 0.05
-episode_num: 30
+episode_num: 10
 use_seed: false
 save_freq: 15
 embodiment: [astribot]

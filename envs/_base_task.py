@@ -173,6 +173,7 @@ class Base_Task(gym.Env):
         # starts exactly from configured homestate.
         self.robot.move_to_homestate()
         self.robot.set_origin_endpose()
+        self._sync_curobo_tabletop_collisions()
 
         if self.eval_mode:
             with open(os.path.join(CONFIGS_PATH, "_eval_step_limit.yml"), "r") as f:
@@ -331,7 +332,7 @@ class Base_Task(gym.Env):
 
         self.wall = create_box(
             self.scene,
-            sapien.Pose(p=[0, 1.05, 1.5]),
+            sapien.Pose(p=[0, 1.15, 1.5]),
             half_size=[3, 0.6, 1.5],
             color=(1, 0.9, 0.9),
             name="wall",
@@ -485,6 +486,88 @@ class Base_Task(gym.Env):
         self.scene.step()  # run a physical step
         self.scene.update_render()  # sync pose from SAPIEN to renderer
 
+    @staticmethod
+    def _entity_is_static_rigidbody(entity):
+        try:
+            for comp in entity.get_components():
+                cname = comp.__class__.__name__.lower()
+                if "rigidstatic" in cname:
+                    return True
+                if "rigiddynamic" in cname:
+                    return False
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
+    def _safe_dims_from_actor_cfg(cfg):
+        if cfg is None:
+            return None
+        ext = np.array(cfg.get("extents", []), dtype=np.float64).reshape(-1)
+        if ext.shape[0] < 3:
+            return None
+        scale = cfg.get("scale", [1.0, 1.0, 1.0])
+        if np.isscalar(scale):
+            scale_xyz = np.array([float(scale), float(scale), float(scale)], dtype=np.float64)
+        else:
+            scale_xyz = np.array(scale, dtype=np.float64).reshape(-1)
+            if scale_xyz.shape[0] < 3:
+                scale_xyz = np.array([1.0, 1.0, 1.0], dtype=np.float64)
+            else:
+                scale_xyz = scale_xyz[:3]
+        dims = np.abs(ext[:3] * scale_xyz)
+        # create_box stores half_size in extents; convert to full size.
+        if "functional_matrix" in cfg and "contact_points_pose" in cfg:
+            dims = 2.0 * dims
+        dims = np.maximum(dims, 1e-3)
+        return dims
+
+    def _collect_tabletop_collision_cuboids(self):
+        cuboids = []
+        visited = set()
+        skip_names = {"table", "wall", "ground"}
+
+        for _, value in vars(self).items():
+            if not isinstance(value, (Actor, ArticulationActor)):
+                continue
+            if id(value) in visited:
+                continue
+            visited.add(id(value))
+
+            actor_name = str(value.get_name())
+            if actor_name in skip_names or actor_name == "":
+                continue
+
+            # Only add static rigid actors and articulated assets (e.g., cabinet).
+            if isinstance(value, Actor):
+                if not self._entity_is_static_rigidbody(value.actor):
+                    continue
+
+            dims = self._safe_dims_from_actor_cfg(getattr(value, "config", None))
+            if dims is None:
+                continue
+            pose = value.get_pose()
+            cuboids.append({
+                "name": f"scene_{actor_name}_{len(cuboids)}",
+                "dims": dims.tolist(),
+                "pose": list(np.array(pose.p, dtype=np.float64).tolist()) + list(np.array(pose.q, dtype=np.float64).tolist()),
+            })
+        return cuboids
+
+    def _sync_curobo_tabletop_collisions(self):
+        if not hasattr(self, "robot") or self.robot is None:
+            return
+        if not hasattr(self.robot, "update_world_cuboids"):
+            return
+        try:
+            cuboids = self._collect_tabletop_collision_cuboids()
+            self.robot.update_world_cuboids(cuboids)
+            if self.verbose_diagnostics:
+                print(f"[Base_Task] synced {len(cuboids)} tabletop cuboids to CuRobo world")
+        except Exception as e:
+            if self.verbose_diagnostics:
+                print(f"[Base_Task] sync curobo tabletop collisions failed: {e}")
+
     # =========================================================== Sapien ===========================================================
 
     def _update_render(self):
@@ -567,13 +650,17 @@ class Base_Task(gym.Env):
             left_jointstate = self.robot.get_left_arm_jointState()
             right_jointstate = self.robot.get_right_arm_jointState()
             head_jointstate = self.robot.get_head_jointState()
+            torso_jointstate = self.robot.get_torso_jointState()
 
             pkl_dic["joint_action"]["left_arm"] = left_jointstate[:-1]
             pkl_dic["joint_action"]["left_gripper"] = left_jointstate[-1]
             pkl_dic["joint_action"]["right_arm"] = right_jointstate[:-1]
             pkl_dic["joint_action"]["right_gripper"] = right_jointstate[-1]
             pkl_dic["joint_action"]["head"] = head_jointstate
-            pkl_dic["joint_action"]["vector"] = np.array(left_jointstate + right_jointstate + head_jointstate)
+            pkl_dic["joint_action"]["torso"] = torso_jointstate
+            pkl_dic["joint_action"]["vector"] = np.array(
+                left_jointstate + right_jointstate + head_jointstate + torso_jointstate
+            )
         # pointcloud
         if self.data_type.get("pointcloud", False):
             pkl_dic["pointcloud"] = self.cameras.get_pcd(self.data_type.get("conbine", False))
@@ -1098,21 +1185,40 @@ class Base_Task(gym.Env):
 
         for left, right in zip(left_actions, right_actions):
 
-            if ((left is not None and left.action != "move_head" and left.arm_tag != "left")
-                    or (right is not None and right.action != "move_head" and right.arm_tag != "right")):  # check
+            aux_actions = {"move_head", "move_torso"}
+            if ((left is not None and left.action not in aux_actions and left.arm_tag != "left")
+                    or (right is not None and right.action not in aux_actions and right.arm_tag != "right")):  # check
                 raise ValueError(f"Invalid arm tag: {left.arm_tag} or {right.arm_tag}. Must be 'left' or 'right'.")
 
             left_is_head = left is not None and left.action == "move_head"
             right_is_head = right is not None and right.action == "move_head"
-            if left_is_head or right_is_head:
-                if (left is not None and not left_is_head) or (right is not None and not right_is_head):
-                    raise ValueError("move_head action cannot be mixed with arm/gripper action in the same step.")
+            left_is_torso = left is not None and left.action == "move_torso"
+            right_is_torso = right is not None and right.action == "move_torso"
+            if left_is_head or right_is_head or left_is_torso or right_is_torso:
+                if (left is not None and left.action not in aux_actions) or (right is not None and right.action not in aux_actions):
+                    raise ValueError("move_head/move_torso action cannot be mixed with arm/gripper action in the same step.")
+
                 head_delta = np.zeros(2, dtype=np.float64)
+                torso_delta = np.zeros(1, dtype=np.float64)
+                has_head = False
+                has_torso = False
                 if left_is_head:
                     head_delta += np.array(left.target_head_delta, dtype=np.float64)
+                    has_head = True
                 if right_is_head:
                     head_delta += np.array(right.target_head_delta, dtype=np.float64)
-                self.move_head(head_delta, save_freq=save_freq)
+                    has_head = True
+                if left_is_torso:
+                    torso_delta += np.array(left.target_torso_delta, dtype=np.float64)
+                    has_torso = True
+                if right_is_torso:
+                    torso_delta += np.array(right.target_torso_delta, dtype=np.float64)
+                    has_torso = True
+
+                if has_head:
+                    self.move_head(head_delta, save_freq=save_freq)
+                if has_torso:
+                    self.move_torso(torso_delta, save_freq=save_freq)
                 continue
 
             if (left is not None and left.action == "move") and (right is not None
@@ -1752,6 +1858,172 @@ class Base_Task(gym.Env):
         head_plan = self._build_head_joint_plan(delta, min_steps=settle_steps)
         return self._execute_head_plan(head_plan, save_freq=save_freq)
 
+    def _get_torso_joint_state_now(self):
+        torso_now = np.array(self.robot.get_torso_real_jointState(), dtype=np.float64).reshape(-1)
+        if torso_now.shape[0] == 0:
+            torso_now = np.array(self.robot.get_torso_jointState(), dtype=np.float64).reshape(-1)
+        if torso_now.shape[0] == 0:
+            return None
+        return torso_now
+
+    def _clip_torso_target_to_limits(self, target_rad, default_now=None):
+        target_rad = np.array(target_rad, dtype=np.float64).reshape(-1)
+        if target_rad.shape[0] == 0:
+            raise ValueError("Torso target cannot be empty.")
+
+        torso_now = self._get_torso_joint_state_now() if default_now is None else np.array(default_now, dtype=np.float64)
+        if torso_now is None or torso_now.shape[0] == 0:
+            return None
+
+        dof = torso_now.shape[0]
+        target = np.array(torso_now, dtype=np.float64)
+        assign_num = min(dof, target_rad.shape[0])
+        target[:assign_num] = target_rad[:assign_num]
+
+        for i in range(min(dof, len(self.robot.torso_joints))):
+            target[i] = self.robot._clip_joint_target_to_limits(self.robot.torso_joints[i], target[i])
+        return target
+
+    def _build_torso_joint_plan(self, delta_rad, min_steps=None):
+        delta_rad = np.array(delta_rad, dtype=np.float64).reshape(-1)
+        if delta_rad.shape[0] == 0:
+            raise ValueError("Torso delta cannot be empty.")
+
+        torso_now = self._get_torso_joint_state_now()
+        if torso_now is None:
+            return None
+
+        dof = torso_now.shape[0]
+        if delta_rad.shape[0] < dof:
+            delta_rad = np.concatenate(
+                [delta_rad, np.zeros(dof - delta_rad.shape[0], dtype=np.float64)],
+                axis=0,
+            )
+        delta = delta_rad[:dof]
+        target = self._clip_torso_target_to_limits(torso_now + delta, default_now=torso_now)
+        if target is None:
+            return None
+        delta = target - torso_now
+        path_len = float(np.max(np.abs(delta)))
+
+        # Trapezoidal profile with fixed acceleration and bounded max velocity.
+        v_max = max(float(getattr(self.robot, "torso_motion_max_vel", getattr(self.robot, "head_motion_max_vel", 10))), 1e-6)
+        acc = max(float(getattr(self.robot, "torso_motion_acc", getattr(self.robot, "head_motion_acc", 25))), 1e-6)
+        dt = 1.0 / 250.0
+        try:
+            scene_dt = float(self.scene.get_timestep())
+            if scene_dt > 0:
+                dt = scene_dt
+        except Exception:
+            pass
+        min_steps = 2 if min_steps is None else max(1, int(min_steps))
+
+        if path_len < 1e-9:
+            torso_pos = np.repeat(torso_now.reshape(1, -1), min_steps, axis=0)
+            torso_vel = np.zeros_like(torso_pos, dtype=np.float64)
+            return {
+                "position": torso_pos,
+                "velocity": torso_vel,
+                "num_step": torso_pos.shape[0],
+            }
+
+        t_acc_nom = v_max / acc
+        d_acc_nom = 0.5 * acc * (t_acc_nom**2)
+        if path_len <= 2.0 * d_acc_nom:
+            # Triangle profile: no cruise stage for small-angle motion.
+            t_acc = np.sqrt(path_len / acc)
+            t_flat = 0.0
+            v_peak = acc * t_acc
+        else:
+            # Trapezoid profile: accel + cruise + decel.
+            t_acc = t_acc_nom
+            t_flat = (path_len - 2.0 * d_acc_nom) / v_max
+            v_peak = v_max
+
+        d_acc = 0.5 * acc * (t_acc**2)
+        total_time = 2.0 * t_acc + t_flat
+        times = np.arange(dt, total_time, dt, dtype=np.float64)
+        times = np.append(times, total_time)
+        if times.shape[0] < min_steps:
+            times = np.linspace(total_time / min_steps, total_time, num=min_steps, dtype=np.float64)
+
+        s = np.zeros_like(times, dtype=np.float64)
+        s_dot = np.zeros_like(times, dtype=np.float64)
+        t_switch = t_acc + t_flat
+        for i, t in enumerate(times):
+            if t <= t_acc:
+                s[i] = 0.5 * acc * (t**2)
+                s_dot[i] = acc * t
+            elif t <= t_switch:
+                s[i] = d_acc + v_peak * (t - t_acc)
+                s_dot[i] = v_peak
+            else:
+                t_dec = t - t_switch
+                s[i] = d_acc + v_peak * t_flat + v_peak * t_dec - 0.5 * acc * (t_dec**2)
+                s_dot[i] = max(v_peak - acc * t_dec, 0.0)
+        s = np.clip(s, 0.0, path_len)
+        s[-1] = path_len
+        s_dot[-1] = 0.0
+
+        progress = s / path_len
+        progress_dot = s_dot / path_len
+        torso_target = target
+        torso_pos = torso_now[None, :] + progress[:, None] * delta[None, :]
+        torso_vel = progress_dot[:, None] * delta[None, :]
+        torso_pos[-1] = torso_target
+        torso_vel[-1] = 0.0
+
+        return {
+            "position": torso_pos,
+            "velocity": torso_vel,
+            "num_step": torso_pos.shape[0],
+        }
+
+    def _execute_torso_plan(self, torso_plan, save_freq=-1):
+        if torso_plan is None:
+            return False
+
+        save_freq = self.save_freq if save_freq == -1 else save_freq
+        if save_freq != None:
+            self._take_picture()
+        for control_idx in range(torso_plan["num_step"]):
+            self.robot.set_torso_joints(
+                torso_plan["position"][control_idx],
+                torso_plan["velocity"][control_idx],
+            )
+            self.scene.step()
+            if self.render_freq and control_idx % self.render_freq == 0:
+                self._update_render()
+                self.viewer.render()
+            if save_freq != None and control_idx % save_freq == 0:
+                self._update_render()
+                self._take_picture()
+        if save_freq != None:
+            self._take_picture()
+        return True
+
+    def move_torso(self, delta_rad, settle_steps=None, save_freq=-1):
+        # keep argument name for compatibility; it is treated as minimum number of interpolation steps
+        torso_plan = self._build_torso_joint_plan(delta_rad, min_steps=settle_steps)
+        if torso_plan is None:
+            print("[Base_Task.move_torso] torso joints are unavailable, skip move_torso action")
+            return False
+        return self._execute_torso_plan(torso_plan, save_freq=save_freq)
+
+    def move_torso_to(self, target_rad, settle_steps=None, save_freq=-1):
+        # Absolute torso motion, sharing the same profile with move_torso(delta).
+        torso_now = self._get_torso_joint_state_now()
+        if torso_now is None:
+            print("[Base_Task.move_torso_to] torso joints are unavailable, skip move_torso_to action")
+            return False
+        target = self._clip_torso_target_to_limits(target_rad, default_now=torso_now)
+        if target is None:
+            print("[Base_Task.move_torso_to] invalid torso target, skip move_torso_to action")
+            return False
+        delta = target - torso_now
+        torso_plan = self._build_torso_joint_plan(delta, min_steps=settle_steps)
+        return self._execute_torso_plan(torso_plan, save_freq=save_freq)
+
     @staticmethod
     def _head_camera_look_error(camera_pose, world_point):
         cam_pos = np.array(camera_pose.p, dtype=np.float64)
@@ -1907,6 +2179,9 @@ class Base_Task(gym.Env):
         tol_angle_rad=1e-3,
         damping=1e-3,
         finite_diff_eps=1e-4,
+        control_mode="head",
+        torso_joint_name="astribot_torso_joint_4",
+        head_joint2_name="astribot_head_joint_2",
     ):
         # Solve absolute head joint target first, then execute absolute move.
         solve_res = self.solve_head_lookat_joint_target(
@@ -1919,8 +2194,73 @@ class Base_Task(gym.Env):
         )
         if solve_res is None:
             return False
-        self.move_head_to(solve_res["target"], settle_steps=settle_steps, save_freq=save_freq)
-        return solve_res
+
+        mode = str(control_mode).lower()
+        if mode in ["head", "head_only", "default"]:
+            self.move_head_to(solve_res["target"], settle_steps=settle_steps, save_freq=save_freq)
+            return solve_res
+        if mode not in ["head2_torso4", "torso4_head2", "torso_head2"]:
+            raise ValueError(
+                f"Unsupported control_mode '{control_mode}'. "
+                "Use one of: 'head', 'head2_torso4'."
+            )
+
+        head_now = self._get_head_joint_state_now()
+        torso_now = self._get_torso_joint_state_now()
+        if head_now is None or head_now.shape[0] < 2:
+            print("[Base_Task.look_at_world_point_with_head] head joints are unavailable for head2_torso4 mode")
+            return False
+        if torso_now is None or torso_now.shape[0] < 1:
+            print("[Base_Task.look_at_world_point_with_head] torso joints are unavailable for head2_torso4 mode")
+            return False
+
+        # Resolve indices by name; fallback to head joint-2 and torso joint-0.
+        head_joint2_idx = None
+        for i, j in enumerate(getattr(self.robot, "head_joints", [])):
+            if j is not None and j.get_name() == str(head_joint2_name):
+                head_joint2_idx = i
+                break
+        if head_joint2_idx is None:
+            head_joint2_idx = min(1, head_now.shape[0] - 1)
+
+        torso_joint4_idx = self._get_preferred_torso_joint_index(joint_name_prefer=torso_joint_name)
+        if torso_joint4_idx is None or torso_joint4_idx >= torso_now.shape[0]:
+            print("[Base_Task.look_at_world_point_with_head] preferred torso joint is unavailable")
+            return False
+
+        solved_head_target = np.array(solve_res["target"], dtype=np.float64).reshape(-1)
+        if solved_head_target.shape[0] < 2:
+            print("[Base_Task.look_at_world_point_with_head] invalid head solve target for head2_torso4 mode")
+            return False
+
+        # Replace head_joint_1 effect by torso_joint_4 (coaxial assumption).
+        delta_head1 = float(solved_head_target[0] - head_now[0])
+        head_target = np.array(head_now, dtype=np.float64)
+        head_target[head_joint2_idx] = solved_head_target[head_joint2_idx]
+
+        torso_target = np.array(torso_now, dtype=np.float64)
+        torso_target[torso_joint4_idx] = torso_now[torso_joint4_idx] + delta_head1
+
+        # Execute absolute motion using the same accel/decel profile machinery.
+        self.move_torso_to(torso_target, settle_steps=settle_steps, save_freq=save_freq)
+        self.move_head_to(head_target, settle_steps=settle_steps, save_freq=save_freq)
+
+        out = dict(solve_res)
+        out["control_mode"] = "head2_torso4"
+        out["mapped_delta_head1_to_torso4"] = delta_head1
+        out["torso_target"] = torso_target.tolist()
+        out["head_target"] = head_target.tolist()
+        out["torso_joint_name"] = str(
+            self.robot.torso_joints[torso_joint4_idx].get_name()
+            if torso_joint4_idx < len(self.robot.torso_joints) and self.robot.torso_joints[torso_joint4_idx] is not None
+            else torso_joint_name
+        )
+        out["head_joint2_name"] = str(
+            self.robot.head_joints[head_joint2_idx].get_name()
+            if head_joint2_idx < len(self.robot.head_joints) and self.robot.head_joints[head_joint2_idx] is not None
+            else head_joint2_name
+        )
+        return out
 
     def _resolve_object_world_point(self, obj, point_type="center", point_id=0, offset=None, z_offset=0.0):
         if obj is None:
@@ -1994,6 +2334,9 @@ class Base_Task(gym.Env):
         tol_angle_rad=1e-3,
         damping=1e-3,
         finite_diff_eps=1e-4,
+        control_mode="head",
+        torso_joint_name="astribot_torso_joint_4",
+        head_joint2_name="astribot_head_joint_2",
     ):
         world_point = self._resolve_object_world_point(
             obj=obj,
@@ -2011,10 +2354,420 @@ class Base_Task(gym.Env):
             tol_angle_rad=tol_angle_rad,
             damping=damping,
             finite_diff_eps=finite_diff_eps,
+            control_mode=control_mode,
+            torso_joint_name=torso_joint_name,
+            head_joint2_name=head_joint2_name,
+        )
+
+    def _get_default_scan_object_list(self):
+        scan_objects = []
+        visited = set()
+        skip_attr = {
+            "table",
+            "wall",
+            "ground",
+            "cluttered_objs",
+            "record_cluttered_objects",
+            "prohibited_area",
+            "size_dict",
+        }
+        skip_names = {"table", "wall", "ground"}
+
+        def collect_candidate(v):
+            if v is None:
+                return
+            if isinstance(v, dict):
+                for x in v.values():
+                    collect_candidate(x)
+                return
+            if isinstance(v, (list, tuple, set)):
+                for x in v:
+                    collect_candidate(x)
+                return
+            if hasattr(v, "get_pose"):
+                oid = id(v)
+                if oid in visited:
+                    return
+                visited.add(oid)
+                try:
+                    name = str(v.get_name())
+                except Exception:
+                    name = ""
+                if name in skip_names:
+                    return
+                if name :
+                    scan_objects.append(v)
+                
+
+        for attr, value in vars(self).items():
+            if attr in skip_attr:
+                continue
+            collect_candidate(value)
+        # for obj in scan_objects:
+        #     print(obj.get_name())
+        return scan_objects
+
+    def _extract_scan_world_point(self, obj):
+        if obj is None:
+            return None
+        if isinstance(obj, (list, tuple, np.ndarray)):
+            arr = np.array(obj, dtype=np.float64).reshape(-1)
+            if arr.shape[0] >= 3:
+                return arr[:3]
+            return None
+        if hasattr(obj, "get_pose"):
+            try:
+                pose = obj.get_pose()
+                return np.array(pose.p, dtype=np.float64).reshape(-1)[:3]
+            except Exception:
+                return None
+        return None
+
+    def _get_scan_thetas_from_object_list(self, object_list, fallback_thetas=(0.95, -0.95), theta_padding=0.0):
+        fallback = np.array(fallback_thetas, dtype=np.float64).reshape(-1)
+        if fallback.shape[0] == 0:
+            fallback = np.array([0.95, -0.95], dtype=np.float64)
+        fallback_max = float(np.max(fallback))
+        fallback_min = float(np.min(fallback))
+
+        if object_list is None:
+            object_list = []
+        if not isinstance(object_list, (list, tuple, set)):
+            object_list = [object_list]
+
+        theta_list = []
+        pad = abs(float(theta_padding))
+        for obj in object_list:
+            world_point = self._extract_scan_world_point(obj)
+            if world_point is None or world_point.shape[0] < 2:
+                continue
+            try:
+                if hasattr(self, "robot_root_xy") and hasattr(self, "robot_yaw"):
+                    point_cyl = world_to_robot(world_point.tolist(), self.robot_root_xy, self.robot_yaw)
+                    theta = float(point_cyl[1])
+                else:
+                    theta = float(np.arctan2(world_point[1], world_point[0]))
+            except Exception:
+                continue
+            if np.isfinite(theta):
+                theta_list.append(theta)
+
+        if len(theta_list) == 0:
+            theta_max, theta_min = fallback_max, fallback_min
+        else:
+            theta_max = float(np.max(theta_list) + pad)
+            theta_min = float(np.min(theta_list) - pad)
+            if theta_min > theta_max:
+                theta_min, theta_max = theta_max, theta_min
+
+        if abs(theta_max - theta_min) < 1e-6:
+            return [theta_max]
+        return [theta_max, theta_min]
+
+    @staticmethod
+    def _wrap_to_pi(angle_rad):
+        return (float(angle_rad) + np.pi) % (2.0 * np.pi) - np.pi
+
+    def _get_preferred_torso_joint_index(self, joint_name_prefer="astribot_torso_joint_4"):
+        joints = getattr(self.robot, "torso_joints", [])
+        if len(joints) == 0:
+            return None
+        prefer = str(joint_name_prefer) if joint_name_prefer is not None else ""
+        if prefer:
+            for i, joint in enumerate(joints):
+                if joint is not None and joint.get_name() == prefer:
+                    return i
+        return 0
+
+    def _get_torso_facing_link(self, torso_joint_index):
+        # Prefer head camera as "robot forward" reference. If unavailable,
+        # fallback to the torso joint child link.
+        if getattr(self.robot, "head_camera", None) is not None:
+            return self.robot.head_camera
+        joints = getattr(self.robot, "torso_joints", [])
+        if torso_joint_index is None or torso_joint_index < 0 or torso_joint_index >= len(joints):
+            return None
+        joint = joints[torso_joint_index]
+        if joint is None:
+            return None
+        child_link = getattr(joint, "child_link", None)
+        if child_link is not None:
+            return child_link
+        return None
+
+    @staticmethod
+    def _compute_link_planar_facing_yaw(link):
+        pose = link.get_pose()
+        rot = t3d.quaternions.quat2mat(np.array(pose.q, dtype=np.float64))
+        forward = np.array(rot[:, 0], dtype=np.float64)
+        fxy = forward[:2]
+        fxy_norm = float(np.linalg.norm(fxy))
+        if fxy_norm < 1e-9:
+            # Fallback to local +Y projection if local +X is near world Z.
+            forward = np.array(rot[:, 1], dtype=np.float64)
+            fxy = forward[:2]
+            fxy_norm = float(np.linalg.norm(fxy))
+            if fxy_norm < 1e-9:
+                return None, np.array(pose.p, dtype=np.float64)
+        fxy = fxy / fxy_norm
+        yaw = float(np.arctan2(fxy[1], fxy[0]))
+        return yaw, np.array(pose.p, dtype=np.float64)
+
+    def solve_torso_face_world_point(
+        self,
+        world_point,
+        init_torso_qpos=None,
+        max_iter=30,
+        tol_yaw_rad=1e-2,
+        finite_diff_eps=1e-4,
+        max_step_rad=0.35,
+        joint_name_prefer="astribot_torso_joint_4",
+        yaw_deadband_rad=None,
+        yaw_hysteresis_rad=None,
+    ):
+        if self.robot.torso_entity is None or len(self.robot.torso_joints) == 0:
+            print("[Base_Task.solve_torso_face_world_point] torso joints are unavailable")
+            return None
+
+        world_point = np.array(world_point, dtype=np.float64).reshape(-1)
+        if world_point.shape[0] != 3:
+            raise ValueError(f"world_point must have shape (3,), got {world_point.shape}")
+
+        torso_now = self._get_torso_joint_state_now()
+        if torso_now is None or torso_now.shape[0] == 0:
+            print("[Base_Task.solve_torso_face_world_point] torso state is unavailable")
+            return None
+
+        joint_idx = self._get_preferred_torso_joint_index(joint_name_prefer=joint_name_prefer)
+        if joint_idx is None or joint_idx >= torso_now.shape[0]:
+            print("[Base_Task.solve_torso_face_world_point] preferred torso joint is unavailable")
+            return None
+
+        if yaw_deadband_rad is None:
+            yaw_deadband_rad = float(getattr(self.robot, "torso_face_world_deadband_rad", 0.0))
+        if yaw_hysteresis_rad is None:
+            yaw_hysteresis_rad = float(getattr(self.robot, "torso_face_hysteresis_rad", 0.0))
+        yaw_deadband_rad = max(float(yaw_deadband_rad), 0.0)
+        yaw_hysteresis_rad = max(float(yaw_hysteresis_rad), 0.0)
+        hold_band = yaw_deadband_rad + yaw_hysteresis_rad
+
+        if init_torso_qpos is not None:
+            init = self._clip_torso_target_to_limits(init_torso_qpos, default_now=torso_now)
+            q = np.array(init if init is not None else torso_now, dtype=np.float64)
+        else:
+            q = np.array(torso_now, dtype=np.float64)
+
+        entity = self.robot.torso_entity
+        active_joints = entity.get_active_joints()
+        torso_joint = self.robot.torso_joints[joint_idx]
+        if torso_joint not in active_joints:
+            print("[Base_Task.solve_torso_face_world_point] torso joint is not active in articulation")
+            return None
+        qidx = active_joints.index(torso_joint)
+
+        lower, upper = -np.inf, np.inf
+        try:
+            limits = torso_joint.get_limits()
+            if limits is not None and len(limits) > 0:
+                lower = float(limits[0][0])
+                upper = float(limits[0][1])
+        except Exception:
+            pass
+
+        qpos_backup = entity.get_qpos().copy()
+
+        def set_joint_qpos(v):
+            qpos = qpos_backup.copy()
+            qpos[qidx] = float(v)
+            entity.set_qpos(qpos)
+
+        def eval_error(v):
+            set_joint_qpos(v)
+            facing_link = self._get_torso_facing_link(joint_idx)
+            if facing_link is None:
+                return None
+            facing_yaw, link_pos = self._compute_link_planar_facing_yaw(facing_link)
+            if facing_yaw is None:
+                return None
+            to_target_xy = world_point[:2] - link_pos[:2]
+            if float(np.linalg.norm(to_target_xy)) < 1e-9:
+                return 0.0, facing_yaw, facing_yaw
+            desired_yaw = float(np.arctan2(to_target_xy[1], to_target_xy[0]))
+            yaw_err = self._wrap_to_pi(desired_yaw - facing_yaw)
+            return yaw_err, facing_yaw, desired_yaw
+
+        def apply_deadband(yaw_err):
+            yaw_err = float(yaw_err)
+            abs_err = abs(yaw_err)
+            if abs_err <= yaw_deadband_rad:
+                return 0.0
+            return float(np.sign(yaw_err) * (abs_err - yaw_deadband_rad))
+
+        best_q = float(np.clip(q[joint_idx], lower, upper))
+        best_abs_err = np.inf
+        best_raw_abs_err = np.inf
+        best_facing_yaw = None
+        best_desired_yaw = None
+        eps = max(float(finite_diff_eps), 1e-6)
+        step_lim = max(float(max_step_rad), 1e-3)
+
+        try:
+            q[joint_idx] = best_q
+            for _ in range(max(1, int(max_iter))):
+                cur = eval_error(q[joint_idx])
+                if cur is None:
+                    break
+                raw_err, facing_yaw, desired_yaw = cur
+                raw_abs_err = abs(float(raw_err))
+                err = float(apply_deadband(raw_err))
+                abs_err = abs(err)
+                if abs_err < best_abs_err or (abs_err <= best_abs_err + 1e-8 and raw_abs_err < best_raw_abs_err):
+                    best_abs_err = abs_err
+                    best_raw_abs_err = raw_abs_err
+                    best_q = float(q[joint_idx])
+                    best_facing_yaw = float(facing_yaw)
+                    best_desired_yaw = float(desired_yaw)
+                if raw_abs_err <= hold_band or abs_err <= float(tol_yaw_rad):
+                    break
+
+                q_eps = float(np.clip(q[joint_idx] + eps, lower, upper))
+                if abs(q_eps - q[joint_idx]) < 1e-10:
+                    break
+                nxt = eval_error(q_eps)
+                if nxt is None:
+                    break
+                _, facing_yaw_eps, _ = nxt
+                dyaw = self._wrap_to_pi(facing_yaw_eps - facing_yaw) / (q_eps - q[joint_idx])
+
+                if abs(float(dyaw)) < 1e-5:
+                    sign_ref = np.sign(err if abs_err > 1e-9 else raw_err)
+                    dq = sign_ref * min(max(abs(err), 1e-6), step_lim) * 0.5
+                else:
+                    dq = err / dyaw
+                dq = float(np.clip(dq, -step_lim, step_lim))
+
+                improved = False
+                for s in [1.0, 0.5, 0.25, 0.125]:
+                    q_try = float(np.clip(q[joint_idx] + s * dq, lower, upper))
+                    cand = eval_error(q_try)
+                    if cand is None:
+                        continue
+                    err_try = abs(float(apply_deadband(cand[0])))
+                    if err_try + 1e-8 < abs_err:
+                        q[joint_idx] = q_try
+                        improved = True
+                        break
+                if not improved:
+                    break
+        finally:
+            entity.set_qpos(qpos_backup)
+
+        target = np.array(torso_now, dtype=np.float64)
+        target[joint_idx] = best_q
+        target = self._clip_torso_target_to_limits(target, default_now=torso_now)
+        if target is None:
+            return None
+
+        return {
+            "success": bool(best_abs_err <= float(tol_yaw_rad)),
+            "target": target.tolist(),
+            "torso_joint_index": int(joint_idx),
+            "torso_joint_name": str(torso_joint.get_name()),
+            "yaw_error_rad": float(best_raw_abs_err),
+            "effective_yaw_error_rad": float(best_abs_err),
+            "yaw_deadband_rad": float(yaw_deadband_rad),
+            "yaw_hysteresis_rad": float(yaw_hysteresis_rad),
+            "facing_yaw_rad": float(best_facing_yaw) if best_facing_yaw is not None else None,
+            "desired_yaw_rad": float(best_desired_yaw) if best_desired_yaw is not None else None,
+        }
+
+    def face_world_point_with_torso(
+        self,
+        world_point,
+        settle_steps=None,
+        save_freq=-1,
+        init_torso_qpos=None,
+        max_iter=30,
+        tol_yaw_rad=1e-2,
+        finite_diff_eps=1e-4,
+        max_step_rad=0.35,
+        joint_name_prefer="astribot_torso_joint_4",
+        yaw_deadband_rad=None,
+        yaw_hysteresis_rad=None,
+    ):
+        if yaw_deadband_rad is None:
+            yaw_deadband_rad = float(getattr(self.robot, "torso_face_world_deadband_rad", 0.0))
+        if yaw_hysteresis_rad is None:
+            yaw_hysteresis_rad = float(getattr(self.robot, "torso_face_hysteresis_rad", 0.0))
+
+        solve_res = self.solve_torso_face_world_point(
+            world_point=world_point,
+            init_torso_qpos=init_torso_qpos,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+            finite_diff_eps=finite_diff_eps,
+            max_step_rad=max_step_rad,
+            joint_name_prefer=joint_name_prefer,
+            yaw_deadband_rad=yaw_deadband_rad,
+            yaw_hysteresis_rad=yaw_hysteresis_rad,
+        )
+        if solve_res is None:
+            return False
+        self.move_torso_to(solve_res["target"], settle_steps=settle_steps, save_freq=save_freq)
+        return solve_res
+
+    def face_object_with_torso(
+        self,
+        obj,
+        point_type="center",
+        point_id=0,
+        offset=None,
+        z_offset=0.0,
+        settle_steps=None,
+        save_freq=-1,
+        init_torso_qpos=None,
+        max_iter=30,
+        tol_yaw_rad=1e-2,
+        finite_diff_eps=1e-4,
+        max_step_rad=0.35,
+        joint_name_prefer="astribot_torso_joint_4",
+        yaw_deadband_rad=None,
+        yaw_hysteresis_rad=None,
+    ):
+        world_point = self._resolve_object_world_point(
+            obj=obj,
+            point_type=point_type,
+            point_id=point_id,
+            offset=offset,
+            z_offset=z_offset,
+        )
+        if yaw_deadband_rad is None:
+            yaw_deadband_rad = float(
+                getattr(
+                    self.robot,
+                    "torso_face_object_deadband_rad",
+                    getattr(self.robot, "torso_face_world_deadband_rad", 0.0),
+                )
+            )
+        return self.face_world_point_with_torso(
+            world_point=world_point,
+            settle_steps=settle_steps,
+            save_freq=save_freq,
+            init_torso_qpos=init_torso_qpos,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+            finite_diff_eps=finite_diff_eps,
+            max_step_rad=max_step_rad,
+            joint_name_prefer=joint_name_prefer,
+            yaw_deadband_rad=yaw_deadband_rad,
+            yaw_hysteresis_rad=yaw_hysteresis_rad,
         )
 
     def move_head_action(self, delta_rad, arm_tag: ArmTag = "left"):
         return arm_tag, [Action(arm_tag, "move_head", target_head_delta=delta_rad)]
+
+    def move_torso_action(self, delta_rad, arm_tag: ArmTag = "left"):
+        return arm_tag, [Action(arm_tag, "move_torso", target_torso_delta=delta_rad)]
 
     def close_gripper(self, arm_tag: ArmTag, pos: float = 0.0):
         return arm_tag, [Action(arm_tag, "close", target_gripper_pos=pos)]
@@ -2312,8 +3065,14 @@ class Base_Task(gym.Env):
                 f"Action dim mismatch: expected at least {base_action_dim}, got {actions.shape[1]}"
             )
         head_delta_actions = None
-        if actions.shape[1] >= base_action_dim + 2:
+        torso_delta_actions = None
+        extra_action_dim = actions.shape[1] - base_action_dim
+        if extra_action_dim == 1:
+            torso_delta_actions = actions[:, base_action_dim:base_action_dim + 1]
+        elif extra_action_dim >= 2:
             head_delta_actions = actions[:, base_action_dim:base_action_dim + 2]
+            if extra_action_dim >= 3:
+                torso_delta_actions = actions[:, base_action_dim + 2:base_action_dim + 3]
 
         left_arm_actions, left_gripper_actions, left_current_qpos, left_path = (
             [],
@@ -2411,6 +3170,9 @@ class Base_Task(gym.Env):
         head_plan = None
         if head_delta_actions is not None:
             head_plan = self._build_head_joint_plan(head_delta_actions[0])
+        torso_plan = None
+        if torso_delta_actions is not None:
+            torso_plan = self._build_torso_joint_plan(torso_delta_actions[0])
 
         # ========== Gripper ==========
 
@@ -2447,11 +3209,13 @@ class Base_Task(gym.Env):
 
         now_left_id, now_right_id = 0, 0
         now_head_id = 0
+        now_torso_id = 0
 
         # ========== Control Loop ==========
         while (now_left_id < left_n_step
                or now_right_id < right_n_step
-               or (head_plan is not None and now_head_id < head_plan["num_step"])):
+               or (head_plan is not None and now_head_id < head_plan["num_step"])
+               or (torso_plan is not None and now_torso_id < torso_plan["num_step"])):
 
             if (now_left_id < left_n_step and now_left_id / left_n_step <= now_right_id / right_n_step):
                 if topp_left_flag:
@@ -2481,6 +3245,13 @@ class Base_Task(gym.Env):
                     head_plan["velocity"][now_head_id],
                 )
                 now_head_id += 1
+
+            if torso_plan is not None and now_torso_id < torso_plan["num_step"]:
+                self.robot.set_torso_joints(
+                    torso_plan["position"][now_torso_id],
+                    torso_plan["velocity"][now_torso_id],
+                )
+                now_torso_id += 1
 
             self.scene.step()
             self._update_render()

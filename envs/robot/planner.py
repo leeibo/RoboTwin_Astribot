@@ -168,39 +168,19 @@ try:
             with open(self.yml_path, "r") as f:
                 yml_data = yaml.safe_load(f)
 
-            self.T_root_to_base = self._compute_urdf_root_to_base_transform(yml_data)
-            self.T_base_to_root = np.linalg.inv(self.T_root_to_base)
+            self._root_to_base_chain = self._extract_urdf_root_to_base_chain(yml_data)
+            self.T_root_to_base = np.eye(4, dtype=np.float64)
+            self.T_base_to_root = np.eye(4, dtype=np.float64)
+            self.update_base_frame(curr_joint_pos=None)
             self._log(f"[CuroboPlanner] T_root_to_base:\n{np.round(self.T_root_to_base, 6)}")
             self._log(f"[CuroboPlanner] T_base_to_root:\n{np.round(self.T_base_to_root, 6)}")
 
-            # motion generation — table obstacle: world frame -> base_link frame (full rigid-body)
-            table_world_pos = np.array([0.0, 0.0, 0.72])
-            robot_p = np.array(self.robot_origion_pose.p)
-            robot_q = np.array(self.robot_origion_pose.q)
-            wRb = t3d.quaternions.quat2mat(robot_q)
-            T_table_in_root = np.eye(4)
-            T_table_in_root[:3, :3] = wRb.T                              # rotation: world -> URDF root
-            T_table_in_root[:3, 3] = wRb.T @ (table_world_pos - robot_p) # position: world -> URDF root
-            T_table_in_base = self.T_base_to_root @ T_table_in_root       # URDF root -> base_link
-            table_pos = T_table_in_base[:3, 3]
-            table_q = t3d.quaternions.mat2quat(T_table_in_base[:3, :3])
-            self._log(
-                f"[CuroboPlanner] table in base_link: "
-                f"pos={list(np.round(table_pos, 4))}, q={list(np.round(table_q, 4))}"
-            )
+            self._table_dims = [0.7, 2.0, 0.04]
+            self._table_world_pose = [0.0, 0.0, 0.72, 1.0, 0.0, 0.0, 0.0]
+            self._extra_world_cuboids = []
+            self._world_update_warned = False
+            world_config = self._build_world_config()
 
-            world_config = {
-                "cuboid": {
-                    "table": {
-                        "dims": [0.7, 2, 0.04],
-                        "pose": list(table_pos.tolist()) + list(table_q.tolist()),
-                    },
-                }
-            }
-            self._log(
-                f"[CuroboPlanner] table obstacle ENABLED: "
-                f"pos={list(np.round(table_pos, 4))}, q={list(np.round(table_q, 4))}"
-            )
             motion_gen_config = MotionGenConfig.load_from_robot_config(
                 self.yml_path,
                 world_config,
@@ -236,6 +216,103 @@ try:
         def _log(self, msg: str):
             if self.verbose:
                 print(msg)
+
+        @staticmethod
+        def _to_pose7(pose_like):
+            arr = np.array(pose_like, dtype=np.float64).reshape(-1)
+            if arr.shape[0] != 7:
+                raise ValueError(f"Pose must have 7 values [x,y,z,qw,qx,qy,qz], got shape {arr.shape}.")
+            return arr.tolist()
+
+        def _world_pose_to_base_pose7(self, world_pose7):
+            world_pose7 = self._to_pose7(world_pose7)
+            world_base_pose = np.concatenate([
+                np.array(self.robot_origion_pose.p, dtype=np.float64),
+                np.array(self.robot_origion_pose.q, dtype=np.float64),
+            ])
+            root_p, root_q = self._trans_from_world_to_base(world_base_pose, np.array(world_pose7, dtype=np.float64))
+            T_in_root = np.eye(4, dtype=np.float64)
+            T_in_root[:3, :3] = t3d.quaternions.quat2mat(root_q)
+            T_in_root[:3, 3] = root_p
+            T_in_base = self.T_base_to_root @ T_in_root
+            return list(T_in_base[:3, 3].tolist()) + list(t3d.quaternions.mat2quat(T_in_base[:3, :3]).tolist())
+
+        def _build_world_config(self):
+            table_pose = self._world_pose_to_base_pose7(self._table_world_pose)
+            cuboid_cfg = {
+                "table": {
+                    "dims": list(np.array(self._table_dims, dtype=np.float64).reshape(-1)[:3].tolist()),
+                    "pose": table_pose,
+                }
+            }
+            for idx, item in enumerate(self._extra_world_cuboids):
+                name = str(item.get("name", f"obj_{idx}"))
+                dims = np.array(item.get("dims", [0.1, 0.1, 0.1]), dtype=np.float64).reshape(-1)
+                if dims.shape[0] < 3:
+                    continue
+                dims = np.maximum(dims[:3], 1e-3)
+                pose_world = item.get("pose", None)
+                if pose_world is None:
+                    continue
+                try:
+                    pose_base = self._world_pose_to_base_pose7(pose_world)
+                except Exception:
+                    continue
+                cuboid_cfg[name] = {"dims": list(dims.tolist()), "pose": pose_base}
+            return {"cuboid": cuboid_cfg}
+
+        def _apply_world_config(self, world_config):
+            ok = True
+            for motion_gen in [self.motion_gen, self.motion_gen_batch]:
+                try:
+                    if hasattr(motion_gen, "update_world"):
+                        motion_gen.update_world(world_config)
+                    elif hasattr(motion_gen, "update_world_obstacles"):
+                        motion_gen.update_world_obstacles(world_config)
+                    else:
+                        ok = False
+                except Exception as e:
+                    ok = False
+                    self._log(f"[CuroboPlanner] update_world failed: {e}")
+            if (not ok) and (not self._world_update_warned):
+                self._world_update_warned = True
+                self._log("[CuroboPlanner] world obstacle update API is unavailable; using init-world only.")
+            return ok
+
+        def refresh_world_obstacles(self, curr_joint_pos=None):
+            if curr_joint_pos is not None:
+                self.update_base_frame(curr_joint_pos)
+            world_config = self._build_world_config()
+            self._apply_world_config(world_config)
+            return world_config
+
+        def set_world_extra_cuboids(self, cuboids, curr_joint_pos=None):
+            parsed = []
+            if cuboids is None:
+                cuboids = []
+            for idx, item in enumerate(cuboids):
+                if not isinstance(item, dict):
+                    continue
+                pose = item.get("pose", None)
+                dims = item.get("dims", None)
+                if pose is None or dims is None:
+                    continue
+                try:
+                    pose7 = self._to_pose7(pose)
+                    dims3 = np.maximum(np.array(dims, dtype=np.float64).reshape(-1)[:3], 1e-3)
+                    if dims3.shape[0] != 3:
+                        continue
+                except Exception:
+                    continue
+                parsed.append({
+                    "name": str(item.get("name", f"obj_{idx}")),
+                    "pose": pose7,
+                    "dims": dims3.tolist(),
+                })
+            self._extra_world_cuboids = parsed
+            self.refresh_world_obstacles(curr_joint_pos=curr_joint_pos)
+            self._log(f"[CuroboPlanner] extra world cuboids set: {len(self._extra_world_cuboids)}")
+            return len(self._extra_world_cuboids)
 
         def _trans_world_to_curobo_frame(self, target_gripper_pose):
             """Transform a world-frame sapien.Pose to the CuRobo base_link frame."""
@@ -302,6 +379,8 @@ try:
             constraint_pose=None,
             arms_tag=None,
         ):  
+            self.update_base_frame(curr_joint_pos)
+            self.refresh_world_obstacles(curr_joint_pos=None)
             target_pose_p, target_pose_q = self._trans_world_to_curobo_frame(target_gripper_pose)
             ## Temporarily add the successful xyz coordinates ##
             # target_pose_p = [0.35, 0.23, 0.09]  # Example: using 0.35, 0.23, 0.09
@@ -381,6 +460,8 @@ try:
                 - result['velocity']: numpy array of joint velocities with same shape as position
             """
 
+            self.update_base_frame(curr_joint_pos)
+            self.refresh_world_obstacles(curr_joint_pos=None)
             num_poses = len(target_gripper_pose_list)
             self._log(f"[plan_batch] num_poses={num_poses}")
             poses_list = []
@@ -462,8 +543,11 @@ try:
             )
 
         @staticmethod
-        def _compute_urdf_root_to_base_transform(yml_data):
-            """Parse URDF and compute the 4x4 transform from URDF root link to CuRobo base_link."""
+        def _extract_urdf_root_to_base_chain(yml_data):
+            """
+            Parse URDF and extract the ordered joint chain from URDF root link to CuRobo base_link.
+            Each chain item contains joint name/type/origin/axis.
+            """
             import xml.etree.ElementTree as ET
 
             urdf_path = yml_data['robot_cfg']['kinematics']['urdf_path']
@@ -484,20 +568,94 @@ try:
             current = base_link
             while current in parent_map:
                 j = joint_map[current]
+                joint_name = j.get("name", "")
+                joint_type = j.get("type", "fixed")
                 origin = j.find('origin')
                 xyz = [float(v) for v in (origin.get('xyz', '0 0 0') if origin is not None else '0 0 0').split()]
                 rpy = [float(v) for v in (origin.get('rpy', '0 0 0') if origin is not None else '0 0 0').split()]
-                chain.append((xyz, rpy))
+                axis_tag = j.find('axis')
+                axis_default = "1 0 0" if joint_type in ["revolute", "continuous", "prismatic"] else "0 0 0"
+                axis = [float(v) for v in (axis_tag.get('xyz', axis_default) if axis_tag is not None else axis_default).split()]
+                chain.append({
+                    "name": str(joint_name),
+                    "type": str(joint_type),
+                    "xyz": xyz,
+                    "rpy": rpy,
+                    "axis": axis,
+                })
                 current = parent_map[current]
             chain.reverse()
+            return chain
 
-            T = np.eye(4)
-            for xyz, rpy in chain:
-                T_joint = np.eye(4)
+        @staticmethod
+        def _joint_motion_transform(joint_type, axis, value):
+            T = np.eye(4, dtype=np.float64)
+            jt = str(joint_type).lower()
+            val = float(value)
+            if jt in ["revolute", "continuous"]:
+                axis = np.array(axis, dtype=np.float64).reshape(3)
+                norm = float(np.linalg.norm(axis))
+                if norm > 1e-12:
+                    axis = axis / norm
+                    T[:3, :3] = t3d.axangles.axangle2mat(axis, val)
+            elif jt == "prismatic":
+                axis = np.array(axis, dtype=np.float64).reshape(3)
+                norm = float(np.linalg.norm(axis))
+                if norm > 1e-12:
+                    axis = axis / norm
+                    T[:3, 3] = axis * val
+            return T
+
+        @staticmethod
+        def _compute_root_to_base_transform_from_chain(chain, joint_state_map):
+            T = np.eye(4, dtype=np.float64)
+            for item in chain:
+                xyz = item["xyz"]
+                rpy = item["rpy"]
+                T_joint = np.eye(4, dtype=np.float64)
                 T_joint[:3, :3] = t3d.euler.euler2mat(rpy[0], rpy[1], rpy[2], axes='sxyz')
                 T_joint[:3, 3] = xyz
-                T = T @ T_joint
+                q = float(joint_state_map.get(item["name"], 0.0))
+                T_motion = CuroboPlanner._joint_motion_transform(item["type"], item["axis"], q)
+                # URDF joint transform: parent->child = origin * joint_motion
+                T = T @ T_joint @ T_motion
             return T
+
+        @staticmethod
+        def _compute_urdf_root_to_base_transform(yml_data):
+            """Compute root->base transform from URDF with zero joint positions."""
+            chain = CuroboPlanner._extract_urdf_root_to_base_chain(yml_data)
+            return CuroboPlanner._compute_root_to_base_transform_from_chain(chain, {})
+
+        def _qpos_to_joint_map(self, curr_joint_pos):
+            if curr_joint_pos is None:
+                return {}
+            if isinstance(curr_joint_pos, dict):
+                out = {}
+                for k, v in curr_joint_pos.items():
+                    try:
+                        out[str(k)] = float(np.array(v, dtype=np.float64).reshape(-1)[0])
+                    except Exception:
+                        continue
+                return out
+            try:
+                q = np.array(curr_joint_pos, dtype=np.float64).reshape(-1)
+            except Exception:
+                return {}
+            num = min(len(self.all_joints), q.shape[0])
+            return {str(self.all_joints[i]): float(q[i]) for i in range(num)}
+
+        def update_base_frame(self, curr_joint_pos=None):
+            """
+            Update URDF-root <-> CuRobo-base transforms using current articulation state.
+            Must be called before world/base pose conversions when torso/base-chain joints move.
+            """
+            joint_state_map = self._qpos_to_joint_map(curr_joint_pos)
+            self.T_root_to_base = self._compute_root_to_base_transform_from_chain(
+                self._root_to_base_chain, joint_state_map
+            )
+            self.T_base_to_root = np.linalg.inv(self.T_root_to_base)
+            return self.T_root_to_base, self.T_base_to_root
 
         def _trans_from_world_to_base(self, base_pose, target_pose):
             '''

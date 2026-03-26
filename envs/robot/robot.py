@@ -82,6 +82,10 @@ class Robot:
         self.head_joints_name = []
         self.head_homestate = [0.0, 0.0]
         self.head_entity = None
+        self.torso_joints = []
+        self.torso_joints_name = []
+        self.torso_homestate = [0.0]
+        self.torso_entity = None
 
         left_embodiment_args = kwargs["left_embodiment_config"]
         right_embodiment_args = kwargs["right_embodiment_config"]
@@ -186,6 +190,21 @@ class Robot:
         self.head_homestate = self._parse_head_homestate(left_embodiment_args, len(self.head_joints_name))
         self.head_motion_max_vel = float(left_embodiment_args.get("head_motion_max_vel", 1.2))
         self.head_motion_acc = float(left_embodiment_args.get("head_motion_acc", 2.5))
+        self.torso_joints_name = left_embodiment_args.get("torso_joints_name", [])
+        if isinstance(self.torso_joints_name, str):
+            self.torso_joints_name = [self.torso_joints_name]
+        self.torso_homestate = self._parse_torso_homestate(left_embodiment_args, len(self.torso_joints_name))
+        self.torso_motion_max_vel = float(left_embodiment_args.get("torso_motion_max_vel", self.head_motion_max_vel))
+        self.torso_motion_acc = float(left_embodiment_args.get("torso_motion_acc", self.head_motion_acc))
+        # Torso facing can stop within a yaw range instead of strict center alignment.
+        self.torso_face_deadband_rad = max(float(left_embodiment_args.get("torso_face_deadband_rad", 0.1)), 0.0)
+        self.torso_face_world_deadband_rad = max(
+            float(left_embodiment_args.get("torso_face_world_deadband_rad", self.torso_face_deadband_rad)), 0.0
+        )
+        self.torso_face_object_deadband_rad = max(
+            float(left_embodiment_args.get("torso_face_object_deadband_rad", self.torso_face_deadband_rad)), 0.0
+        )
+        self.torso_face_hysteresis_rad = max(float(left_embodiment_args.get("torso_face_hysteresis_rad", 0.02)), 0.0)
 
         if self.is_dual_arm:
             loader: sapien.URDFLoader = scene.create_urdf_loader()
@@ -275,6 +294,18 @@ class Robot:
     @staticmethod
     def _parse_head_homestate(embodiment_args, joint_num):
         v = embodiment_args.get("head_homestate", [0.0] * max(int(joint_num), 0))
+        if isinstance(v, (int, float, np.floating)):
+            return [float(v)] * max(int(joint_num), 0)
+        if isinstance(v, (list, tuple, np.ndarray)):
+            arr = np.array(v, dtype=np.float64).reshape(-1).tolist()
+            if len(arr) >= joint_num:
+                return arr[:joint_num]
+            return arr + [0.0] * (joint_num - len(arr))
+        return [0.0] * max(int(joint_num), 0)
+
+    @staticmethod
+    def _parse_torso_homestate(embodiment_args, joint_num):
+        v = embodiment_args.get("torso_homestate", [0.0] * max(int(joint_num), 0))
         if isinstance(v, (int, float, np.floating)):
             return [float(v)] * max(int(joint_num), 0)
         if isinstance(v, (list, tuple, np.ndarray)):
@@ -398,6 +429,18 @@ class Robot:
             self.head_joints = []
         if len(self.head_joints) == 0 and len(self.head_joints_name) > 0:
             print("[Robot] head control disabled (no valid head joints found)")
+
+        self.torso_entity = self.left_entity if self.left_entity is not None else self.right_entity
+        if self.torso_entity is not None and len(self.torso_joints_name) > 0:
+            self.torso_joints = [self.torso_entity.find_joint_by_name(i) for i in self.torso_joints_name]
+            missing_torso = [name for name, joint in zip(self.torso_joints_name, self.torso_joints) if joint is None]
+            if self.verbose_robot_init_log and missing_torso:
+                print(f"[Robot] torso joints missing in URDF: {missing_torso}")
+            self.torso_joints = [j for j in self.torso_joints if j is not None]
+        else:
+            self.torso_joints = []
+        if self.verbose_robot_init_log and len(self.torso_joints) == 0 and len(self.torso_joints_name) > 0:
+            print("[Robot] torso control disabled (no valid torso joints found)")
 
         def get_gripper_joints(find, gripper_name: str, arm_tag: str):
             gripper = []
@@ -623,8 +666,14 @@ class Robot:
             joint.set_drive_target(self._clip_joint_target_to_limits(joint, target))
             joint.set_drive_velocity_target(0.0)
 
+        for i, joint in enumerate(self.torso_joints):
+            target = self.torso_homestate[i] if i < len(self.torso_homestate) else 0.0
+            joint.set_drive_target(self._clip_joint_target_to_limits(joint, target))
+            joint.set_drive_velocity_target(0.0)
+
         self._sync_arm_qpos_to_drive_target()
         self._sync_head_qpos_to_drive_target()
+        self._sync_torso_qpos_to_drive_target()
 
         # Initialize grippers together with arm homestate.
         left_cmd = float(np.clip(self.left_gripper_homestate, 0.0, 1.0))
@@ -683,6 +732,21 @@ class Robot:
             changed = True
         if changed:
             self.head_entity.set_qpos(qpos)
+
+    def _sync_torso_qpos_to_drive_target(self):
+        if self.torso_entity is None or len(self.torso_joints) == 0:
+            return
+        qpos = self.torso_entity.get_qpos().copy()
+        active_joints = self.torso_entity.get_active_joints()
+        changed = False
+        for joint in self.torso_joints:
+            if joint is None or joint not in active_joints:
+                continue
+            idx = active_joints.index(joint)
+            qpos[idx] = float(joint.get_drive_target()[0])
+            changed = True
+        if changed:
+            self.torso_entity.set_qpos(qpos)
 
     def _sync_gripper_qpos_to_drive_target(self):
         # Align gripper qpos to just-set drive targets at initialization time,
@@ -753,6 +817,7 @@ class Robot:
         print("left arm joints: ", [joint.get_name() for joint in self.left_arm_joints])
         print("right arm joints: ", [joint.get_name() for joint in self.right_arm_joints])
         print("head joints: ", [joint.get_name() for joint in self.head_joints])
+        print("torso joints: ", [joint.get_name() for joint in self.torso_joints])
         print("left gripper: ", [joint[0].get_name() for joint in self.left_gripper if joint[0] is not None])
         print("right gripper: ", [joint[0].get_name() for joint in self.right_gripper if joint[0] is not None])
         print("left ee: ", self.left_ee.get_name())
@@ -862,6 +927,22 @@ class Robot:
             self.right_planner.update_point_cloud(world_pcd, resolution=0.02)
         except:
             print("Update world pointcloud wrong!")
+
+    def update_world_cuboids(self, cuboids, curr_qpos=None):
+        if curr_qpos is None:
+            try:
+                curr_qpos = self.left_entity.get_qpos().tolist()
+            except Exception:
+                curr_qpos = None
+        if self.communication_flag:
+            self.left_conn.send({"cmd": "update_world_cuboids", "cuboids": cuboids, "qpos": curr_qpos})
+            self.right_conn.send({"cmd": "update_world_cuboids", "cuboids": cuboids, "qpos": curr_qpos})
+            left_res = self.left_conn.recv()
+            right_res = self.right_conn.recv()
+            return left_res, right_res
+        left_res = self.left_planner.set_world_extra_cuboids(cuboids, curr_joint_pos=curr_qpos)
+        right_res = self.right_planner.set_world_extra_cuboids(cuboids, curr_joint_pos=curr_qpos)
+        return left_res, right_res
 
     def _trans_from_gripper_to_endlink(self, target_pose, arm_tag=None):
         gripper_bias = (self.left_gripper_bias if arm_tag == "left" else self.right_gripper_bias)
@@ -1281,6 +1362,22 @@ class Robot:
                 joint_state_list.append(float(qpos[active_joints.index(joint)]))
         return joint_state_list
 
+    def get_torso_jointState(self) -> list:
+        if len(self.torso_joints) == 0:
+            return []
+        return [float(joint.get_drive_target()[0]) for joint in self.torso_joints]
+
+    def get_torso_real_jointState(self) -> list:
+        if self.torso_entity is None or len(self.torso_joints) == 0:
+            return []
+        joint_state_list = []
+        qpos = self.torso_entity.get_qpos()
+        active_joints = self.torso_entity.get_active_joints()
+        for joint in self.torso_joints:
+            if joint in active_joints:
+                joint_state_list.append(float(qpos[active_joints.index(joint)]))
+        return joint_state_list
+
     def get_left_gripper_val(self):
         if len(self.left_gripper) == 0 or self.left_gripper[0][0] is None:
             print("No gripper")
@@ -1447,6 +1544,37 @@ class Robot:
         target = now + delta_position[: len(self.head_joints)]
         return self.set_head_joints(target, np.zeros_like(target))
 
+    def set_torso_joints(self, target_position, target_velocity=None):
+        if len(self.torso_joints) == 0:
+            return False
+
+        self._entity_qf(self.left_entity)
+        self._entity_qf(self.right_entity)
+        target_position = np.array(target_position, dtype=np.float64).reshape(-1)
+        if target_velocity is None:
+            target_velocity = np.zeros_like(target_position)
+        target_velocity = np.array(target_velocity, dtype=np.float64).reshape(-1)
+
+        for j, joint in enumerate(self.torso_joints):
+            if j >= target_position.shape[0]:
+                break
+            target = self._clip_joint_target_to_limits(joint, target_position[j])
+            vel = float(target_velocity[j]) if j < target_velocity.shape[0] else 0.0
+            joint.set_drive_target(target)
+            joint.set_drive_velocity_target(vel)
+        return True
+
+    def set_torso_joints_delta(self, delta_position):
+        if len(self.torso_joints) == 0:
+            return False
+        delta_position = np.array(delta_position, dtype=np.float64).reshape(-1)
+        if delta_position.shape[0] < len(self.torso_joints):
+            pad = np.zeros(len(self.torso_joints) - delta_position.shape[0], dtype=np.float64)
+            delta_position = np.concatenate([delta_position, pad], axis=0)
+        now = np.array(self.get_torso_jointState(), dtype=np.float64)
+        target = now + delta_position[: len(self.torso_joints)]
+        return self.set_torso_joints(target, np.zeros_like(target))
+
     def get_normal_real_gripper_val(self):
         if len(self.left_gripper) == 0 or self.left_gripper[0][0] is None:
             normal_left_gripper_val = self.left_gripper_val
@@ -1572,6 +1700,10 @@ def planner_process_worker(conn, args):
             elif msg["cmd"] == "update_point_cloud":
                 planner.update_point_cloud(msg["pcd"], resolution=msg.get("resolution", 0.02))
                 conn.send("ok")
+
+            elif msg["cmd"] == "update_world_cuboids":
+                n = planner.set_world_extra_cuboids(msg.get("cuboids", []), curr_joint_pos=msg.get("qpos", None))
+                conn.send({"status": "ok", "num_cuboids": int(n)})
 
             elif msg["cmd"] == "reset":
                 planner.motion_gen.reset(reset_seed=True)

@@ -46,20 +46,22 @@ class ArmTag:
 
 class Action:
     arm_tag: ArmTag
-    action: Literal["move", "move_joint", "gripper", "move_head"]
+    action: Literal["move", "move_joint", "gripper", "move_head", "move_torso"]
     target_pose: list = None
     target_joint_pos: list = None
     target_gripper_pos: float = None
     target_head_delta: list = None
+    target_torso_delta: list = None
 
     def __init__(
         self,
         arm_tag: ArmTag | Literal["left", "right"],
-        action: Literal["move", "move_joint", "open", "close", "gripper", "move_head"],
+        action: Literal["move", "move_joint", "open", "close", "gripper", "move_head", "move_torso"],
         target_pose: sapien.Pose | list | np.ndarray = None,
         target_joint_pos: list | np.ndarray | tuple = None,
         target_gripper_pos: float = None,
         target_head_delta: list | np.ndarray | tuple = None,
+        target_torso_delta: list | np.ndarray | tuple = None,
         **args,
     ):
         self.arm_tag = ArmTag(arm_tag)
@@ -87,6 +89,17 @@ class Action:
                     f"target_head_delta must have 2 values: [delta_joint1, delta_joint2], got shape {target_head_delta.shape}"
                 )
             self.target_head_delta = target_head_delta.tolist()
+        elif action == "move_torso":
+            self.action = "move_torso"
+            if target_torso_delta is None:
+                target_torso_delta = target_pose
+            assert (target_torso_delta is not None), "target_torso_delta cannot be None for move_torso action."
+            target_torso_delta = np.array(target_torso_delta, dtype=np.float64).reshape(-1)
+            if target_torso_delta.shape[0] != 1:
+                raise ValueError(
+                    f"target_torso_delta must have 1 value: [delta_joint], got shape {target_torso_delta.shape}"
+                )
+            self.target_torso_delta = target_torso_delta.tolist()
         else:
             if action == "open":
                 self.action = "gripper"
@@ -99,7 +112,7 @@ class Action:
             else:
                 raise ValueError(
                     f"Invalid action: {action}. Must be one of "
-                    "'move', 'move_joint', 'move_head', 'open', 'close', 'gripper'."
+                    "'move', 'move_joint', 'move_head', 'move_torso', 'open', 'close', 'gripper'."
                 )
             assert (self.target_gripper_pos is not None), "target_gripper_pos cannot be None for gripper action."
         self.args = args
@@ -112,6 +125,8 @@ class Action:
             result += f"({self.target_joint_pos})"
         elif self.action == "move_head":
             result += f"({self.target_head_delta})"
+        elif self.action == "move_torso":
+            result += f"({self.target_torso_delta})"
         else:
             result += f"({self.target_gripper_pos})"
         if self.args:

@@ -135,15 +135,47 @@ def place_point_cyl(point_cyl, robot_root_xy, robot_yaw_rad=0, ret: str = "list"
     return world_point
 
 
-def place_pose_cyl(pose_cyl, robot_root_xy, robot_yaw_rad=0, ret: str = "list"):
+def place_pose_cyl(
+    pose_cyl,
+    robot_root_xy,
+    robot_yaw_rad=0,
+    ret: str = "list",
+    quat_frame: str = "cyl",
+):
     """
     Place a pose using cylindrical coordinates.
     Args:
-      pose_cyl: [r,theta,z,qw,qx,qy,qz], quaternion in cylindrical local basis.
+      pose_cyl: [r,theta,z,qw,qx,qy,qz].
+      quat_frame:
+        - "cyl" (default): quaternion is interpreted in cylindrical local basis, then rotated +90deg around world z.
+        - "cyl_legacy": quaternion is interpreted in cylindrical local basis (no +90deg correction).
+        - "world": quaternion is interpreted in world frame; only xyz uses cylindrical mapping.
       ret: "list" | "array" | "pose"
     """
     pose_cyl = _to_flat_array(pose_cyl, valid_dims=(7,), name="pose_cyl")
-    world_pose = robot_to_world(pose_cyl, robot_root_xy=robot_root_xy, robot_yaw_rad=robot_yaw_rad)
+    if quat_frame == "world":
+        world_xyz = robot_to_world(
+            pose_cyl[:3],
+            robot_root_xy=robot_root_xy,
+            robot_yaw_rad=robot_yaw_rad,
+        )
+        world_quat = pose_cyl[3:].tolist()
+    elif quat_frame in ("cyl", "cyl_legacy"):
+        world_pose_raw = robot_to_world(
+            pose_cyl,
+            robot_root_xy=robot_root_xy,
+            robot_yaw_rad=robot_yaw_rad,
+        )
+        world_xyz = world_pose_raw[:3]
+        world_quat = world_pose_raw[3:]
+        if quat_frame == "cyl":
+            q_rot = t3d.euler.euler2quat(0, 0, np.pi / 2)
+            world_quat = t3d.quaternions.qmult(q_rot, world_quat).tolist()
+    else:
+        raise ValueError(f"quat_frame must be 'world', 'cyl', or 'cyl_legacy', got {quat_frame}")
+
+    world_pose = world_xyz + world_quat
+
     if ret == "array":
         return np.array(world_pose, dtype=np.float64)
     if ret == "pose":
@@ -160,15 +192,20 @@ def rand_pose_cyl(
     rotate_rand=False,
     rotate_lim=[0, 0, 0],
     qpos=[1, 0, 0, 0],
+    quat_frame: str = "cyl",
 ) -> sapien.Pose:
     """
     Random pose sampler in cylindrical coordinates.
 
     Args:
       rlim/thetalim/zlim: [min, max] (if max < min or only one value -> fixed).
-      qpos: base quaternion in cylindrical local basis [qw,qx,qy,qz].
+      qpos: base quaternion [qw,qx,qy,qz].
       rotate_rand: apply random Euler perturbation around qpos (in local basis).
       rotate_lim: Euler random limits [rx, ry, rz] in radians.
+      quat_frame:
+        - "cyl" (default): quaternion is interpreted in cylindrical local basis, then rotated +90deg around world z.
+        - "cyl_legacy": quaternion is interpreted in cylindrical local basis (no +90deg correction).
+        - "world": quaternion is interpreted in world frame; only xyz uses cylindrical mapping.
     Returns:
       sapien.Pose in world frame.
     """
@@ -191,9 +228,9 @@ def rand_pose_cyl(
     theta = float(np.random.uniform(thetalim[0], thetalim[1]))
     z = float(np.random.uniform(zlim[0], zlim[1]))
 
-    q_local = np.array(qpos, dtype=np.float64).reshape(-1)
-    if q_local.shape[0] != 4:
-        raise ValueError(f"qpos must have shape (4,), got {q_local.shape}")
+    q_base = np.array(qpos, dtype=np.float64).reshape(-1)
+    if q_base.shape[0] != 4:
+        raise ValueError(f"qpos must have shape (4,), got {q_base.shape}")
     if rotate_rand:
         rot_lim = np.array(rotate_lim, dtype=np.float64).reshape(-1)
         if rot_lim.shape[0] != 3:
@@ -204,11 +241,27 @@ def rand_pose_cyl(
             np.random.uniform(-rot_lim[2], rot_lim[2]),
         ], dtype=np.float64)
         q_rand = t3d.euler.euler2quat(angles[0], angles[1], angles[2])
-        q_local = t3d.quaternions.qmult(q_local, q_rand)
+        q_base = t3d.quaternions.qmult(q_base, q_rand)
 
-    world_pose = robot_to_world(
-        [r, theta, z, float(q_local[0]), float(q_local[1]), float(q_local[2]), float(q_local[3])],
-        robot_root_xy=robot_root_xy,
-        robot_yaw_rad=robot_yaw_rad,
-    )
-    return _toPose(world_pose)
+    if quat_frame == "world":
+        world_xyz = robot_to_world(
+            [r, theta, z],
+            robot_root_xy=robot_root_xy,
+            robot_yaw_rad=robot_yaw_rad,
+        )
+        world_quat = q_base.tolist()
+    elif quat_frame in ("cyl", "cyl_legacy"):
+        world_pose_raw = robot_to_world(
+            [r, theta, z, float(q_base[0]), float(q_base[1]), float(q_base[2]), float(q_base[3])],
+            robot_root_xy=robot_root_xy,
+            robot_yaw_rad=robot_yaw_rad,
+        )
+        world_xyz = world_pose_raw[:3]
+        world_quat = world_pose_raw[3:]
+        if quat_frame == "cyl":
+            q_rot = t3d.euler.euler2quat(0, 0, -np.pi / 2)
+            world_quat = t3d.quaternions.qmult(q_rot, world_quat).tolist()
+    else:
+        raise ValueError(f"quat_frame must be 'world', 'cyl', or 'cyl_legacy', got {quat_frame}")
+
+    return _toPose(world_xyz + world_quat)

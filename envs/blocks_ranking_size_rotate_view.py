@@ -1,10 +1,10 @@
-from .blocks_ranking_rgb import blocks_ranking_rgb
+from .blocks_ranking_size import blocks_ranking_size
 from .utils import *
 import numpy as np
 import transforms3d as t3d
 
 
-class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
+class blocks_ranking_size_rotate_view(blocks_ranking_size):
 
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
@@ -38,7 +38,7 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
             )
 
     @staticmethod
-    def _valid_spacing(new_pose, existing_pose_lst, min_dist_sq=0.012):
+    def _valid_spacing(new_pose, existing_pose_lst, min_dist_sq=0.014):
         for pose in existing_pose_lst:
             if np.sum(np.square(new_pose.p[:2] - pose.p[:2])) < min_dist_sq:
                 return False
@@ -80,42 +80,38 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
+        color_lst = [(np.random.random(), np.random.random(), np.random.random()) for _ in range(3)]
+        halfsize_lst = [
+            float(np.random.uniform(0.03, 0.033)),
+            float(np.random.uniform(0.024, 0.027)),
+            float(np.random.uniform(0.018, 0.021)),
+        ]
+
         while True:
             block_pose_lst = []
-            size = float(np.random.uniform(0.015, 0.025))
-            for _ in range(3):
-                block_pose_lst.append(self._sample_block_pose(size=size, existing_pose_lst=block_pose_lst))
+            for i in range(3):
+                block_pose_lst.append(self._sample_block_pose(size=halfsize_lst[i], existing_pose_lst=block_pose_lst))
             if self._is_already_ranked(block_pose_lst):
                 continue
             break
 
-        half_size = (size, size, size)
-        self.block1 = create_box(
-            scene=self,
-            pose=block_pose_lst[0],
-            half_size=half_size,
-            color=(1, 0, 0),
-            name="box",
-        )
-        self.block2 = create_box(
-            scene=self,
-            pose=block_pose_lst[1],
-            half_size=half_size,
-            color=(0, 1, 0),
-            name="box",
-        )
-        self.block3 = create_box(
-            scene=self,
-            pose=block_pose_lst[2],
-            half_size=half_size,
-            color=(0, 0, 1),
-            name="box",
-        )
+        def create_block(block_pose, size, color):
+            return create_box(
+                scene=self,
+                pose=block_pose,
+                half_size=(size, size, size),
+                color=color,
+                name="box",
+            )
 
-        self.add_prohibit_area(self.block1, padding=0.05)
-        self.add_prohibit_area(self.block2, padding=0.05)
-        self.add_prohibit_area(self.block3, padding=0.05)
-        self.prohibited_area.append([-0.16, -0.22, 0.16, -0.10])
+        self.block1 = create_block(block_pose_lst[0], halfsize_lst[0], color_lst[0])
+        self.block2 = create_block(block_pose_lst[1], halfsize_lst[1], color_lst[1])
+        self.block3 = create_block(block_pose_lst[2], halfsize_lst[2], color_lst[2])
+
+        self.add_prohibit_area(self.block1, padding=0.1)
+        self.add_prohibit_area(self.block2, padding=0.1)
+        self.add_prohibit_area(self.block3, padding=0.1)
+        self.prohibited_area.append([-0.2, -0.2, 0.2, -0.08])
 
         target_r = float(np.random.uniform(0.4, 0.5))
         target_theta_mid = float(np.random.uniform(-0.03, 0.03))
@@ -146,14 +142,14 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
         self.last_gripper = None
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
-        arm_tag1 = self.pick_and_place_block(self.block1, self.block1_target_pose)
-        arm_tag2 = self.pick_and_place_block(self.block2, self.block2_target_pose)
         arm_tag3 = self.pick_and_place_block(self.block3, self.block3_target_pose)
+        arm_tag2 = self.pick_and_place_block(self.block2, self.block2_target_pose)
+        arm_tag1 = self.pick_and_place_block(self.block1, self.block1_target_pose)
 
         self.info["info"] = {
-            "{A}": "red block",
-            "{B}": "green block",
-            "{C}": "blue block",
+            "{A}": "large block",
+            "{B}": "medium block",
+            "{C}": "small block",
             "{a}": arm_tag1,
             "{b}": arm_tag2,
             "{c}": arm_tag3,
@@ -168,8 +164,8 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
 
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
-        self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09, grasp_dis=0.01))
-        self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
+        self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09))
+        self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.12))
 
         self.face_world_point_with_torso(
             target_pose[:3],
