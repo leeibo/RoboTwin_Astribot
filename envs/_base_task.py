@@ -2423,7 +2423,13 @@ class Base_Task(gym.Env):
                 return None
         return None
 
-    def _get_scan_thetas_from_object_list(self, object_list, fallback_thetas=(0.95, -0.95), theta_padding=0.0):
+    def _get_scan_thetas_from_object_list(
+        self,
+        object_list,
+        fallback_thetas=(0.95, -0.95),
+        theta_padding=0.0,
+        inward_margin_rad=None,
+    ):
         fallback = np.array(fallback_thetas, dtype=np.float64).reshape(-1)
         if fallback.shape[0] == 0:
             fallback = np.array([0.95, -0.95], dtype=np.float64)
@@ -2459,6 +2465,23 @@ class Base_Task(gym.Env):
             theta_min = float(np.min(theta_list) - pad)
             if theta_min > theta_max:
                 theta_min, theta_max = theta_max, theta_min
+
+        if inward_margin_rad is None:
+            inward_margin_rad = float(
+                getattr(
+                    self.robot,
+                    "scan_theta_inward_margin_rad",
+                    getattr(self.robot, "scan_theta_margin_rad", 0.0),
+                )
+            )
+        inward_margin_rad = max(float(inward_margin_rad), 0.0)
+
+        if inward_margin_rad > 0.0:
+            span = float(theta_max - theta_min)
+            if span <= 2.0 * inward_margin_rad + 1e-6:
+                return [0.5 * (theta_max + theta_min)]
+            theta_max -= inward_margin_rad
+            theta_min += inward_margin_rad
 
         if abs(theta_max - theta_min) < 1e-6:
             return [theta_max]

@@ -13,6 +13,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -42,14 +43,14 @@ class place_burger_fries_rotate_view(place_burger_fries):
 
         tray_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=[-0.05, 0.05],
+            thetalim=rotate_theta_center(self),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             qpos=[0.706527, 0.706483, -0.0291356, -0.0291767],
             rotate_rand=True,
             rotate_lim=[0, 0, 0],
-            quat_frame="cyl",
         )
         self.tray_id = int(np.random.choice([0, 1, 2, 3], 1)[0])
         self.tray = create_actor(
@@ -65,7 +66,8 @@ class place_burger_fries_rotate_view(place_burger_fries):
 
         hamburg_pose = rand_pose_cyl(
             rlim=[0.35, 0.45],
-            thetalim=[0.75, 1.1],
+            thetalim=rotate_theta_side(self, side=1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -85,7 +87,8 @@ class place_burger_fries_rotate_view(place_burger_fries):
 
         fries_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=[-1.1, -0.75],
+            thetalim=rotate_theta_side(self, side=-1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

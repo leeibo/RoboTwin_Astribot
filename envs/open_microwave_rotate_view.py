@@ -13,6 +13,7 @@ class open_microwave_rotate_view(open_microwave):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(is_test=is_test, **kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -43,7 +44,8 @@ class open_microwave_rotate_view(open_microwave):
         self.model_id = int(np.random.randint(0, 2))
         microwave_pose = rand_pose_cyl(
             rlim=[0.5, 0.5],
-            thetalim=[0.5, 1.0],
+            thetalim=rotate_theta_side(self, side=1),
+
             zlim=[0.8, 0.8],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

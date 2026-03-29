@@ -14,6 +14,7 @@ class put_bottles_dustbin_rotate_view(put_bottles_dustbin):
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
         kwags.setdefault("table_xy_bias", [0.3, 0])
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -66,7 +67,8 @@ class put_bottles_dustbin_rotate_view(put_bottles_dustbin):
             for _ in range(gen_lim):
                 bottle_pose = rand_pose_cyl(
                     rlim=[0.4, 0.5],
-                    thetalim=[-1.05, 1.05],
+                    thetalim=rotate_theta_center(self),
+
                     zlim=[0.741, 0.741],
                     robot_root_xy=self.robot_root_xy,
                     robot_yaw_rad=self.robot_yaw,

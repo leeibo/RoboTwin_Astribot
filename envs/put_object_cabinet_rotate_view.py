@@ -15,6 +15,7 @@ class put_object_cabinet_rotate_view(put_object_cabinet):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -58,7 +59,8 @@ class put_object_cabinet_rotate_view(put_object_cabinet):
         self.model_id = 46653
         cabinet_pose = rand_pose_cyl(
             rlim=[0.46, 0.5],
-            thetalim=[-0.12, 0.12],
+            thetalim=rotate_theta_center(self),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -75,11 +77,12 @@ class put_object_cabinet_rotate_view(put_object_cabinet):
         )
 
         side = 1.0 if np.random.rand() < 0.5 else -1.0
-        theta_obj_lim = [0.72, 1.1] if side > 0 else [-1.1, -0.72]
+        theta_obj_lim = rotate_theta_side(self, side=side)
         while True:
             rand_pos = rand_pose_cyl(
                 rlim=[0.5, 0.5],
                 thetalim=theta_obj_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

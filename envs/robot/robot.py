@@ -205,6 +205,16 @@ class Robot:
             float(left_embodiment_args.get("torso_face_object_deadband_rad", self.torso_face_deadband_rad)), 0.0
         )
         self.torso_face_hysteresis_rad = max(float(left_embodiment_args.get("torso_face_hysteresis_rad", 0.02)), 0.0)
+        # Scan range shrink x: scan [theta_min + x, theta_max - x].
+        self.scan_theta_inward_margin_rad = max(
+            float(
+                left_embodiment_args.get(
+                    "scan_theta_inward_margin_rad",
+                    left_embodiment_args.get("scan_theta_margin_rad", 0.0),
+                )
+            ),
+            0.0,
+        )
 
         if self.is_dual_arm:
             loader: sapien.URDFLoader = scene.create_urdf_loader()

@@ -13,6 +13,7 @@ class click_bell_rotate_view(click_bell):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -43,7 +44,8 @@ class click_bell_rotate_view(click_bell):
         while True:
             rand_pos = rand_pose_cyl(
                 rlim=[0.44, 0.5],
-                thetalim=[-1.02, 1.02],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -80,6 +82,7 @@ class click_bell_rotate_view(click_bell):
                 arm_tag=arm_tag,
                 pre_grasp_dis=0.1,
                 grasp_dis=0.1,
+                gripper_pos=-0.1,
                 contact_point_id=0,
             )
         )

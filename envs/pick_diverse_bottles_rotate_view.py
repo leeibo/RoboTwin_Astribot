@@ -13,6 +13,7 @@ class pick_diverse_bottles_rotate_view(pick_diverse_bottles):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -48,7 +49,8 @@ class pick_diverse_bottles_rotate_view(pick_diverse_bottles):
             self,
             pose=rand_pose_cyl(
                 rlim=[0.48, 0.5],
-                thetalim=[0.55, 1.05],
+                thetalim=rotate_theta_side(self, side=1),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -64,7 +66,8 @@ class pick_diverse_bottles_rotate_view(pick_diverse_bottles):
         while True:
             bottle2_pose = rand_pose_cyl(
                 rlim=[0.48, 0.5],
-                thetalim=[-1.05, -0.55],
+                thetalim=rotate_theta_side(self, side=-1),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

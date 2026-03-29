@@ -14,6 +14,7 @@ class move_can_pot_rotate_view(move_can_pot):
         kwargs.setdefault("fan_inner_radius", 0.3)
         kwargs.setdefault("fan_angle_deg", 220)
         kwargs.setdefault("fan_center_deg", 90)
+        kwargs = init_rotate_theta_bounds(self, kwargs)
         super().setup_demo(is_test=is_test, **kwargs)
 
     def _get_robot_root_xy_yaw(self):
@@ -44,7 +45,8 @@ class move_can_pot_rotate_view(move_can_pot):
         self.pot_id = int(np.random.randint(0, 7))
         pot_pose = rand_pose_cyl(
             rlim=[0.48, 0.5],
-            thetalim=[-0.12, 0.12],
+            thetalim=rotate_theta_center(self),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -64,7 +66,8 @@ class move_can_pot_rotate_view(move_can_pot):
         while True:
             rand_pos = rand_pose_cyl(
                 rlim=[0.4, 0.5],
-                thetalim=[-1.1, 1.1],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

@@ -13,6 +13,7 @@ class place_dual_shoes_rotate_view(place_dual_shoes):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(is_test=is_test, **kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -57,7 +58,8 @@ class place_dual_shoes_rotate_view(place_dual_shoes):
         self.shoe_id = int(np.random.choice([i for i in range(10)]))
         left_shoe_pose = rand_pose_cyl(
             rlim=[0.4, 0.45],
-            thetalim=[0.8, 1.1],
+            thetalim=rotate_theta_side(self, side=1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -75,7 +77,8 @@ class place_dual_shoes_rotate_view(place_dual_shoes):
 
         right_shoe_pose = rand_pose_cyl(
             rlim=[0.4, 0.45],
-            thetalim=[-1.1, -0.8],
+            thetalim=rotate_theta_side(self, side=-1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

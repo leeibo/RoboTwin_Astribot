@@ -13,6 +13,7 @@ class rotate_qrcode_rotate_view(rotate_qrcode):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -41,11 +42,12 @@ class rotate_qrcode_rotate_view(rotate_qrcode):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         side = 1.0 if np.random.rand() < 0.5 else -1.0
-        theta_lim = [0.58, 1.05] if side > 0 else [-1.05, -0.58]
+        theta_lim = rotate_theta_side(self, side=side)
         while True:
             qrcode_pose = rand_pose_cyl(
                 rlim=[-1.35, 1.35],
                 thetalim=theta_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

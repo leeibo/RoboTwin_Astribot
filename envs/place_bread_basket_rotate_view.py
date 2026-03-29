@@ -13,6 +13,7 @@ class place_bread_basket_rotate_view(place_bread_basket):
         kwargs.setdefault("fan_inner_radius", 0.3)
         kwargs.setdefault("fan_angle_deg", 220)
         kwargs.setdefault("fan_center_deg", 90)
+        kwargs = init_rotate_theta_bounds(self, kwargs)
         super().setup_demo(**kwargs)
 
     def _get_robot_root_xy_yaw(self):
@@ -41,7 +42,7 @@ class place_bread_basket_rotate_view(place_bread_basket):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         basket_pose = place_pose_cyl(
-            [0.52, -0.1, 0.741, 0.5, 0.5, 0.5, 0.5],
+            [0.45,0, 0.741, 0.5, 0.5, 0.5, 0.5],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="pose",
@@ -57,11 +58,12 @@ class place_bread_basket_rotate_view(place_bread_basket):
 
         self.bread = []
         self.bread_id = []
-        bread_sides = [0.85, -0.85]
-        for theta in bread_sides:
+        bread_sides = [1.0, -1.0]
+        for side in bread_sides:
             bread_pose = rand_pose_cyl(
                 rlim=[0.5, 0.5],
-                thetalim=[theta - 0.15, theta + 0.15],
+                thetalim=rotate_theta_side(self, side=side),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -110,7 +112,8 @@ class place_bread_basket_rotate_view(place_bread_basket):
                     pre_dis=0.12,
                 )
             )
-            self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.08, move_axis="arm"))
+            self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.04, move_axis="arm"))
+            self.move(self.back_to_origin(arm_tag=arm_tag))
             last_arm_tag = arm_tag
 
         self.info["info"] = {

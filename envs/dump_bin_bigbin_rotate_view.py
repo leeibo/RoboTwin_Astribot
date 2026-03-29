@@ -14,6 +14,7 @@ class dump_bin_bigbin_rotate_view(dump_bin_bigbin):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -40,10 +41,11 @@ class dump_bin_bigbin_rotate_view(dump_bin_bigbin):
 
     def _sample_deskbin_pose(self):
         for _ in range(120):
-            side_thetalim = [0.55, 1.05] if np.random.rand() < 0.5 else [-1.05, -0.55]
+            side_thetalim = rotate_theta_side(self, side=1 if np.random.rand() < 0.5 else -1)
             pose = rand_pose_cyl(
                 rlim=[0.45, 0.5],
                 thetalim=side_thetalim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -57,7 +59,8 @@ class dump_bin_bigbin_rotate_view(dump_bin_bigbin):
             return pose
         return rand_pose_cyl(
             rlim=[0.5, 0.5],
-            thetalim=[0.82, 0.82],
+            thetalim=rotate_theta_fixed(self, side=1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

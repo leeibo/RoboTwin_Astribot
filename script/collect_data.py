@@ -36,6 +36,30 @@ def get_embodiment_config(robot_file):
     return embodiment_args
 
 
+def _sanitize_tag(text):
+    return str(text).strip().replace(" ", "_")
+
+
+def infer_difficulty_tag(args):
+    custom_tag = args.get("difficulty_tag", None)
+    if custom_tag is not None and str(custom_tag).strip():
+        return _sanitize_tag(custom_tag)
+
+    fan_angle_deg = args.get("fan_angle_deg", None)
+    if fan_angle_deg is None:
+        return "unknown"
+
+    fan_angle = float(fan_angle_deg)
+    fan_angle_int = int(round(fan_angle))
+    if fan_angle <= 170.0:
+        level = "easy"
+    elif fan_angle <= 220.0:
+        level = "medium"
+    else:
+        level = "hard"
+    return f"{level}_fan{fan_angle_int}"
+
+
 def main(task_name=None, task_config=None):
 
     task = class_decorator(task_name)
@@ -95,11 +119,17 @@ def main(task_name=None, task_config=None):
     print("\033[94mWrist Camera Config:\033[0m " + str(args["camera"]["wrist_camera_type"]) + f", " +
           str(args["camera"]["collect_wrist_camera"]))
     print("\033[94mEmbodiment Config:\033[0m " + embodiment_name)
+    difficulty_tag = infer_difficulty_tag(args)
+    storage_setting = f"{task_config}__{difficulty_tag}"
+    print("\033[94mDifficulty Tag:\033[0m " + difficulty_tag)
+    print("\033[94mData Setting:\033[0m " + storage_setting)
     print("\n==================================")
 
     args["embodiment_name"] = embodiment_name
     args['task_config'] = task_config
-    args["save_path"] = os.path.join(args["save_path"], str(args["task_name"]), args["task_config"])
+    args["difficulty_tag"] = difficulty_tag
+    args["storage_setting"] = storage_setting
+    args["save_path"] = os.path.join(args["save_path"], str(args["task_name"]), storage_setting)
     run(task, args)
 
 
@@ -229,7 +259,10 @@ def run(TASK_ENV, args):
             TASK_ENV.remove_data_cache()
             assert TASK_ENV.check_success(), "Collect Error"
 
-        command = f"cd description && bash gen_episode_instructions.sh {args['task_name']} {args['task_config']} {args['language_num']}"
+        command = (
+            "cd description && bash gen_episode_instructions.sh "
+            f"{args['task_name']} {args['storage_setting']} {args['language_num']} {args['task_config']}"
+        )
         os.system(command)
 
 

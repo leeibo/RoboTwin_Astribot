@@ -13,6 +13,7 @@ class place_bread_skillet_rotate_view(place_bread_skillet):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -45,7 +46,8 @@ class place_bread_skillet_rotate_view(place_bread_skillet):
         bread_side = 1.0 if np.random.rand() < 0.5 else -1.0
         bread_pose = rand_pose_cyl(
             rlim=[0.5, 0.5],
-            thetalim=[bread_side * 0.7, bread_side * 1.1],
+            thetalim=rotate_theta_side(self, side=bread_side),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -65,7 +67,8 @@ class place_bread_skillet_rotate_view(place_bread_skillet):
         self.skillet_id = int(np.random.choice(self.model_id_list))
         skillet_pose = rand_pose_cyl(
             rlim=[0.5, 0.5],
-            thetalim=[-bread_side * 1.1, -bread_side * 0.7],
+            thetalim=rotate_theta_side(self, side=-bread_side),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

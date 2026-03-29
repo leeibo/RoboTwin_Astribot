@@ -15,6 +15,7 @@ class place_object_stand_rotate_view(place_object_stand):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(is_test=is_test, **kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -69,13 +70,14 @@ class place_object_stand_rotate_view(place_object_stand):
         self.selected_model_id = int(np.random.choice(available_model_ids))
 
         side = 1.0 if np.random.rand() < 0.5 else -1.0
-        theta_obj_lim = [0.2, 1.08] if side > 0 else [-1.08, -0.2]
-        theta_stand_lim = [0.2, 1.08] if side <= 0 else [-1.08, -0.2]
+        theta_obj_lim = rotate_theta_side(self, side=side)
+        theta_stand_lim = rotate_theta_side(self, side=-side)
 
         while True:
             object_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=theta_obj_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -92,6 +94,7 @@ class place_object_stand_rotate_view(place_object_stand):
             displaystand_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=theta_stand_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

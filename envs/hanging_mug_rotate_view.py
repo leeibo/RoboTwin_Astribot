@@ -13,6 +13,7 @@ class hanging_mug_rotate_view(hanging_mug):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(is_test=is_test, **kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -43,7 +44,8 @@ class hanging_mug_rotate_view(hanging_mug):
         self.mug_id = int(np.random.choice([i for i in range(10)]))
         mug_pose = rand_pose_cyl(
             rlim=[0.35, 0.45],
-            thetalim=[0.55, 1.05],
+            thetalim=rotate_theta_side(self, side=1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -61,7 +63,8 @@ class hanging_mug_rotate_view(hanging_mug):
 
         rack_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=[-1.0, -0.55],
+            thetalim=rotate_theta_side(self, side=-1),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

@@ -13,6 +13,7 @@ class place_fan_rotate_view(place_fan):
         kwargs.setdefault("fan_inner_radius", 0.3)
         kwargs.setdefault("fan_angle_deg", 220)
         kwargs.setdefault("fan_center_deg", 90)
+        kwargs = init_rotate_theta_bounds(self, kwargs)
         super().setup_demo(is_test=is_test, **kwargs)
 
     def _get_robot_root_xy_yaw(self):
@@ -42,7 +43,8 @@ class place_fan_rotate_view(place_fan):
 
         fan_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=[-0.35, 0.35],
+            thetalim=rotate_theta_center(self),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -60,10 +62,11 @@ class place_fan_rotate_view(place_fan):
         )
         self.fan.set_mass(0.01)
 
-        pad_theta = -0.85 if self.fan.get_pose().p[0] > 0 else 0.85
+        pad_side = -1 if self.fan.get_pose().p[0] > 0 else 1
         pad_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=[pad_theta - 0.15, pad_theta + 0.15],
+            thetalim=rotate_theta_side(self, side=pad_side),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

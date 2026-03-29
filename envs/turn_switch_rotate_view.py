@@ -13,6 +13,7 @@ class turn_switch_rotate_view(turn_switch):
         kwargs.setdefault("fan_inner_radius", 0.3)
         kwargs.setdefault("fan_angle_deg", 220)
         kwargs.setdefault("fan_center_deg", 90)
+        kwargs = init_rotate_theta_bounds(self, kwargs)
         super().setup_demo(is_test=is_test, **kwargs)
 
     def _get_robot_root_xy_yaw(self):
@@ -45,7 +46,8 @@ class turn_switch_rotate_view(turn_switch):
         while True:
             switch_pose = rand_pose_cyl(
                 rlim=[0.46, 0.5],
-                thetalim=[-1.0, 1.0],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.81, 0.84],
                 rotate_rand=True,
                 rotate_lim=[0, 0, np.pi / 4],

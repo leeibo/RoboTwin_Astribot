@@ -13,6 +13,7 @@ class place_container_plate_rotate_view(place_container_plate):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -43,7 +44,8 @@ class place_container_plate_rotate_view(place_container_plate):
         while True:
             container_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
-                thetalim=[-1.05, 1.05],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -69,7 +71,8 @@ class place_container_plate_rotate_view(place_container_plate):
         self.plate_id = 0
         plate_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=[-0.25, 0.25],
+            thetalim=rotate_theta_center(self),
+
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

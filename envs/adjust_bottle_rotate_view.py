@@ -13,6 +13,7 @@ class adjust_bottle_rotate_view(adjust_bottle):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -38,11 +39,12 @@ class adjust_bottle_rotate_view(adjust_bottle):
             )
 
     def _sample_bottle_pose(self, qpos):
-        side_thetalim = [0.38, 0.78] if self.qpose_tag == 0 else [-0.78, -0.38]
+        side_thetalim = rotate_theta_side(self, side=1 if self.qpose_tag == 0 else -1)
         for _ in range(120):
             pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=side_thetalim,
+
                 zlim=[0.752, 0.752],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -61,7 +63,8 @@ class adjust_bottle_rotate_view(adjust_bottle):
                 continue
             return pose
 
-        fallback_theta = 0.78 if self.qpose_tag == 0 else -0.78
+        fallback_band = rotate_theta_side(self, side=1 if self.qpose_tag == 0 else -1)
+        fallback_theta = fallback_band[1] if self.qpose_tag == 0 else fallback_band[0]
         return place_pose_cyl(
             [0.46, fallback_theta, 0.752, qpos[0], qpos[1], qpos[2], qpos[3]],
             robot_root_xy=self.robot_root_xy,

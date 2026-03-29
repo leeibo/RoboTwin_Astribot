@@ -13,6 +13,7 @@ class move_playingcard_away_rotate_view(move_playingcard_away):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -43,7 +44,8 @@ class move_playingcard_away_rotate_view(move_playingcard_away):
         while True:
             rand_pos = rand_pose_cyl(
                 rlim=[0.35, 0.45],
-                thetalim=[-1.02, 1.02],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

@@ -15,12 +15,29 @@ class place_a2b_right_rotate_view(place_a2b_right):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
         root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()
         yaw = float(t3d.euler.quat2euler(self.robot.left_entity_origion_pose.q)[2])
         return root_xy, yaw
+
+    def _pose_to_cyl(self, pose):
+        world_p = pose.p.tolist() if hasattr(pose, "p") else np.array(pose, dtype=np.float64).reshape(-1)[:3].tolist()
+        return world_to_robot(world_p, self.robot_root_xy, self.robot_yaw)
+
+    def _side_place_pose(self, target_pose, arc_dis=0.13, to_left=True):
+        target_cyl = self._pose_to_cyl(target_pose)
+        r = max(float(target_cyl[0]), 1e-6)
+        sign = 1.0 if to_left else -1.0
+        theta = float(target_cyl[1]) + sign * float(arc_dis) / r
+        return place_point_cyl(
+            [r, theta, float(target_cyl[2])],
+            robot_root_xy=self.robot_root_xy,
+            robot_yaw_rad=self.robot_yaw,
+            ret="list",
+        )
 
     def _scan_scene_two_views(self, object_list=None):
         scan_r = 0.62
@@ -72,11 +89,12 @@ class place_a2b_right_rotate_view(place_a2b_right):
         ]
         object_list_np = np.array(object_list)
 
-        try_num, try_lim = 0, 100
+        try_num, try_lim = 0, 120
         while try_num <= try_lim:
             rand_pos = rand_pose_cyl(
                 rlim=[0.44, 0.5],
-                thetalim=[-1.0, 1.0],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -84,13 +102,10 @@ class place_a2b_right_rotate_view(place_a2b_right):
                 rotate_rand=True,
                 rotate_lim=[0, 3.14, 0],
             )
-            if rand_pos.p[0] > 0:
-                tx_range = [-0.1, 0.1]
-            else:
-                tx_range = [-0.23, -0.18]
             target_rand_pose = rand_pose_cyl(
                 rlim=[0.44, 0.5],
-                thetalim=[-1.0, 1.0],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -98,31 +113,17 @@ class place_a2b_right_rotate_view(place_a2b_right):
                 rotate_rand=True,
                 rotate_lim=[0, 3.14, 0],
             )
-            refine = 0
-            while (
-                np.linalg.norm(target_rand_pose.p[:2] - rand_pos.p[:2]) < 0.1
-                or abs(target_rand_pose.p[1] - rand_pos.p[1]) < 0.1
-                or target_rand_pose.p[0] < tx_range[0]
-                or target_rand_pose.p[0] > tx_range[1]
-            ):
-                refine += 1
-                target_rand_pose = rand_pose_cyl(
-                    rlim=[0.44, 0.5],
-                    thetalim=[-1.0, 1.0],
-                    zlim=[0.741, 0.741],
-                    robot_root_xy=self.robot_root_xy,
-                    robot_yaw_rad=self.robot_yaw,
-                    qpos=[0.5, 0.5, 0.5, 0.5],
-                    rotate_rand=True,
-                    rotate_lim=[0, 3.14, 0],
-                )
-                if refine > 80:
-                    break
             try_num += 1
 
-            distance = np.linalg.norm(rand_pos.p[:2] - target_rand_pose.p[:2])
-            if distance > 0.19 or rand_pos.p[0] < target_rand_pose.p[0]:
+            distance = float(np.linalg.norm(rand_pos.p[:2] - target_rand_pose.p[:2]))
+            obj_theta = float(self._pose_to_cyl(rand_pos)[1])
+            tgt_theta = float(self._pose_to_cyl(target_rand_pose)[1])
+            theta_gap = float(self._wrap_to_pi(tgt_theta - obj_theta))
+
+            # For right task, source starts at the left side (larger theta), then moves to target-right.
+            if distance > 0.19 and theta_gap < -0.12:
                 break
+
         if try_num > try_lim:
             raise RuntimeError("Actor create limit!")
 
@@ -162,13 +163,13 @@ class place_a2b_right_rotate_view(place_a2b_right):
     def play_once(self):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
-        arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
+        object_theta = float(self._pose_to_cyl(self.object.get_pose())[1])
+        arm_tag = ArmTag("left" if object_theta >= 0.0 else "right")
         self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
 
-        target_pose = self.target_object.get_pose().p.tolist()
-        target_pose[0] += 0.13
+        target_pose = self._side_place_pose(self.target_object.get_pose(), arc_dis=0.13, to_left=False)
         self.face_world_point_with_torso(target_pose[:3], joint_name_prefer="astribot_torso_joint_2")
         self.move(self.place_actor(self.object, arm_tag=arm_tag, target_pose=target_pose, constrain="free"))
 
@@ -178,3 +179,22 @@ class place_a2b_right_rotate_view(place_a2b_right):
             "{a}": str(arm_tag),
         }
         return self.info
+
+    def check_success(self):
+        object_pose = np.array(self.object.get_pose().p)
+        target_pos = np.array(self.target_object.get_pose().p)
+        distance = float(np.linalg.norm(object_pose[:2] - target_pos[:2]))
+
+        obj_cyl = world_to_robot(object_pose.tolist(), self.robot_root_xy, self.robot_yaw)
+        tgt_cyl = world_to_robot(target_pos.tolist(), self.robot_root_xy, self.robot_yaw)
+        theta_diff = float(self._wrap_to_pi(obj_cyl[1] - tgt_cyl[1]))
+        radial_diff = abs(float(obj_cyl[0] - tgt_cyl[0]))
+
+        return np.all(
+            distance < 0.2
+            and distance > 0.08
+            and theta_diff < -0.02
+            and radial_diff < 0.08
+            and self.robot.is_left_gripper_open()
+            and self.robot.is_right_gripper_open()
+        )

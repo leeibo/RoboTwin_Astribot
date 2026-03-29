@@ -13,6 +13,7 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -52,7 +53,8 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
         while len(block_pose_lst) < 3:
             block_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
-                thetalim=[-1.08, 1.08],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741 + block_half_size, 0.741 + block_half_size],
                 qpos=[1, 0, 0, 0],
                 rotate_rand=True,

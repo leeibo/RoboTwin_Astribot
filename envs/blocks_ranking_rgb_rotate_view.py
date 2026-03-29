@@ -13,6 +13,7 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -48,7 +49,8 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
         for _ in range(120):
             pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
-                thetalim=[-1.08, 1.08],
+                thetalim=rotate_theta_center(self),
+
                 zlim=[0.741 + size, 0.741 + size],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -64,7 +66,8 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
             return pose
         return rand_pose_cyl(
             rlim=[0.5, 0.5],
-            thetalim=[0.6 - 0.6 * len(existing_pose_lst), 0.6 - 0.6 * len(existing_pose_lst)],
+            thetalim=[0.6 * rotate_theta_half(self) * (1.0 - len(existing_pose_lst))] * 2,
+
             zlim=[0.741 + size, 0.741 + size],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,

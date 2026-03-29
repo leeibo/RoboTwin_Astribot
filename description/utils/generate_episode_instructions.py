@@ -256,10 +256,18 @@ if __name__ == "__main__":
         default=100,
         help="Maximum number of descriptions per episode",
     )
+    parser.add_argument(
+        "config_name",
+        type=str,
+        nargs="?",
+        default="",
+        help="Task config yaml name without suffix (optional).",
+    )
 
     args = parser.parse_args()
+    config_name = args.config_name if args.config_name else args.setting
     setting_file = os.path.join(
-        parent_directory, f"../../task_config/{args.setting}.yml"
+        parent_directory, f"../../task_config/{config_name}.yml"
     )
     with open(setting_file, "r", encoding="utf-8") as f:
         args_dict = yaml.load(f.read(), Loader=yaml.FullLoader)

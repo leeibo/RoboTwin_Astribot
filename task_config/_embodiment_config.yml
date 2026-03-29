@@ -15,3 +15,6 @@ ur5-wsg:
 
 astribot:
   file_path: "./assets/embodiments/astribot_descriptions"
+
+astribot_texture:
+  file_path: "./assets/embodiments/astribot_descriptions_texture"

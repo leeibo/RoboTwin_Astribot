@@ -13,6 +13,7 @@ class place_empty_cup_rotate_view(place_empty_cup):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(**kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -41,13 +42,20 @@ class place_empty_cup_rotate_view(place_empty_cup):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         tag = int(np.random.randint(0, 2))
-        cup_thetas = [[-1.05, -0.7], [0.7, 1.05]]
-        coaster_thetas = [[-0.35, 0.35], [-0.35, 0.35]]
+        cup_thetas = [
+            rotate_theta_side(self, side=-1),
+            rotate_theta_side(self, side=1),
+        ]
+        coaster_thetas = [
+            rotate_theta_center(self),
+            rotate_theta_center(self),
+        ]
         self.cup = create_actor(
             self,
             pose=rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=cup_thetas[tag],
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -64,6 +72,7 @@ class place_empty_cup_rotate_view(place_empty_cup):
             coaster_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=coaster_thetas[tag],
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

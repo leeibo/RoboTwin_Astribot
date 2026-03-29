@@ -11,13 +11,13 @@ from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 import transforms3d as t3d
 import random
 import envs._GLOBAL_CONFIGS as CONFIGS
-left_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_left_identity.json'))
-right_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_right_identity.json'))
-left_pose = left_pose['success_points']
-right_pose = right_pose['success_points']
+# left_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_left_identity.json'))
+# right_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_right_identity.json'))
+# left_pose = left_pose['success_points']
+# right_pose = right_pose['success_points']
 
-left_pose_list = random.sample(left_pose, 1000)
-right_pose_list = random.sample(right_pose, 1000)
+# left_pose_list = random.sample(left_pose, 1000)
+# right_pose_list = random.sample(right_pose, 1000)
 
 
 def _plan_gripper_profile(

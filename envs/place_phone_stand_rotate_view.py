@@ -13,6 +13,7 @@ class place_phone_stand_rotate_view(place_phone_stand):
         kwargs.setdefault("fan_inner_radius", 0.3)
         kwargs.setdefault("fan_angle_deg", 220)
         kwargs.setdefault("fan_center_deg", 90)
+        kwargs = init_rotate_theta_bounds(self, kwargs)
         super().setup_demo(is_test=is_test, **kwargs)
 
     def _get_robot_root_xy_yaw(self):
@@ -49,14 +50,15 @@ class place_phone_stand_rotate_view(place_phone_stand):
         ]
 
         side = 1.0 if np.random.rand() < 0.5 else -1.0
-        theta_phone_lim = [0.55, 1.05] if side > 0 else [-1.05, -0.55]
-        theta_stand_lim = [0.3, 0.8] if side < 0 else [-0.8, -0.3]
+        theta_phone_lim = rotate_theta_side(self, side=side)
+        theta_stand_lim = rotate_theta_side(self, side=-side)
 
         self.phone_id = int(np.random.choice([0, 1, 2, 4], 1)[0])
         while True:
             phone_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=theta_phone_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
@@ -73,6 +75,7 @@ class place_phone_stand_rotate_view(place_phone_stand):
             stand_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=theta_stand_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,

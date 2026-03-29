@@ -14,6 +14,7 @@ class place_shoe_rotate_view(place_shoe):
         kwags.setdefault("fan_inner_radius", 0.3)
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
+        kwags = init_rotate_theta_bounds(self, kwags)
         super().setup_demo(is_test=is_test, **kwags)
 
     def _get_robot_root_xy_yaw(self):
@@ -68,11 +69,12 @@ class place_shoe_rotate_view(place_shoe):
         ]]
 
         side = 1.0 if np.random.rand() < 0.5 else -1.0
-        theta_lim = [0.8, 1.38] if side > 0 else [-1.38, -0.8]
+        theta_lim = rotate_theta_side(self, side=side)
         while True:
             shoe_pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=theta_lim,
+
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
