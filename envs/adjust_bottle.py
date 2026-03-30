@@ -9,12 +9,13 @@ class adjust_bottle(Base_Task):
     def setup_demo(self, **kwags):
         super()._init_task_env_(**kwags)
 
-    def load_actors(self):
+    def load_actors(self): 
         self.qpose_tag = np.random.randint(0, 2)
         qposes = [[0.707, 0.0, 0.0, -0.707], [0.707, 0.0, 0.0, 0.707]]
         xlims = [[-0.12, -0.08], [0.08, 0.12]]
 
         self.model_id = np.random.choice([13, 16])
+        return None
 
         self.bottle = rand_create_actor(
             self,
@@ -34,6 +35,9 @@ class adjust_bottle(Base_Task):
         self.right_target_pose = [0.25, -0.12, 0.95, 0, 1, 0, 0]
 
     def play_once(self):
+        while True:
+            self.viewer.render()
+            # self._update_render()
         # Determine which arm to use based on qpose_tag (1 for right, else left)
         arm_tag = ArmTag("right" if self.qpose_tag == 1 else "left")
         # Select target pose based on qpose_tag (right_target_pose or left_target_pose)

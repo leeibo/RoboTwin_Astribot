@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -u
 set -o pipefail
+# DIFFICULTY_PRESETS="easy:150:1.0,medium:200:1.0,hard:240:1.0" ./collect_rotate_tasks_multi_difficulty.sh demo_clean 0
 
 # Batch collect rotate-view tasks across multiple difficulty levels.
 #
