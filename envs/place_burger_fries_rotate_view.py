@@ -43,7 +43,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
 
         tray_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=rotate_theta_center(self),
+            thetalim=[0,0],
 
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
@@ -51,6 +51,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
             qpos=[0.706527, 0.706483, -0.0291356, -0.0291767],
             rotate_rand=True,
             rotate_lim=[0, 0, 0],
+            
         )
         self.tray_id = int(np.random.choice([0, 1, 2, 3], 1)[0])
         self.tray = create_actor(
@@ -119,7 +120,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
         arm_tag_right = ArmTag("right")
 
         self.face_object_with_torso(self.hamburg, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.hamburg, arm_tag=arm_tag_left, pre_grasp_dis=0.1,gripper_pos=0.01))
+        self.move(self.grasp_actor(self.hamburg, arm_tag=arm_tag_left, pre_grasp_dis=0.1,grasp_dis=0.01))
         self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.1))
         self.face_world_point_with_torso(tray_place_pose_left[:3], joint_name_prefer="astribot_torso_joint_2")
         self.move(
@@ -137,7 +138,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
         self.move(self.back_to_origin(arm_tag=arm_tag_left))
 
         self.face_object_with_torso(self.frenchfries, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.frenchfries, arm_tag=arm_tag_right, pre_grasp_dis=0.1))
+        self.move(self.grasp_actor(self.frenchfries, arm_tag=arm_tag_right, pre_grasp_dis=0.1,grasp_dis=0.01,gripper_pos=0.2))
         self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.1))        
         self.face_world_point_with_torso(tray_place_pose_right[:3], joint_name_prefer="astribot_torso_joint_2")
         self.move(

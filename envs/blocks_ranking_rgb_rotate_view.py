@@ -45,7 +45,51 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
                 return False
         return True
 
-    def _sample_block_pose(self, size, existing_pose_lst):
+    @staticmethod
+    def _far_from_target_band(new_pose, target_xy_lst, min_dist_sq=0.012):
+        for xy in target_xy_lst:
+            if np.sum(np.square(new_pose.p[:2] - xy)) < min_dist_sq:
+                return False
+        return True
+
+    def _sample_target_gap(self):
+        return float(np.random.uniform(0.16, 0.21))
+
+    def _sample_anchor_pose(self, size, target_gap):
+        theta_half = rotate_theta_half(self)
+        theta_lo = max(0.15, -theta_half + 2 * target_gap + 0.15)
+        theta_hi = theta_half - 0.12
+        if theta_lo > theta_hi:
+            theta_lo = max(-theta_half + 2 * target_gap + 0.05, 0.0)
+            theta_hi = max(theta_lo, theta_half - 0.05)
+
+        for _ in range(120):
+            pose = rand_pose_cyl(
+                rlim=[0.4, 0.5],
+                thetalim=[theta_lo, theta_hi],
+                zlim=[0.741 + size, 0.741 + size],
+                robot_root_xy=self.robot_root_xy,
+                robot_yaw_rad=self.robot_yaw,
+                qpos=[1, 0, 0, 0],
+                rotate_rand=True,
+                rotate_lim=[0.0, 0.0, 0.75],
+            )
+            if world_to_robot(pose.p.tolist(), self.robot_root_xy, self.robot_yaw)[0] < 0.4:
+                continue
+            return deepcopy(pose)
+
+        fallback_theta = max(theta_lo, min(theta_hi, max(0.15, target_gap + 0.15)))
+        return rand_pose_cyl(
+            rlim=[0.45, 0.45],
+            thetalim=[fallback_theta, fallback_theta],
+            zlim=[0.741 + size, 0.741 + size],
+            robot_root_xy=self.robot_root_xy,
+            robot_yaw_rad=self.robot_yaw,
+            qpos=[1, 0, 0, 0],
+            rotate_rand=False,
+        )
+
+    def _sample_block_pose(self, size, existing_pose_lst, avoid_xy_lst):
         for _ in range(120):
             pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
@@ -59,15 +103,17 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
                 rotate_lim=[0.0, 0.0, 0.75],
             )
             cyl = world_to_robot(pose.p.tolist(), self.robot_root_xy, self.robot_yaw)
-            if cyl[0] < 0.4 or abs(cyl[1]) < 0.12:
+            if cyl[0] < 0.4:
                 continue
             if not self._valid_spacing(pose, existing_pose_lst):
                 continue
+            if not self._far_from_target_band(pose, avoid_xy_lst):
+                continue
             return pose
+        fallback_theta = float(np.clip(-0.35 * rotate_theta_half(self), -rotate_theta_half(self), rotate_theta_half(self)))
         return rand_pose_cyl(
             rlim=[0.5, 0.5],
-            thetalim=[0.6 * rotate_theta_half(self) * (1.0 - len(existing_pose_lst))] * 2,
-
+            thetalim=[fallback_theta, fallback_theta],
             zlim=[0.741 + size, 0.741 + size],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -75,22 +121,25 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
             rotate_rand=False,
         )
 
-    def _is_already_ranked(self, block_pose_lst):
-        cyl = [world_to_robot(p.p.tolist(), self.robot_root_xy, self.robot_yaw) for p in block_pose_lst]
-        theta = [c[1] for c in cyl]
-        return theta[0] > theta[1] > theta[2]
-
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
-
-        while True:
-            block_pose_lst = []
-            size = float(np.random.uniform(0.015, 0.025))
-            for _ in range(3):
-                block_pose_lst.append(self._sample_block_pose(size=size, existing_pose_lst=block_pose_lst))
-            if self._is_already_ranked(block_pose_lst):
-                continue
-            break
+        size = float(np.random.uniform(0.015, 0.025))
+        target_gap = self._sample_target_gap()
+        anchor_pose = self._sample_anchor_pose(size=size, target_gap=target_gap)
+        anchor_cyl = world_to_robot(anchor_pose.p.tolist(), self.robot_root_xy, self.robot_yaw)
+        target_theta_lst = [anchor_cyl[1] - target_gap, anchor_cyl[1] - 2 * target_gap]
+        target_xy_lst = [
+            place_point_cyl(
+                [anchor_cyl[0], theta, anchor_pose.p[2]],
+                robot_root_xy=self.robot_root_xy,
+                robot_yaw_rad=self.robot_yaw,
+                ret="array",
+            )[:2]
+            for theta in target_theta_lst
+        ]
+        block_pose_lst = [anchor_pose]
+        while len(block_pose_lst) < 3:
+            block_pose_lst.append(self._sample_block_pose(size=size, existing_pose_lst=block_pose_lst, avoid_xy_lst=target_xy_lst))
 
         half_size = (size, size, size)
         self.block1 = create_box(
@@ -118,28 +167,17 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
         self.add_prohibit_area(self.block1, padding=0.05)
         self.add_prohibit_area(self.block2, padding=0.05)
         self.add_prohibit_area(self.block3, padding=0.05)
-        self.prohibited_area.append([-0.16, -0.22, 0.16, -0.10])
-
-        target_r = float(np.random.uniform(0.4, 0.5))
-        target_theta_mid = float(np.random.uniform(-0.03, 0.03))
-        target_gap = float(np.random.uniform(0.16, 0.21))
         target_z = 0.74 + self.table_z_bias
         target_quat = [0, 1, 0, 0]
 
-        self.block1_target_pose = place_pose_cyl(
-            [target_r, target_theta_mid + target_gap, target_z] + target_quat,
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            ret="list",
-        )
         self.block2_target_pose = place_pose_cyl(
-            [target_r, target_theta_mid, target_z] + target_quat,
+            [anchor_cyl[0], target_theta_lst[0], target_z] + target_quat,
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="list",
         )
         self.block3_target_pose = place_pose_cyl(
-            [target_r, target_theta_mid - target_gap, target_z] + target_quat,
+            [anchor_cyl[0], target_theta_lst[1], target_z] + target_quat,
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="list",
@@ -149,7 +187,8 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
         self.last_gripper = None
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
-        arm_tag1 = self.pick_and_place_block(self.block1, self.block1_target_pose)
+        block1_cyl = world_to_robot(self.block1.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
+        anchor_arm = ArmTag("left" if block1_cyl[1] >= 0 else "right")
         arm_tag2 = self.pick_and_place_block(self.block2, self.block2_target_pose)
         arm_tag3 = self.pick_and_place_block(self.block3, self.block3_target_pose)
 
@@ -157,20 +196,21 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
             "{A}": "red block",
             "{B}": "green block",
             "{C}": "blue block",
-            "{a}": arm_tag1,
+            "{a}": str(anchor_arm),
             "{b}": arm_tag2,
             "{c}": arm_tag3,
         }
         return self.info
 
     def pick_and_place_block(self, block, target_pose):
-        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
-
+     
         block_cyl = world_to_robot(block.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
         arm_tag = ArmTag("left" if block_cyl[1] >= 0 else "right")
 
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
+        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
+
         self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09, grasp_dis=0.01))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
 

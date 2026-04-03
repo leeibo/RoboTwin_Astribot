@@ -42,7 +42,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         box_pose = rand_pose_cyl(
-            rlim=[0.5, 0.5],
+            rlim=[0.4, 0.5],
             thetalim=rotate_theta_center(self),
 
             zlim=[0.741, 0.741],
@@ -59,11 +59,12 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
             modelname="062_plasticbox",
             convex=True,
             model_id=self.plasticbox_id,
+            is_static=True,
         )
         self.plasticbox.set_mass(0.05)
 
         obj1_pose = rand_pose_cyl(
-            rlim=[0.5, 0.5],
+            rlim=[0.4, 0.5],
             thetalim=rotate_theta_side(self, side=1),
 
             zlim=[0.741, 0.741],
@@ -84,7 +85,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         self.object1.set_mass(0.05)
 
         obj2_pose = rand_pose_cyl(
-            rlim=[0.5, 0.5],
+            rlim=[0.4, 0.5],
             thetalim=rotate_theta_side(self, side=-1),
 
             zlim=[0.741, 0.741],
@@ -116,8 +117,8 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         t1 = self.plasticbox.get_functional_point(1)
         t0 = self.plasticbox.get_functional_point(0)
         self.face_object_with_torso(self.object1, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.1))
-        self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.2))
+        self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.07))
+        self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.1))
         self.face_world_point_with_torso(t1[:3], joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.place_actor(
@@ -125,15 +126,14 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
                 arm_tag=arm_tag_left,
                 target_pose=t1,
                 constrain="free",
-                pre_dis=0.1,
             )
         )
         self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.08))
         self.move(self.back_to_origin(arm_tag=arm_tag_left))
 
         self.face_object_with_torso(self.object2, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.1))
-        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.2))
+        self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07))
+        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.1))
 
         self.face_world_point_with_torso(t0[:3], joint_name_prefer="astribot_torso_joint_2")
         self.move(
@@ -142,7 +142,6 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
                 arm_tag=arm_tag_right,
                 target_pose=t0,
                 constrain="free",
-                pre_dis=0.1,
             ),
         )
         self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.08))

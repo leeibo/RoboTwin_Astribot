@@ -18,6 +18,10 @@ from argparse import ArgumentParser
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
 
+DEFAULT_MAX_SEED_TRIES = 50
+SEED_LIMIT_EXCEEDED_EXIT_CODE = 2
+COLLECTION_FAILED_EXIT_CODE = 1
+
 
 def class_decorator(task_name):
     envs_module = importlib.import_module(f"envs.{task_name}")
@@ -58,6 +62,50 @@ def infer_difficulty_tag(args):
     else:
         level = "hard"
     return f"{level}_fan{fan_angle_int}"
+
+
+def resolve_max_seed_tries(args):
+    raw_value = os.environ.get("ROBOTWIN_MAX_SEED_TRIES", args.get("max_seed_tries", DEFAULT_MAX_SEED_TRIES))
+    if raw_value is None:
+        return DEFAULT_MAX_SEED_TRIES
+
+    max_seed_tries = int(raw_value)
+    if max_seed_tries < 0:
+        return None
+    return max_seed_tries
+
+
+def get_collection_failure_report_path(save_path):
+    return os.path.join(save_path, "collection_failure.json")
+
+
+def write_collection_failure_report(save_path, payload):
+    os.makedirs(save_path, exist_ok=True)
+    report_path = get_collection_failure_report_path(save_path)
+    with open(report_path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=4)
+    return report_path
+
+
+def clear_collection_failure_report(save_path):
+    report_path = get_collection_failure_report_path(save_path)
+    if os.path.exists(report_path):
+        os.remove(report_path)
+
+
+def safe_close_env(task_env, render_freq, clear_cache=False):
+    try:
+        task_env.close_env(clear_cache=clear_cache)
+    except Exception:
+        traceback.print_exc()
+
+    if render_freq:
+        viewer = getattr(task_env, "viewer", None)
+        if viewer is not None:
+            try:
+                viewer.close()
+            except Exception:
+                traceback.print_exc()
 
 
 def main(task_name=None, task_config=None):
@@ -121,20 +169,43 @@ def main(task_name=None, task_config=None):
     print("\033[94mEmbodiment Config:\033[0m " + embodiment_name)
     difficulty_tag = infer_difficulty_tag(args)
     storage_setting = f"{task_config}__{difficulty_tag}"
+    max_seed_tries = resolve_max_seed_tries(args)
     print("\033[94mDifficulty Tag:\033[0m " + difficulty_tag)
     print("\033[94mData Setting:\033[0m " + storage_setting)
+    print("\033[94mMax Seed Tries:\033[0m " + ("unlimited" if max_seed_tries is None else str(max_seed_tries)))
     print("\n==================================")
 
     args["embodiment_name"] = embodiment_name
     args['task_config'] = task_config
     args["difficulty_tag"] = difficulty_tag
+    args["max_seed_tries"] = max_seed_tries
     args["storage_setting"] = storage_setting
     args["save_path"] = os.path.join(args["save_path"], str(args["task_name"]), storage_setting)
-    run(task, args)
+    clear_collection_failure_report(args["save_path"])
+
+    try:
+        return run(task, args)
+    except Exception as exc:
+        traceback.print_exc()
+        report = {
+            "task_name": args["task_name"],
+            "task_config": args["task_config"],
+            "storage_setting": args["storage_setting"],
+            "save_path": args["save_path"],
+            "status": "failed",
+            "reason": "collection_exception",
+            "exception_type": type(exc).__name__,
+            "exception_message": str(exc),
+        }
+        report_path = write_collection_failure_report(args["save_path"], report)
+        print(f"[Error] collection failure report written to: {report_path}")
+        return COLLECTION_FAILED_EXIT_CODE
 
 
 def run(TASK_ENV, args):
     epid, suc_num, fail_num, seed_list = 0, 0, 0, []
+    last_failure = None
+    max_seed_tries = args.get("max_seed_tries", DEFAULT_MAX_SEED_TRIES)
 
     print(f"Task Name: \033[34m{args['task_name']}\033[0m")
 
@@ -155,6 +226,31 @@ def run(TASK_ENV, args):
             print(f"Exist seed file, Start from: {epid} / {suc_num}")
 
         while suc_num < args["episode_num"]:
+            if max_seed_tries is not None and epid > max_seed_tries:
+                report = {
+                    "task_name": args["task_name"],
+                    "task_config": args["task_config"],
+                    "storage_setting": args["storage_setting"],
+                    "save_path": args["save_path"],
+                    "status": "failed",
+                    "reason": "seed_limit_exceeded",
+                    "max_seed_tries": max_seed_tries,
+                    "episode_num": args["episode_num"],
+                    "success_episode_num": suc_num,
+                    "failure_num": fail_num,
+                    "next_seed_to_try": epid,
+                    "last_attempted_seed": epid - 1 if epid > 0 else None,
+                    "seed_list": seed_list,
+                    "last_failure": last_failure,
+                }
+                report_path = write_collection_failure_report(args["save_path"], report)
+                print(
+                    f"[Error] stop seed collection for {args['task_name']}: "
+                    f"next seed {epid} exceeds max_seed_tries={max_seed_tries}"
+                )
+                print(f"[Error] collection failure report written to: {report_path}")
+                return SEED_LIMIT_EXCEEDED_EXIT_CODE
+
             try:
                 TASK_ENV.setup_demo(now_ep_num=suc_num, seed=epid, **args)
                 TASK_ENV.play_once()
@@ -164,24 +260,28 @@ def run(TASK_ENV, args):
                     seed_list.append(epid)
                     TASK_ENV.save_traj_data(suc_num)
                     suc_num += 1
+                    last_failure = None
                 else:
                     print(f"simulate data episode {suc_num} fail! (seed = {epid})")
                     fail_num += 1
+                    last_failure = {
+                        "type": "plan_or_success_check_failed",
+                        "seed": epid,
+                    }
 
-                TASK_ENV.close_env()
-
-                if args["render_freq"]:
-                    TASK_ENV.viewer.close()
+                safe_close_env(TASK_ENV, args["render_freq"])
             except UnStableError as e:
                 print(" -------------")
                 print(f"simulate data episode {suc_num} fail! (seed = {epid})")
                 traceback.print_exc()
                 print(" -------------")
                 fail_num += 1
-                TASK_ENV.close_env()
-
-                if args["render_freq"]:
-                    TASK_ENV.viewer.close()
+                last_failure = {
+                    "type": type(e).__name__,
+                    "seed": epid,
+                    "message": str(e),
+                }
+                safe_close_env(TASK_ENV, args["render_freq"])
                 time.sleep(0.3)
             except Exception as e:
                 # stack_trace = traceback.format_exc()
@@ -190,10 +290,12 @@ def run(TASK_ENV, args):
                 traceback.print_exc()
                 print(" -------------")
                 fail_num += 1
-                TASK_ENV.close_env()
-
-                if args["render_freq"]:
-                    TASK_ENV.viewer.close()
+                last_failure = {
+                    "type": type(e).__name__,
+                    "seed": epid,
+                    "message": str(e),
+                }
+                safe_close_env(TASK_ENV, args["render_freq"])
                 time.sleep(1)
 
             epid += 1
@@ -208,6 +310,26 @@ def run(TASK_ENV, args):
         with open(os.path.join(args["save_path"], "seed.txt"), "r") as file:
             seed_list = file.read().split()
             seed_list = [int(i) for i in seed_list]
+
+    if len(seed_list) < args["episode_num"]:
+        report = {
+            "task_name": args["task_name"],
+            "task_config": args["task_config"],
+            "storage_setting": args["storage_setting"],
+            "save_path": args["save_path"],
+            "status": "failed",
+            "reason": "insufficient_seed_list",
+            "episode_num": args["episode_num"],
+            "success_episode_num": len(seed_list),
+            "seed_list": seed_list,
+        }
+        report_path = write_collection_failure_report(args["save_path"], report)
+        print(
+            f"[Error] insufficient seeds for {args['task_name']}: "
+            f"need {args['episode_num']}, only found {len(seed_list)}"
+        )
+        print(f"[Error] collection failure report written to: {report_path}")
+        return COLLECTION_FAILED_EXIT_CODE
 
     # =========== Collect Data ===========
 
@@ -265,6 +387,9 @@ def run(TASK_ENV, args):
         )
         os.system(command)
 
+    clear_collection_failure_report(args["save_path"])
+    return 0
+
 
 if __name__ == "__main__":
     from test_render import Sapien_TEST
@@ -280,4 +405,4 @@ if __name__ == "__main__":
     task_name = parser.task_name
     task_config = parser.task_config
 
-    main(task_name=task_name, task_config=task_config)
+    raise SystemExit(main(task_name=task_name, task_config=task_config))

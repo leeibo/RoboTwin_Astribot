@@ -70,7 +70,7 @@ class place_container_plate_rotate_view(place_container_plate):
         x = 0.05 if self.container.get_pose().p[0] > 0 else -0.05
         self.plate_id = 0
         plate_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
+            rlim=[0.43, 0.5],
             thetalim=rotate_theta_center(self),
 
             zlim=[0.741, 0.741],

@@ -38,23 +38,18 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
                 joint_name_prefer="astribot_torso_joint_2",
             )
 
-    def load_actors(self):
-        self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
+    @staticmethod
+    def _valid_spacing(new_pose, existing_pose_lst, min_dist_sq=0.01):
+        for pose in existing_pose_lst:
+            if np.sum(np.square(new_pose.p[:2] - pose.p[:2])) < min_dist_sq:
+                return False
+        return True
 
-        block_half_size = 0.025
-        block_pose_lst = []
-        target_center = place_point_cyl(
-            [0.48, 0.0, 0.75 + self.table_z_bias],
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            ret="array",
-        )
-
-        while len(block_pose_lst) < 3:
-            block_pose = rand_pose_cyl(
+    def _sample_block_pose(self, block_half_size, existing_pose_lst):
+        for _ in range(120):
+            pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=rotate_theta_center(self),
-
                 zlim=[0.741 + block_half_size, 0.741 + block_half_size],
                 qpos=[1, 0, 0, 0],
                 rotate_rand=True,
@@ -62,19 +57,40 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
             )
-            block_cyl = world_to_robot(block_pose.p.tolist(), self.robot_root_xy, self.robot_yaw)
-            if abs(block_cyl[1]) < 0.25:
+            if world_to_robot(pose.p.tolist(), self.robot_root_xy, self.robot_yaw)[0] < 0.4:
                 continue
-            if np.linalg.norm(block_pose.p[:2] - target_center[:2]) < 0.15:
+            if not self._valid_spacing(pose, existing_pose_lst):
                 continue
-            valid = True
-            for existing_pose in block_pose_lst:
-                if np.sum((block_pose.p[:2] - existing_pose.p[:2])**2) < 0.01:
-                    valid = False
-                    break
-            if not valid:
-                continue
-            block_pose_lst.append(deepcopy(block_pose))
+            return deepcopy(pose)
+
+        fallback_theta = float(
+            np.clip(
+                0.35 * rotate_theta_half(self) * (1.0 - len(existing_pose_lst)),
+                -rotate_theta_half(self),
+                rotate_theta_half(self),
+            )
+        )
+        return rand_pose_cyl(
+            rlim=[0.45, 0.45],
+            thetalim=[fallback_theta, fallback_theta],
+            zlim=[0.741 + block_half_size, 0.741 + block_half_size],
+            qpos=[1, 0, 0, 0],
+            robot_root_xy=self.robot_root_xy,
+            robot_yaw_rad=self.robot_yaw,
+            rotate_rand=False,
+        )
+
+    def _get_block_arm_tag(self, block):
+        block_cyl = world_to_robot(block.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
+        return ArmTag("left" if block_cyl[1] >= 0 else "right")
+
+    def load_actors(self):
+        self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
+
+        block_half_size = 0.025
+        block_pose_lst = []
+        while len(block_pose_lst) < 3:
+            block_pose_lst.append(self._sample_block_pose(block_half_size, block_pose_lst))
 
         def create_block(block_pose, color):
             return create_box(
@@ -91,16 +107,9 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
         self.add_prohibit_area(self.block1, padding=0.05)
         self.add_prohibit_area(self.block2, padding=0.05)
         self.add_prohibit_area(self.block3, padding=0.05)
-        self.block1_target_pose = place_pose_cyl(
-            [0.48, 0.0, 0.75 + self.table_z_bias, 0, 1, 0, 0],
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            ret="list",
-        )
 
     def pick_and_place_block(self, block: Actor):
-        block_pose = block.get_pose().p
-        arm_tag = ArmTag("left" if block_pose[0] < 0 else "right")
+        arm_tag = self._get_block_arm_tag(block)
 
         self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
         if self.last_gripper is not None and self.last_gripper != arm_tag:
@@ -111,9 +120,9 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
         else:
             self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09))
 
-        self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
+        self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1))
 
-        target_pose = self.block1_target_pose if self.last_actor is None else self.last_actor.get_functional_point(1)
+        target_pose = self.last_actor.get_functional_point(1)
         self.face_world_point_with_torso(target_pose[:3], joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.place_actor(
@@ -137,9 +146,9 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
         self.last_gripper = None
-        self.last_actor = None
+        self.last_actor = self.block1
+        anchor_arm = self._get_block_arm_tag(self.block1)
 
-        arm_tag1 = self.pick_and_place_block(self.block1)
         arm_tag2 = self.pick_and_place_block(self.block2)
         arm_tag3 = self.pick_and_place_block(self.block3)
 
@@ -147,7 +156,7 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
             "{A}": "red block",
             "{B}": "green block",
             "{C}": "blue block",
-            "{a}": str(arm_tag1),
+            "{a}": str(anchor_arm),
             "{b}": str(arm_tag2),
             "{c}": str(arm_tag3),
         }

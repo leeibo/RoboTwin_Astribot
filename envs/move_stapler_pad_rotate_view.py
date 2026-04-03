@@ -136,3 +136,10 @@ class move_stapler_pad_rotate_view(move_stapler_pad):
             "{a}": str(arm_tag),
         }
         return self.info
+    def check_success(self):
+        stapler_pose = self.stapler.get_pose().p
+        target_pos = self.pad.get_pose().p
+        eps = [0.02, 0.02, 0.01]
+        return (np.all(abs(stapler_pose - target_pos) < np.array(eps))) and (self.robot.is_left_gripper_open()
+                and self.robot.is_right_gripper_open())
+  

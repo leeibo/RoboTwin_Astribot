@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import subprocess
 from pathlib import Path
 
@@ -54,6 +55,33 @@ def run_collect(root_dir: Path, task_name: str, task_config: str, gpu_id: int) -
     return subprocess.run(cmd, cwd=root_dir).returncode
 
 
+def write_collection_summary_report(
+    report_dir: Path,
+    scope: str,
+    task_config: str,
+    gpu_id: int,
+    selected_tasks: list[str],
+    succeeded: list[str],
+    failed: list[dict],
+) -> Path:
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"collect_all_tasks_except_fixing__{scope}__{task_config}.json"
+    payload = {
+        "scope": scope,
+        "task_config": task_config,
+        "gpu_id": gpu_id,
+        "selected_task_num": len(selected_tasks),
+        "succeeded_task_num": len(succeeded),
+        "failed_task_num": len(failed),
+        "selected_tasks": selected_tasks,
+        "succeeded_tasks": succeeded,
+        "failed_tasks": failed,
+        "per_task_failure_report": "./data/<task_name>/*/collection_failure.json",
+    }
+    report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=4), encoding="utf-8")
+    return report_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sequentially collect tasks except those listed in fixing_task.yml"
@@ -90,6 +118,7 @@ def main() -> int:
     excluded = load_excluded_tasks(fixing_file)
     all_tasks = discover_tasks(env_dir, args.scope)
     selected_tasks = [t for t in all_tasks if t not in excluded]
+    report_dir = root_dir / "data" / "collection_reports"
 
     print(f"[Info] scope={args.scope}")
     print(f"[Info] discovered={len(all_tasks)} | excluded={len(excluded)} | to_collect={len(selected_tasks)}")
@@ -102,25 +131,53 @@ def main() -> int:
 
     succeeded = []
     failed = []
+    report_path = write_collection_summary_report(
+        report_dir,
+        args.scope,
+        args.task_config,
+        args.gpu_id,
+        selected_tasks,
+        succeeded,
+        failed,
+    )
 
     for task_name in selected_tasks:
         ret = run_collect(root_dir, task_name, args.task_config, args.gpu_id)
         if ret == 0:
             succeeded.append(task_name)
+            report_path = write_collection_summary_report(
+                report_dir,
+                args.scope,
+                args.task_config,
+                args.gpu_id,
+                selected_tasks,
+                succeeded,
+                failed,
+            )
             continue
 
-        failed.append(task_name)
+        failed.append({"task_name": task_name, "exit_code": ret})
         print(f"[Error] task failed: {task_name} (exit={ret})")
+        report_path = write_collection_summary_report(
+            report_dir,
+            args.scope,
+            args.task_config,
+            args.gpu_id,
+            selected_tasks,
+            succeeded,
+            failed,
+        )
         if not args.continue_on_error:
             break
 
     print("\n[Summary]")
     print(f"  succeeded: {len(succeeded)}")
     print(f"  failed:    {len(failed)}")
+    print(f"  summary_report: {report_path}")
     if failed:
         print("  failed_tasks:")
-        for task_name in failed:
-            print(f"    - {task_name}")
+        for item in failed:
+            print(f"    - {item['task_name']} (exit={item['exit_code']})")
 
     return 0 if len(failed) == 0 else 1
 

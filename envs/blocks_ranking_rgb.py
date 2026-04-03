@@ -10,50 +10,70 @@ class blocks_ranking_rgb(Base_Task):
     def setup_demo(self, **kwags):
         super()._init_task_env_(**kwags)
 
-    def load_actors(self):
+    @staticmethod
+    def _valid_spacing(new_pose, existing_pose_lst, min_dist_sq=0.01):
+        for pose in existing_pose_lst:
+            if np.sum(np.square(new_pose.p[:2] - pose.p[:2])) < min_dist_sq:
+                return False
+        return True
+
+    @staticmethod
+    def _far_from_target_band(new_pose, target_xy_lst, min_dist_sq=0.01):
+        for xy in target_xy_lst:
+            if np.sum(np.square(new_pose.p[:2] - xy)) < min_dist_sq:
+                return False
+        return True
+
+    def _sample_anchor_gap(self):
+        return float(np.random.uniform(0.08, 0.095))
+
+    def _sample_anchor_pose(self):
         while True:
-            block_pose_lst = []
-            for i in range(3):
-                block_pose = rand_pose(
-                    xlim=[-0.28, 0.28],
-                    ylim=[-0.08, 0.05],
-                    zlim=[0.765],
-                    qpos=[1, 0, 0, 0],
-                    ylim_prop=True,
-                    rotate_rand=True,
-                    rotate_lim=[0, 0, 0.75],
-                )
-
-                def check_block_pose(block_pose):
-                    for j in range(len(block_pose_lst)):
-                        if (np.sum(pow(block_pose.p[:2] - block_pose_lst[j].p[:2], 2)) < 0.01):
-                            return False
-                    return True
-
-                while (abs(block_pose.p[0]) < 0.05 or np.sum(pow(block_pose.p[:2] - np.array([0, -0.1]), 2)) < 0.01
-                       or not check_block_pose(block_pose)):
-                    block_pose = rand_pose(
-                        xlim=[-0.28, 0.28],
-                        ylim=[-0.08, 0.05],
-                        zlim=[0.765],
-                        qpos=[1, 0, 0, 0],
-                        ylim_prop=True,
-                        rotate_rand=True,
-                        rotate_lim=[0, 0, 0.75],
-                    )
-                block_pose_lst.append(deepcopy(block_pose))
-            eps = [0.12, 0.03]
-            block1_pose = block_pose_lst[0].p
-            block2_pose = block_pose_lst[1].p
-            block3_pose = block_pose_lst[2].p
-            if (np.all(abs(block1_pose[:2] - block2_pose[:2]) < eps)
-                    and np.all(abs(block2_pose[:2] - block3_pose[:2]) < eps) and block1_pose[0] < block2_pose[0]
-                    and block2_pose[0] < block3_pose[0]):
+            gap = self._sample_anchor_gap()
+            block_pose = rand_pose(
+                xlim=[-0.26, 0.28 - 2 * gap - 0.03],
+                ylim=[-0.08, 0.05],
+                zlim=[0.765],
+                qpos=[1, 0, 0, 0],
+                ylim_prop=True,
+                rotate_rand=True,
+                rotate_lim=[0, 0, 0.75],
+            )
+            if np.sum(np.square(block_pose.p[:2] - np.array([0, -0.1]))) < 0.01:
                 continue
-            else:
-                break
+            return deepcopy(block_pose), gap
 
+    def _sample_block_pose(self, existing_pose_lst, avoid_xy_lst):
+        while True:
+            block_pose = rand_pose(
+                xlim=[-0.28, 0.28],
+                ylim=[-0.08, 0.05],
+                zlim=[0.765],
+                qpos=[1, 0, 0, 0],
+                ylim_prop=True,
+                rotate_rand=True,
+                rotate_lim=[0, 0, 0.75],
+            )
+            if np.sum(np.square(block_pose.p[:2] - np.array([0, -0.1]))) < 0.01:
+                continue
+            if not self._valid_spacing(block_pose, existing_pose_lst):
+                continue
+            if not self._far_from_target_band(block_pose, avoid_xy_lst):
+                continue
+            return deepcopy(block_pose)
+
+    def load_actors(self):
         size = np.random.uniform(0.015, 0.025)
+        anchor_pose, target_gap = self._sample_anchor_pose()
+        target_y = float(anchor_pose.p[1])
+        target_xy_lst = [
+            np.array([anchor_pose.p[0] + target_gap, target_y]),
+            np.array([anchor_pose.p[0] + 2 * target_gap, target_y]),
+        ]
+        block_pose_lst = [anchor_pose]
+        while len(block_pose_lst) < 3:
+            block_pose_lst.append(self._sample_block_pose(block_pose_lst, target_xy_lst))
+
         half_size = (size, size, size)
         self.block1 = create_box(
             scene=self,
@@ -80,44 +100,29 @@ class blocks_ranking_rgb(Base_Task):
         self.add_prohibit_area(self.block1, padding=0.05)
         self.add_prohibit_area(self.block2, padding=0.05)
         self.add_prohibit_area(self.block3, padding=0.05)
-
-        self.prohibited_area.append([-0.17, -0.22, 0.17, -0.12])
-
-        # Generate random y position for all blocks
-        y_pose = np.random.uniform(-0.2, -0.1)
-
-        # Define target poses for each block with random x positions
-        self.block1_target_pose = [
-            np.random.uniform(-0.09, -0.08),
-            y_pose,
-            0.74 + self.table_z_bias,
-        ] + [0, 1, 0, 0]
         self.block2_target_pose = [
-            np.random.uniform(-0.01, 0.01),
-            y_pose,
+            target_xy_lst[0][0],
+            target_y,
             0.74 + self.table_z_bias,
         ] + [0, 1, 0, 0]
         self.block3_target_pose = [
-            np.random.uniform(0.08, 0.09),
-            y_pose,
+            target_xy_lst[1][0],
+            target_y,
             0.74 + self.table_z_bias,
         ] + [0, 1, 0, 0]
 
     def play_once(self):
-        # Initialize last gripper state
         self.last_gripper = None
+        anchor_arm = ArmTag("left" if self.block1.get_pose().p[0] < 0 else "right")
 
-        # Pick and place each block to their target positions
-        arm_tag1 = self.pick_and_place_block(self.block1, self.block1_target_pose)
         arm_tag2 = self.pick_and_place_block(self.block2, self.block2_target_pose)
         arm_tag3 = self.pick_and_place_block(self.block3, self.block3_target_pose)
 
-        # Store information about the blocks and which arms were used
         self.info["info"] = {
             "{A}": "red block",
             "{B}": "green block",
             "{C}": "blue block",
-            "{a}": arm_tag1,
+            "{a}": str(anchor_arm),
             "{b}": arm_tag2,
             "{c}": arm_tag3,
         }

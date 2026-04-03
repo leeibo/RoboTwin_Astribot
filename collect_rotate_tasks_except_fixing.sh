@@ -11,6 +11,11 @@ cd "${ROOT_DIR}"
 
 ./script/.update_path.sh > /dev/null 2>&1 || true
 
+REPORT_DIR="data/collection_reports"
+REPORT_PREFIX="collect_rotate_tasks_except_fixing__${TASK_CONFIG}"
+FAILED_TASKS_FILE="${REPORT_DIR}/${REPORT_PREFIX}__failed_tasks.txt"
+SUMMARY_FILE="${REPORT_DIR}/${REPORT_PREFIX}__summary.txt"
+
 # Copied from task_config/fixing_task.yml
 EXCLUDED_TASKS=(
   dump_bin_bigbin_rotate_view
@@ -36,6 +41,10 @@ EXCLUDED_TASKS=(
   scan_object_rotate_view
   stack_bowls_three_rotate_view
   stack_bowls_two_rotate_view
+  place_bread_basket_rotate_view 
+  # move_stapler_pad_rotate_view
+  # place_a2b_left_rotate_view
+  # place_a2b_right_rotate_view
 )
 
 declare -A EXCLUDED_MAP
@@ -77,13 +86,44 @@ fi
 SUCCESS_TASKS=()
 FAILED_TASKS=()
 
+write_reports() {
+  mkdir -p "${REPORT_DIR}"
+
+  : > "${FAILED_TASKS_FILE}"
+  for failed_task in "${FAILED_TASKS[@]}"; do
+    printf '%s\n' "${failed_task}" >> "${FAILED_TASKS_FILE}"
+  done
+
+  {
+    echo "task_config=${TASK_CONFIG}"
+    echo "gpu_id=${GPU_ID}"
+    echo "continue_on_error=${CONTINUE_ON_ERROR}"
+    echo "succeeded=${#SUCCESS_TASKS[@]}"
+    echo "failed=${#FAILED_TASKS[@]}"
+    echo "failed_tasks_file=${FAILED_TASKS_FILE}"
+    echo "per_task_failure_report=./data/<task_name>/*/collection_failure.json"
+    echo "selected_tasks:"
+    for selected_task in "${SELECTED_TASKS[@]}"; do
+      echo "  ${selected_task}"
+    done
+    echo "failed_tasks:"
+    for failed_task in "${FAILED_TASKS[@]}"; do
+      echo "  ${failed_task}"
+    done
+  } > "${SUMMARY_FILE}"
+}
+
+write_reports
+
 for task_name in "${SELECTED_TASKS[@]}"; do
   echo "[Collect] ${task_name} | config=${TASK_CONFIG} | gpu=${GPU_ID}"
   if bash collect_data.sh "${task_name}" "${TASK_CONFIG}" "${GPU_ID}"; then
     SUCCESS_TASKS+=("${task_name}")
+    write_reports
   else
     FAILED_TASKS+=("${task_name}")
     echo "[Error] task failed: ${task_name}"
+    write_reports
     if [[ "${CONTINUE_ON_ERROR}" != "1" ]]; then
       break
     fi
@@ -94,6 +134,8 @@ echo
 echo "[Summary]"
 echo "  succeeded: ${#SUCCESS_TASKS[@]}"
 echo "  failed:    ${#FAILED_TASKS[@]}"
+echo "  failed_task_list: ${FAILED_TASKS_FILE}"
+echo "  summary_file:     ${SUMMARY_FILE}"
 if [[ ${#FAILED_TASKS[@]} -gt 0 ]]; then
   echo "  failed_tasks:"
   for task_name in "${FAILED_TASKS[@]}"; do

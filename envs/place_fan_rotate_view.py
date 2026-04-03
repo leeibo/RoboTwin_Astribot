@@ -62,7 +62,7 @@ class place_fan_rotate_view(place_fan):
         )
         self.fan.set_mass(0.01)
 
-        pad_side = -1 if self.fan.get_pose().p[0] > 0 else 1
+        pad_side = 1 if self.fan.get_pose().p[0] > 0 else 1
         pad_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
             thetalim=rotate_theta_side(self, side=pad_side),

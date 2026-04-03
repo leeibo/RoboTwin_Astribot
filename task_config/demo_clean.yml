@@ -7,13 +7,13 @@ table_shape: fan
 fan_center_on_robot: true
 fan_outer_radius: 0.9
 fan_inner_radius: 0.3
-fan_angle_deg: 200
+fan_angle_deg: 150
 fan_center_deg: 90
 rotate_object_margin_deg: 10
 rotate_theta_reference_fan_angle_deg: 150
 rotate_theta_shared_ratio: 1.0
 table_thickness: 0.05
-episode_num: 10
+episode_num: 5
 use_seed: false
 save_freq: 15
 embodiment: [astribot_texture]

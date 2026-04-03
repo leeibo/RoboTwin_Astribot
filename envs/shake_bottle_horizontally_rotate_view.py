@@ -46,7 +46,7 @@ class shake_bottle_horizontally_rotate_view(shake_bottle_horizontally):
         theta_lim = rotate_theta_side(self, side=side)
         while True:
             rand_pos = rand_pose_cyl(
-                rlim=[0.35, 0.45],
+                rlim=[0.3, 0.45],
                 thetalim=theta_lim,
 
                 zlim=[0.785, 0.785],
@@ -69,7 +69,7 @@ class shake_bottle_horizontally_rotate_view(shake_bottle_horizontally):
             convex=True,
             model_id=self.bottle_id,
         )
-        self.bottle.set_mass(0.01)
+        self.bottle.set_mass(0.05)
         self.add_prohibit_area(self.bottle, padding=0.05)
 
     def play_once(self):
@@ -77,7 +77,7 @@ class shake_bottle_horizontally_rotate_view(shake_bottle_horizontally):
 
         arm_tag = ArmTag("right" if self.bottle.get_pose().p[0] > 0 else "left")
         self.face_object_with_torso(self.bottle, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.bottle, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.01,gripper_pos=0.2))
+        self.move(self.grasp_actor(self.bottle, arm_tag=arm_tag, pre_grasp_dis=0.1,gripper_pos=0.2))
 
         target_quat = [0.707, 0, 0, 0.707]
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, quat=target_quat))

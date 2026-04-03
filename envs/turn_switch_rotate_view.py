@@ -77,7 +77,7 @@ class turn_switch_rotate_view(turn_switch):
         arm_tag = ArmTag("right" if face_dir[0] > 0 else "left")
 
         self.face_object_with_torso(self.switch, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.close_gripper(arm_tag=arm_tag, pos=0))
+        self.move(self.close_gripper(arm_tag=arm_tag, pos=-0.1))
         self.face_object_with_torso(self.switch, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.switch, arm_tag=arm_tag, pre_grasp_dis=0.04))
 
