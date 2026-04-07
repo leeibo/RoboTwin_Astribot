@@ -71,6 +71,18 @@ def test_build_scan_theta_search_sequence_for_task():
     assert np.allclose(sequence, expected), "default coarse search should follow the configured large-swing sequence"
 
 
+def test_sort_scan_thetas_left_to_right():
+    rotate_theta = _load_rotate_theta_module()
+    ordered = rotate_theta.sort_scan_thetas([np.deg2rad(-30.0), np.deg2rad(45.0), 0.0], order="left_to_right")
+    expected = [np.deg2rad(45.0), 0.0, np.deg2rad(-30.0)]
+    assert np.allclose(ordered, expected), "left_to_right ordering should scan positive theta to negative theta"
+
+
+def test_default_scan_strategy_is_object_coverage():
+    rotate_theta = _load_rotate_theta_module()
+    assert rotate_theta.DEFAULT_SCAN_STRATEGY == "object_coverage"
+
+
 def test_base_task_scan_theta_entry_uses_coarse_search_helper():
     path = Path("envs/_base_task.py")
     module_ast = ast.parse(path.read_text(encoding="utf-8"))

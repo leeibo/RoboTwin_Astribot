@@ -2423,6 +2423,181 @@ class Base_Task(gym.Env):
                 return None
         return None
 
+    def _get_scan_camera_name(self, preferred_name=None):
+        candidates = []
+        if preferred_name is not None:
+            candidates.append(str(preferred_name))
+        configured_name = getattr(self, "rotate_scan_visibility_camera_name", None)
+        if configured_name is not None:
+            candidates.append(str(configured_name))
+        candidates.extend(["camera_head", "head_camera", "left_camera", "right_camera"])
+
+        seen = set()
+        for camera_name in candidates:
+            if camera_name in seen:
+                continue
+            seen.add(camera_name)
+            if self._get_scan_camera_pose(camera_name) is not None:
+                return camera_name
+        return None
+
+    def _get_scan_camera_runtime_spec(self, camera_name=None):
+        if not hasattr(self, "cameras") or self.cameras is None:
+            return None
+        resolved_name = self._get_scan_camera_name(camera_name)
+        if resolved_name is None:
+            return None
+        if hasattr(self.cameras, "get_camera_runtime_spec"):
+            return self.cameras.get_camera_runtime_spec(resolved_name)
+        return None
+
+    def _get_scan_camera_pose(self, camera_name=None):
+        if camera_name is None:
+            camera_name = self._get_scan_camera_name()
+        if camera_name is None:
+            return None
+
+        if camera_name == "camera_head":
+            if getattr(self.robot, "head_camera", None) is not None:
+                pose = self.robot.head_camera.get_pose()
+                return sapien.Pose(np.array(pose.p, dtype=np.float64), np.array(pose.q, dtype=np.float64))
+            if hasattr(self, "cameras") and getattr(self.cameras, "camera_head", None) is not None:
+                pose = self.cameras.camera_head.entity.get_pose()
+                return sapien.Pose(np.array(pose.p, dtype=np.float64), np.array(pose.q, dtype=np.float64))
+            return None
+
+        if camera_name == "left_camera" and getattr(self.robot, "left_camera", None) is not None:
+            pose = self.robot.left_camera.get_pose()
+            return sapien.Pose(np.array(pose.p, dtype=np.float64), np.array(pose.q, dtype=np.float64))
+
+        if camera_name == "right_camera" and getattr(self.robot, "right_camera", None) is not None:
+            pose = self.robot.right_camera.get_pose()
+            return sapien.Pose(np.array(pose.p, dtype=np.float64), np.array(pose.q, dtype=np.float64))
+
+        if hasattr(self, "cameras") and self.cameras is not None and hasattr(self.cameras, "get_camera_by_name"):
+            camera = self.cameras.get_camera_by_name(camera_name)
+            if camera is not None and hasattr(camera, "entity"):
+                pose = camera.entity.get_pose()
+                return sapien.Pose(np.array(pose.p, dtype=np.float64), np.array(pose.q, dtype=np.float64))
+        return None
+
+    def _set_torso_joint_state_for_eval(self, torso_target):
+        entity = getattr(self.robot, "torso_entity", None)
+        if entity is None:
+            return False
+        torso_target = np.array(torso_target, dtype=np.float64).reshape(-1)
+        if torso_target.shape[0] == 0:
+            return False
+
+        qpos = entity.get_qpos().copy()
+        active_joints = entity.get_active_joints()
+        for i, joint in enumerate(getattr(self.robot, "torso_joints", [])):
+            if i >= torso_target.shape[0] or joint is None or joint not in active_joints:
+                continue
+            qpos[active_joints.index(joint)] = float(torso_target[i])
+        entity.set_qpos(qpos)
+        return True
+
+    def _get_scan_camera_pose_for_theta(self, theta_rad, scan_r=None, camera_name=None, joint_name_prefer=None):
+        camera_name = self._get_scan_camera_name(camera_name)
+        if camera_name is None:
+            return None
+
+        current_pose = self._get_scan_camera_pose(camera_name)
+        if current_pose is None:
+            return None
+
+        if camera_name not in ("camera_head", "left_camera", "right_camera"):
+            return current_pose
+
+        if scan_r is None:
+            scan_r = float(getattr(self, "rotate_scan_reference_r", 0.63))
+        joint_name_prefer = str(
+            joint_name_prefer if joint_name_prefer is not None else getattr(
+                self, "rotate_scan_joint_name_prefer", "astribot_torso_joint_2"
+            )
+        )
+
+        scan_z = float(current_pose.p[2])
+        if hasattr(self, "robot_root_xy") and hasattr(self, "robot_yaw"):
+            scan_point = place_point_cyl(
+                [float(scan_r), float(theta_rad), scan_z],
+                robot_root_xy=self.robot_root_xy,
+                robot_yaw_rad=self.robot_yaw,
+                ret="list",
+            )
+        else:
+            scan_point = [
+                float(scan_r * np.cos(theta_rad)),
+                float(scan_r * np.sin(theta_rad)),
+                scan_z,
+            ]
+
+        solve_res = self.solve_torso_face_world_point(
+            world_point=scan_point,
+            joint_name_prefer=joint_name_prefer,
+        )
+        if solve_res is None:
+            return current_pose
+
+        entity = getattr(self.robot, "torso_entity", None)
+        if entity is None:
+            return current_pose
+        qpos_backup = entity.get_qpos().copy()
+        try:
+            if not self._set_torso_joint_state_for_eval(solve_res["target"]):
+                return current_pose
+            posed = self._get_scan_camera_pose(camera_name)
+            return current_pose if posed is None else posed
+        finally:
+            entity.set_qpos(qpos_backup)
+
+    def _is_scan_entry_visible_in_camera(self, entry, camera_pose, camera_spec, visibility_mode=None):
+        if camera_pose is None or camera_spec is None:
+            return False
+
+        visibility_mode = str(
+            visibility_mode if visibility_mode is not None else getattr(self, "rotate_scan_visibility_mode", "center")
+        ).lower()
+        horizontal_margin_rad = float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0))
+        vertical_margin_rad = float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0))
+        far = camera_spec.get("far", None)
+
+        obj = entry.get("obj", None)
+        if obj is not None and not isinstance(obj, (list, tuple, np.ndarray)):
+            try:
+                return bool(
+                    is_object_in_camera_fov(
+                        obj=obj,
+                        camera_pose=camera_pose,
+                        image_w=int(camera_spec["w"]),
+                        image_h=int(camera_spec["h"]),
+                        fovy_rad=float(camera_spec["fovy_rad"]),
+                        mode=visibility_mode,
+                        far=far,
+                        horizontal_margin_rad=horizontal_margin_rad,
+                        vertical_margin_rad=vertical_margin_rad,
+                    )
+                )
+            except Exception:
+                pass
+
+        world_point = entry.get("world_point", None)
+        if world_point is None:
+            return False
+        return bool(
+            is_world_point_in_camera_fov(
+                world_point=world_point,
+                camera_pose=camera_pose,
+                image_w=int(camera_spec["w"]),
+                image_h=int(camera_spec["h"]),
+                fovy_rad=float(camera_spec["fovy_rad"]),
+                far=far,
+                horizontal_margin_rad=horizontal_margin_rad,
+                vertical_margin_rad=vertical_margin_rad,
+            )
+        )
+
     def _get_scan_thetas_from_object_list(
         self,
         object_list,
@@ -2445,8 +2620,25 @@ class Base_Task(gym.Env):
         if not isinstance(object_list, (list, tuple, set)):
             object_list = [object_list]
 
+        if inward_margin_rad is None:
+            inward_margin_rad = float(
+                getattr(
+                    self.robot,
+                    "scan_theta_inward_margin_rad",
+                    getattr(self.robot, "scan_theta_margin_rad", 0.0),
+                )
+            )
+        inward_margin_rad = max(float(inward_margin_rad), 0.0)
+        scan_max_abs_rad = float(getattr(self, "rotate_object_theta_half_rad", np.pi))
+        if inward_margin_rad > 0.0:
+            scan_max_abs_rad = max(0.0, scan_max_abs_rad - inward_margin_rad)
+
         theta_list = []
+        object_entries = []
         pad = abs(float(theta_padding))
+        unit_rad = float(getattr(self, "rotate_scan_theta_unit_rad", 0.0))
+        quantize_mode = str(getattr(self, "rotate_scan_quantize_mode", DEFAULT_SCAN_QUANTIZE_MODE))
+        min_steps = int(getattr(self, "rotate_scan_min_steps", DEFAULT_SCAN_MIN_STEPS))
         for obj in object_list:
             world_point = self._extract_scan_world_point(obj)
             if world_point is None or world_point.shape[0] < 2:
@@ -2461,39 +2653,93 @@ class Base_Task(gym.Env):
                 continue
             if np.isfinite(theta):
                 theta_list.append(theta)
-
-        if len(theta_list) == 0:
-            theta_max, theta_min = fallback_max, fallback_min
-        else:
-            theta_max = float(np.max(theta_list) + pad)
-            theta_min = float(np.min(theta_list) - pad)
-            if theta_min > theta_max:
-                theta_min, theta_max = theta_max, theta_min
-
-        if inward_margin_rad is None:
-            inward_margin_rad = float(
-                getattr(
-                    self.robot,
-                    "scan_theta_inward_margin_rad",
-                    getattr(self.robot, "scan_theta_margin_rad", 0.0),
+                theta_to_snap = float(theta)
+                if pad > 0.0:
+                    if theta_to_snap > 1e-9:
+                        theta_to_snap += pad
+                    elif theta_to_snap < -1e-9:
+                        theta_to_snap -= pad
+                theta_q = quantize_theta_to_unit(
+                    theta_to_snap,
+                    unit_rad=unit_rad,
+                    mode=quantize_mode,
+                    min_steps=min_steps,
+                    max_abs_rad=scan_max_abs_rad,
                 )
-            )
-        inward_margin_rad = max(float(inward_margin_rad), 0.0)
+                object_entries.append(
+                    {
+                        "obj": obj,
+                        "world_point": world_point,
+                        "theta": float(theta),
+                        "theta_q": float(theta_q),
+                    }
+                )
 
-        if inward_margin_rad > 0.0:
-            span = float(theta_max - theta_min)
-            if span <= 2.0 * inward_margin_rad + 1e-6:
-                return quantize_scan_thetas_for_task(self, [0.5 * (theta_max + theta_min)])
-            theta_max -= inward_margin_rad
-            theta_min += inward_margin_rad
+        if len(theta_list) == 0 or len(object_entries) == 0:
+            fallback_quantized = quantize_scan_thetas_for_task(self, fallback.tolist())
+            if len(fallback_quantized) > 0:
+                return sort_scan_thetas_for_task(self, fallback_quantized)
+            theta_max, theta_min = fallback_max, fallback_min
+            if abs(theta_max - theta_min) < 1e-6:
+                return [theta_max]
+            return sort_scan_thetas_for_task(self, [theta_max, theta_min])
 
-        raw_thetas = [theta_max] if abs(theta_max - theta_min) < 1e-6 else [theta_max, theta_min]
-        quantized_thetas = quantize_scan_thetas_for_task(self, raw_thetas)
-        if len(quantized_thetas) > 0:
-            return quantized_thetas
-        if abs(theta_max - theta_min) < 1e-6:
-            return [theta_max]
-        return [theta_max, theta_min]
+        theta_bins = []
+        for entry in object_entries:
+            matched = False
+            for theta_bin in theta_bins:
+                if abs(theta_bin["theta"] - entry["theta_q"]) < 1e-6:
+                    theta_bin["entries"].append(entry)
+                    matched = True
+                    break
+            if not matched:
+                theta_bins.append({"theta": float(entry["theta_q"]), "entries": [entry]})
+
+        ordered_bin_thetas = sort_scan_thetas_for_task(self, [theta_bin["theta"] for theta_bin in theta_bins])
+        ordered_bins = []
+        for theta_val in ordered_bin_thetas:
+            for theta_bin in theta_bins:
+                if abs(theta_bin["theta"] - theta_val) < 1e-6:
+                    ordered_bins.append(theta_bin)
+                    break
+
+        camera_name = self._get_scan_camera_name()
+        camera_spec = self._get_scan_camera_runtime_spec(camera_name)
+        scan_r = float(getattr(self, "rotate_scan_reference_r", 0.63))
+        scan_thetas = []
+        idx = 0
+        while idx < len(ordered_bins):
+            current_bin = ordered_bins[idx]
+            current_theta = float(current_bin["theta"])
+            scan_thetas.append(current_theta)
+
+            if camera_spec is None:
+                idx += 1
+                continue
+
+            camera_pose = self._get_scan_camera_pose_for_theta(current_theta, scan_r=scan_r, camera_name=camera_name)
+            if camera_pose is None:
+                idx += 1
+                continue
+
+            next_idx = idx + 1
+            while next_idx < len(ordered_bins):
+                next_bin = ordered_bins[next_idx]
+                if not all(
+                    self._is_scan_entry_visible_in_camera(entry, camera_pose, camera_spec)
+                    for entry in next_bin["entries"]
+                ):
+                    break
+                next_idx += 1
+            idx = next_idx
+
+        if len(scan_thetas) > 0:
+            return scan_thetas
+
+        fallback_quantized = quantize_scan_thetas_for_task(self, fallback.tolist())
+        if len(fallback_quantized) > 0:
+            return sort_scan_thetas_for_task(self, fallback_quantized)
+        return sort_scan_thetas_for_task(self, [fallback_max, fallback_min])
 
     @staticmethod
     def _wrap_to_pi(angle_rad):

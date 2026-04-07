@@ -52,6 +52,7 @@ class Camera:
         self.random_head_camera_dis = random_head_camera_dis
 
         self.static_camera_config = []
+        self.camera_runtime_specs = {}
         self.head_camera_type = kwags["camera"].get("head_camera_type", "D435")
         self.wrist_camera_type = kwags["camera"].get("wrist_camera_type", "D435")
 
@@ -133,6 +134,18 @@ class Camera:
             # return camera, sensor_camera, camera_config
             return camera, camera_config
 
+        def register_camera_spec(camera_name, camera_config):
+            if camera_config is None:
+                return
+            self.camera_runtime_specs[str(camera_name)] = {
+                "w": int(camera_config["w"]),
+                "h": int(camera_config["h"]),
+                "fovy_deg": float(camera_config["fovy"]),
+                "fovy_rad": float(np.deg2rad(camera_config["fovy"])),
+                "near": float(near),
+                "far": float(far),
+            }
+
         # ================================= wrist camera =================================
         if self.collect_wrist_camera:
             wrist_camera_config = camera_args[self.wrist_camera_type]
@@ -152,6 +165,8 @@ class Camera:
                 near=near,
                 far=far,
             )
+            register_camera_spec("left_camera", wrist_camera_config)
+            register_camera_spec("right_camera", wrist_camera_config)
 
         if self.collect_head_link_camera and self.has_head_link_camera:
             head_link_camera_config = camera_args[self.head_camera_type]
@@ -163,6 +178,7 @@ class Camera:
                 near=near,
                 far=far,
             )
+            register_camera_spec("camera_head", head_link_camera_config)
 
         # ================================= sensor camera =================================
         # sensor_config = StereoDepthSensorConfig()
@@ -209,6 +225,7 @@ class Camera:
                     self.static_camera_name.append(camera_info["name"])
                     # self.static_sensor_camera_list.append(sensor_camera)
                     self.static_camera_config.append(camera_config)
+                    register_camera_spec(camera_info["name"], camera_config)
                     # ================================= sensor camera =================================
                     # camera_config = get_camera_config(camera_info['type'])
                     # cam_pos = np.array(camera_info['position'])
@@ -233,6 +250,7 @@ class Camera:
                 self.static_camera_name.append(camera_info["name"])
                 # self.static_sensor_camera_list.append(sensor_camera)
                 self.static_camera_config.append(camera_config)
+                register_camera_spec(camera_info["name"], camera_config)
 
         # observer camera
         self.observer_camera = scene.add_camera(
@@ -351,6 +369,22 @@ class Camera:
             rgb[camera_name] = {}
             rgb[camera_name]["rgb"] = camera_data["rgba"][:, :, :3]  # Exclude alpha channel
         return rgb
+
+    def get_camera_runtime_spec(self, camera_name):
+        return self.camera_runtime_specs.get(str(camera_name))
+
+    def get_camera_by_name(self, camera_name):
+        camera_name = str(camera_name)
+        if camera_name == "left_camera":
+            return getattr(self, "left_camera", None)
+        if camera_name == "right_camera":
+            return getattr(self, "right_camera", None)
+        if camera_name == "camera_head":
+            return getattr(self, "camera_head", None)
+        for camera, name in zip(self.static_camera_list, self.static_camera_name):
+            if str(name) == camera_name:
+                return camera
+        return None
     
     # Get Camera RGBA
     def get_rgba(self) -> dict:

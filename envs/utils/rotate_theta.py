@@ -8,8 +8,15 @@ DEFAULT_MIXED_NEAR_RATIO = 0.45
 DEFAULT_SCAN_THETA_UNIT_DEG = 15.0
 DEFAULT_SCAN_QUANTIZE_MODE = "outward"
 DEFAULT_SCAN_MIN_STEPS = 1
-DEFAULT_SCAN_STRATEGY = "coarse_search"
+DEFAULT_SCAN_STRATEGY = "object_coverage"
 DEFAULT_SCAN_SEQUENCE_STEPS = (4, -4, 2, -2, 0)
+DEFAULT_SCAN_ORDER = "left_to_right"
+DEFAULT_SCAN_VISIBILITY_MODE = "center"
+DEFAULT_SCAN_VISIBILITY_CAMERA_NAME = "camera_head"
+DEFAULT_SCAN_HORIZONTAL_MARGIN_DEG = 5.0
+DEFAULT_SCAN_VERTICAL_MARGIN_DEG = 3.0
+DEFAULT_SCAN_REFERENCE_R = 0.63
+DEFAULT_SCAN_JOINT_NAME = "astribot_torso_joint_2"
 
 
 def _normalize_theta_range(theta_lim):
@@ -78,6 +85,25 @@ def init_rotate_theta_bounds(
     task.rotate_scan_min_steps = max(int(kwargs.get("rotate_scan_min_steps", DEFAULT_SCAN_MIN_STEPS)), 0)
     task.rotate_scan_large_swing_first = bool(kwargs.get("rotate_scan_large_swing_first", True))
     task.rotate_scan_strategy = str(kwargs.get("rotate_scan_strategy", DEFAULT_SCAN_STRATEGY)).lower()
+    task.rotate_scan_order = str(kwargs.get("rotate_scan_order", DEFAULT_SCAN_ORDER)).lower()
+    task.rotate_scan_visibility_mode = str(
+        kwargs.get("rotate_scan_visibility_mode", DEFAULT_SCAN_VISIBILITY_MODE)
+    ).lower()
+    task.rotate_scan_visibility_camera_name = str(
+        kwargs.get("rotate_scan_visibility_camera_name", DEFAULT_SCAN_VISIBILITY_CAMERA_NAME)
+    )
+    task.rotate_scan_horizontal_margin_deg = max(
+        float(kwargs.get("rotate_scan_horizontal_margin_deg", DEFAULT_SCAN_HORIZONTAL_MARGIN_DEG)),
+        0.0,
+    )
+    task.rotate_scan_vertical_margin_deg = max(
+        float(kwargs.get("rotate_scan_vertical_margin_deg", DEFAULT_SCAN_VERTICAL_MARGIN_DEG)),
+        0.0,
+    )
+    task.rotate_scan_horizontal_margin_rad = float(np.deg2rad(task.rotate_scan_horizontal_margin_deg))
+    task.rotate_scan_vertical_margin_rad = float(np.deg2rad(task.rotate_scan_vertical_margin_deg))
+    task.rotate_scan_reference_r = max(float(kwargs.get("rotate_scan_reference_r", DEFAULT_SCAN_REFERENCE_R)), 0.0)
+    task.rotate_scan_joint_name_prefer = str(kwargs.get("rotate_scan_joint_name_prefer", DEFAULT_SCAN_JOINT_NAME))
     scan_sequence_steps = kwargs.get("rotate_scan_sequence_steps", DEFAULT_SCAN_SEQUENCE_STEPS)
     if isinstance(scan_sequence_steps, str):
         scan_sequence_steps = [item.strip() for item in scan_sequence_steps.split(",") if item.strip()]
@@ -152,6 +178,28 @@ def quantize_scan_thetas_for_task(task, theta_list):
     if bool(getattr(task, "rotate_scan_large_swing_first", True)):
         quantized.sort(key=lambda val: (-abs(val), -val))
     return quantized
+
+
+def sort_scan_thetas(theta_list, order=DEFAULT_SCAN_ORDER):
+    thetas = np.array(theta_list, dtype=np.float64).reshape(-1)
+    if thetas.shape[0] == 0:
+        return []
+
+    ordered = [float(val) for val in thetas.tolist()]
+    order = str(order).lower()
+    if order in ("left_to_right", "left-right", "ltr"):
+        ordered.sort(reverse=True)
+    elif order in ("right_to_left", "right-left", "rtl"):
+        ordered.sort()
+    elif order in ("center_out", "center-out"):
+        ordered.sort(key=lambda val: (abs(val), -val))
+    elif order in ("outside_in", "outside-in", "large_swing_first"):
+        ordered.sort(key=lambda val: (-abs(val), -val))
+    return ordered
+
+
+def sort_scan_thetas_for_task(task, theta_list):
+    return sort_scan_thetas(theta_list, order=getattr(task, "rotate_scan_order", DEFAULT_SCAN_ORDER))
 
 
 def build_scan_theta_search_sequence_for_task(task):
