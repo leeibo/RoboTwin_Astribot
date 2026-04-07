@@ -8,5 +8,6 @@ from .actor_utils import *
 from .transforms import *
 from .cylindrical_coords import *
 from .rotate_theta import *
+from .camera_visibility import *
 from .pkl2hdf5 import *
 from .images_to_video import *

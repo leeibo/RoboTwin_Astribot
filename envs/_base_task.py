@@ -2430,6 +2430,10 @@ class Base_Task(gym.Env):
         theta_padding=0.0,
         inward_margin_rad=None,
     ):
+        scan_strategy = str(getattr(self, "rotate_scan_strategy", "")).lower()
+        if scan_strategy in ("coarse_search", "fixed_search", "search_sequence", "sweep_search"):
+            return build_scan_theta_search_sequence_for_task(self)
+
         fallback = np.array(fallback_thetas, dtype=np.float64).reshape(-1)
         if fallback.shape[0] == 0:
             fallback = np.array([0.95, -0.95], dtype=np.float64)
@@ -2479,10 +2483,14 @@ class Base_Task(gym.Env):
         if inward_margin_rad > 0.0:
             span = float(theta_max - theta_min)
             if span <= 2.0 * inward_margin_rad + 1e-6:
-                return [0.5 * (theta_max + theta_min)]
+                return quantize_scan_thetas_for_task(self, [0.5 * (theta_max + theta_min)])
             theta_max -= inward_margin_rad
             theta_min += inward_margin_rad
 
+        raw_thetas = [theta_max] if abs(theta_max - theta_min) < 1e-6 else [theta_max, theta_min]
+        quantized_thetas = quantize_scan_thetas_for_task(self, raw_thetas)
+        if len(quantized_thetas) > 0:
+            return quantized_thetas
         if abs(theta_max - theta_min) < 1e-6:
             return [theta_max]
         return [theta_max, theta_min]
