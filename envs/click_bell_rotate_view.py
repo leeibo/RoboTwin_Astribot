@@ -6,6 +6,27 @@ import transforms3d as t3d
 
 class click_bell_rotate_view(click_bell):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.bell,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "click_bell",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "bell_pressed",
+                    "next_subtask_id": -1,
+                }
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -68,14 +89,20 @@ class click_bell_rotate_view(click_bell):
 
         self.add_prohibit_area(self.bell, padding=0.07)
         self.check_arm_function = self.is_left_gripper_close if self.bell.get_pose().p[0] < 0 else self.is_right_gripper_close
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        bell_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         bell_cyl = world_to_robot(self.bell.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
         arm_tag = ArmTag("left" if bell_cyl[1] >= 0 else "right")
 
-        self.face_object_with_torso(self.bell, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(bell_key or "A"))
         self.move(
             self.grasp_actor(
                 self.bell,
@@ -91,6 +118,7 @@ class click_bell_rotate_view(click_bell):
         self.check_success()
         self.move(self.move_by_displacement(arm_tag, z=0.045))
         self.check_success()
+        self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {"{A}": f"050_bell/base{self.bell_id}", "{a}": str(arm_tag)}
         return self.info

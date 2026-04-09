@@ -28,5 +28,39 @@
     "Complete the tower by setting {B} above {A} and {C} above {B}.",
     "Make {A} the lower block, {B} the middle block, and {C} the upper block.",
     "Build the tower step by step: {B} on {A}, then {C} on {B}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {B} and grasp it"
+      ],
+      "unseen": [
+        "find {B} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {A} and stack {B} on it"
+      ],
+      "unseen": [
+        "find {A} and stack {B} on it"
+      ]
+    },
+    "3": {
+      "seen": [
+        "find {C} and grasp it"
+      ],
+      "unseen": [
+        "find {C} and grasp it"
+      ]
+    },
+    "4": {
+      "seen": [
+        "find {B} and stack {C} on it"
+      ],
+      "unseen": [
+        "find {B} and stack {C} on it"
+      ]
+    }
+  }
 }

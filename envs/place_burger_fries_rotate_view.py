@@ -6,6 +6,65 @@ import transforms3d as t3d
 
 class place_burger_fries_rotate_view(place_burger_fries):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.hamburg,
+                "B": self.tray,
+                "C": self.frenchfries,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_hamburger",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["A"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "hamburger_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "place_hamburger_on_tray",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["A"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "hamburger_on_tray",
+                    "next_subtask_id": 3,
+                },
+                {
+                    "id": 3,
+                    "name": "pick_frenchfries",
+                    "instruction_idx": 3,
+                    "search_target_keys": ["C"],
+                    "action_target_keys": ["C"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["C"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "frenchfries_grasped",
+                    "next_subtask_id": 4,
+                },
+                {
+                    "id": 4,
+                    "name": "place_frenchfries_on_tray",
+                    "instruction_idx": 4,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["B", "C"],
+                    "required_carried_keys": ["C"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "frenchfries_on_tray",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -110,19 +169,34 @@ class place_burger_fries_rotate_view(place_burger_fries):
         self.add_prohibit_area(self.tray, padding=0.1)
         self.add_prohibit_area(self.hamburg, padding=0.05)
         self.add_prohibit_area(self.frenchfries, padding=0.05)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        hamburg_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
         tray_place_pose_left = self.tray.get_functional_point(0)
         tray_place_pose_right = self.tray.get_functional_point(1)
 
         arm_tag_left = ArmTag("left")
         arm_tag_right = ArmTag("right")
 
-        self.face_object_with_torso(self.hamburg, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.hamburg, arm_tag=arm_tag_left, pre_grasp_dis=0.1,grasp_dis=0.01))
+        self.enter_rotate_action_stage(1, focus_object_key=(hamburg_key or "A"))
+        self.move(self.grasp_actor(self.hamburg, arm_tag=arm_tag_left, pre_grasp_dis=0.1, grasp_dis=0.01))
+        self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.1))
-        self.face_world_point_with_torso(tray_place_pose_left[:3], joint_name_prefer="astribot_torso_joint_2")
+        self.complete_rotate_subtask(1, carried_after=["A"])
+
+        tray_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        self.enter_rotate_action_stage(2, focus_object_key=(tray_key or "B"))
         self.move(
             self.place_actor(
                 self.hamburg,
@@ -134,13 +208,30 @@ class place_burger_fries_rotate_view(place_burger_fries):
                 pre_dis_axis="fp",
             )
         )
+        self._set_carried_object_keys([])
         self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.08))
         self.move(self.back_to_origin(arm_tag=arm_tag_left))
+        self.complete_rotate_subtask(2, carried_after=[])
 
-        self.face_object_with_torso(self.frenchfries, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.frenchfries, arm_tag=arm_tag_right, pre_grasp_dis=0.1,grasp_dis=0.01,gripper_pos=0.2))
-        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.1))        
-        self.face_world_point_with_torso(tray_place_pose_right[:3], joint_name_prefer="astribot_torso_joint_2")
+        fries_key = self.search_and_focus_rotate_subtask(
+            3,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        self.enter_rotate_action_stage(3, focus_object_key=(fries_key or "C"))
+        self.move(self.grasp_actor(self.frenchfries, arm_tag=arm_tag_right, pre_grasp_dis=0.1, grasp_dis=0.01, gripper_pos=0.2))
+        self._set_carried_object_keys(["C"])
+        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.1))
+        self.complete_rotate_subtask(3, carried_after=["C"])
+
+        tray_key = self.search_and_focus_rotate_subtask(
+            4,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        self.enter_rotate_action_stage(4, focus_object_key=(tray_key or "B"))
         self.move(
             self.place_actor(
                 self.frenchfries,
@@ -152,7 +243,9 @@ class place_burger_fries_rotate_view(place_burger_fries):
                 pre_dis_axis="fp",
             )
         )
+        self._set_carried_object_keys([])
         self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.08))
+        self.complete_rotate_subtask(4, carried_after=[])
 
         self.info["info"] = {
             "{A}": f"006_hamburg/base{self.object1_id}",

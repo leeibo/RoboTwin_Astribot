@@ -65,5 +65,23 @@
     "Use {a} to move {A} to {B} mat",
     "Move {A} to the {B} mat",
     "Place {A} on the {B} mat"
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and pick it up"
+      ],
+      "unseen": [
+        "find {A} and pick it up"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find the {B} mat and place {A} on it"
+      ],
+      "unseen": [
+        "find the {B} mat and place {A} on it"
+      ]
+    }
+  }
 }

@@ -93,6 +93,25 @@ def clear_collection_failure_report(save_path):
         os.remove(report_path)
 
 
+def make_json_safe(value):
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        return [make_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): make_json_safe(v) for k, v in value.items()}
+    try:
+        import numpy as np  # local import to keep module init unchanged
+
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+    except Exception:
+        pass
+    return str(value)
+
+
 def safe_close_env(task_env, render_freq, clear_cache=False):
     try:
         task_env.close_env(clear_cache=clear_cache)
@@ -370,8 +389,14 @@ def run(TASK_ENV, args):
             with open(info_file_path, "r", encoding="utf-8") as file:
                 info_db = json.load(file)
 
-            info = TASK_ENV.play_once()
+            info = make_json_safe(TASK_ENV.play_once())
             info_db[f"episode_{episode_idx}"] = info
+            subtask_metadata_path = TASK_ENV.save_rotate_subtask_metadata(episode_idx)
+            if subtask_metadata_path is not None:
+                info_db[f"episode_{episode_idx}"]["subtask_metadata_path"] = subtask_metadata_path
+            annotated_video_path = TASK_ENV.get_rotate_annotated_video_path(episode_idx)
+            if annotated_video_path is not None and len(getattr(TASK_ENV, "saved_frame_annotations", [])) > 0:
+                info_db[f"episode_{episode_idx}"]["annotated_video_path"] = annotated_video_path
 
             with open(info_file_path, "w", encoding="utf-8") as file:
                 json.dump(info_db, file, ensure_ascii=False, indent=4)

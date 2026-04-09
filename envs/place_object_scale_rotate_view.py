@@ -8,6 +8,40 @@ import transforms3d as t3d
 
 class place_object_scale_rotate_view(place_object_scale):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.scale,
+                "B": self.object,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_object",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["B"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["B"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "object_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "place_object_on_scale",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["B"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "object_on_scale",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -126,18 +160,32 @@ class place_object_scale_rotate_view(place_object_scale):
 
         self.add_prohibit_area(self.object, padding=0.05)
         self.add_prohibit_area(self.scale, padding=0.05)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        object_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         self.arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
-        self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(object_key or "B"))
         self.move(self.grasp_actor(self.object, arm_tag=self.arm_tag))
+        self._set_carried_object_keys(["B"])
         self.move(self.move_by_displacement(arm_tag=self.arm_tag, z=0.15))
+        self.complete_rotate_subtask(1, carried_after=["B"])
 
+        scale_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
         place_pose = self.scale.get_functional_point(0)
-        self.face_world_point_with_torso(place_pose[:3], joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(2, focus_object_key=(scale_key or "A"))
         self.move(
             self.place_actor(
                 self.object,
@@ -148,6 +196,8 @@ class place_object_scale_rotate_view(place_object_scale):
                 dis=0.005,
             )
         )
+        self._set_carried_object_keys([])
+        self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
             "{A}": f"072_electronicscale/base{self.scale_id}",

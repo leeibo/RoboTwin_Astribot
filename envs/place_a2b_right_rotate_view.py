@@ -8,6 +8,40 @@ import transforms3d as t3d
 
 class place_a2b_right_rotate_view(place_a2b_right):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.object,
+                "B": self.target_object,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_object_A",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["A"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "object_A_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "place_A_right_of_B",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["A"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "object_A_right_of_B",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -159,19 +193,35 @@ class place_a2b_right_rotate_view(place_a2b_right):
         self.target_object.set_mass(0.05)
         self.add_prohibit_area(self.object, padding=0.05)
         self.add_prohibit_area(self.target_object, padding=0.1)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        source_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         object_theta = float(self._pose_to_cyl(self.object.get_pose())[1])
         arm_tag = ArmTag("left" if object_theta >= 0.0 else "right")
-        self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(source_key or "A"))
         self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
+        self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
+        self.complete_rotate_subtask(1, carried_after=["A"])
 
+        target_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
         target_pose = self._side_place_pose(self.target_object.get_pose(), arc_dis=0.13, to_left=False)
-        self.face_world_point_with_torso(target_pose[:3], joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(2, focus_object_key=(target_key or "B"))
         self.move(self.place_actor(self.object, arm_tag=arm_tag, target_pose=target_pose, constrain="free"))
+        self._set_carried_object_keys([])
+        self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
             "{A}": f"{self.selected_modelname_A}/base{self.selected_model_id_A}",

@@ -65,5 +65,23 @@
     "Place {A} rightward of {B} using {a}",
     "Put {A} to the right of {B}.",
     "Set {A} on the right of {B}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and pick it up"
+      ],
+      "unseen": [
+        "find {A} and pick it up"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {B} and place {A} to its right"
+      ],
+      "unseen": [
+        "find {B} and place {A} to its right"
+      ]
+    }
+  }
 }

@@ -1,139 +1,19 @@
 import json
-import re
 from typing import List, Dict, Any
 import os
 import argparse
-import random
 import yaml
+
+from instruction_template_utils import (
+    extract_placeholders,
+    filter_instructions,
+    load_task_instructions,
+    replace_placeholders,
+    replace_placeholders_unseen,
+)
 
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
-
-
-def extract_placeholders(instruction: str) -> List[str]:
-    """Extract all placeholders of the form {X} from an instruction."""
-    placeholders = re.findall(r"{([^}]+)}", instruction)
-    return placeholders
-
-def filter_instructions(instructions: List[str], episode_params: Dict[str, str]) -> List[str]:
-    """
-    Filter instructions to only include those that have all placeholders
-    matching the available episode parameters. No more, no less.
-    Also accept instructions that don't contain arm placeholder {[a-z]}.
-    """
-    filtered_instructions = []
-    random.shuffle(instructions)
-
-    for instruction in instructions:
-        placeholders = extract_placeholders(instruction)
-        # Remove {} from episode_params keys for comparison
-        stripped_episode_params = {key.strip("{}"): value for key, value in episode_params.items()}
-
-        # Get all arm-related parameters (single lowercase letters)
-        arm_params = {key for key in stripped_episode_params.keys() if len(key) == 1 and "a" <= key <= "z"}
-        non_arm_params = set(stripped_episode_params.keys()) - arm_params
-
-        # Accept if we have exact match OR if the only missing parameters are arm parameters
-        if set(placeholders) == set(stripped_episode_params.keys()) or (
-                # Special case: accept if the only difference is missing arm parameters
-                arm_params and set(placeholders).union(arm_params) == set(stripped_episode_params.keys()) and
-                not arm_params.intersection(set(placeholders))):
-            filtered_instructions.append(instruction)
-
-    return filtered_instructions
-
-
-def replace_placeholders(instruction: str, episode_params: Dict[str, str]) -> str:
-    """Replace all {X} placeholders in the instruction with corresponding values from episode_params.
-    For arm placeholders {[a-z]}, add 'the ' in front and ' arm' after the value.
-    If the value is a path to an existing JSON file, randomly choose one 'description' item and prepend 'the'.
-    If the value contains '\' or '/' but the file does not exist, print a bold warning.
-    """
-    # Remove {} from episode_params keys for replacement
-    stripped_episode_params = {key.strip("{}"): value for key, value in episode_params.items()}
-
-    for key, value in stripped_episode_params.items():
-        placeholder = "{" + key + "}"
-        # Check if the value contains '\' or '/'
-        if "\\" in value or "/" in value:
-            json_path = os.path.join(
-                os.path.join(parent_directory, "../objects_description"),
-                value + ".json",
-            )
-            if not os.path.exists(json_path):
-                print(f"\033[1mERROR: '{json_path}' looks like a description file, but does not exist.\033[0m")
-                exit()
-
-        # Check if the value is a path to an existing JSON file
-        json_path = os.path.join(os.path.join(parent_directory, "../objects_description"), value + ".json")
-        if os.path.exists(json_path):
-            with open(json_path, "r") as f:
-                json_data = json.load(f)
-            # Randomly choose one description and prepend 'the'
-            description = random.choice(json_data.get("seen", []))
-            value = f"the {description}"
-        # Check if the key is a single lowercase letter (arm placeholder)
-        elif len(key) == 1 and "a" <= key <= "z":
-            value = f"the {value} arm"
-        else:
-            value = f"{value}"
-
-        instruction = instruction.replace(placeholder, value)
-
-    return instruction
-
-
-def replace_placeholders_unseen(instruction: str, episode_params: Dict[str, str]) -> str:
-    """Similar to replace_placeholders but uses 'unseen' descriptions from JSON files.
-    For arm placeholders {[a-z]}, add 'the ' in front and ' arm' after the value.
-    If the value is a path to an existing JSON file, randomly choose one 'unseen' description and prepend 'the'.
-    If the value contains '\' or '/' but the file does not exist, print a bold warning.
-    """
-    # Remove {} from episode_params keys for replacement
-    stripped_episode_params = {key.strip("{}"): value for key, value in episode_params.items()}
-
-    for key, value in stripped_episode_params.items():
-        placeholder = "{" + key + "}"
-        # Check if the value contains '\' or '/'
-        if "\\" in value or "/" in value:
-            json_path = os.path.join(
-                os.path.join(parent_directory, "../objects_description"),
-                value + ".json",
-            )
-            if not os.path.exists(json_path):
-                print(f"\033[1mERROR: '{json_path}' looks like a description file, but does not exist.\033[0m")
-                exit()
-
-        # Check if the value is a path to an existing JSON file
-        json_path = os.path.join(os.path.join(parent_directory, "../objects_description"), value + ".json")
-        if os.path.exists(json_path):
-            with open(json_path, "r") as f:
-                json_data = json.load(f)
-            # Randomly choose one unseen description and prepend 'the'
-            if "unseen" in json_data and json_data["unseen"]:
-                description = random.choice(json_data.get("unseen", []))
-                value = f"the {description}"
-            else:
-                # Fall back to seen descriptions if unseen is empty
-                description = random.choice(json_data.get("seen", []))
-                value = f"the {description}"
-        # Check if the key is a single lowercase letter (arm placeholder)
-        elif len(key) == 1 and "a" <= key <= "z":
-            value = f"the {value} arm"
-        else:
-            value = f"{value}"
-
-        instruction = instruction.replace(placeholder, value)
-
-    return instruction
-
-
-def load_task_instructions(task_name: str) -> Dict[str, Any]:
-    """Load the task instructions from the JSON file."""
-    file_path = os.path.join(parent_directory, f"../task_instruction/{task_name}.json")
-    with open(file_path, "r") as f:
-        task_data = json.load(f)
-    return task_data
 
 
 def load_scene_info(task_name: str, setting: str, scene_info_path: str) -> Dict[str, Dict]:

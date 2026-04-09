@@ -7,6 +7,40 @@ import transforms3d as t3d
 
 class place_shoe_rotate_view(place_shoe):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.shoe,
+                "B": self.target_block,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_shoe",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["A"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "shoe_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "place_shoe_on_mat",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["A"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "shoe_on_mat",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, is_test=False, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -100,19 +134,33 @@ class place_shoe_rotate_view(place_shoe):
 
         self.add_prohibit_area(self.target_block, padding=0.08)
         self.add_prohibit_area(self.shoe, padding=0.1)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        shoe_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         shoe_pose = self.shoe.get_pose().p
         arm_tag = ArmTag("left" if shoe_pose[0] < 0 else "right")
 
-        self.face_object_with_torso(self.shoe, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(shoe_key or "A"))
         self.move(self.grasp_actor(self.shoe, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.01))
+        self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
+        self.complete_rotate_subtask(1, carried_after=["A"])
 
+        target_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
         target_pose = self.target_block.get_functional_point(0)
-        self.face_world_point_with_torso(target_pose[:3], joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(2, focus_object_key=(target_key or "B"))
         self.move(
             self.place_actor(
                 self.shoe,
@@ -123,7 +171,9 @@ class place_shoe_rotate_view(place_shoe):
                 constrain="free",  # Shoe placement needs orientation alignment on the target pad.
             )
         )
+        self._set_carried_object_keys([])
         self.move(self.open_gripper(arm_tag=arm_tag))
+        self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {"{A}": f"041_shoe/base{self.shoe_id}", "{a}": str(arm_tag)}
         return self.info

@@ -1,5 +1,7 @@
 import os
 import re
+import sys
+import traceback
 import sapien.core as sapien
 from sapien.render import clear_cache as sapien_clear_cache
 from sapien.utils.viewer import Viewer
@@ -32,6 +34,11 @@ from typing import Optional, Literal
 
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
+description_utils_directory = str((Path(parent_directory).parent / "description" / "utils").resolve())
+if description_utils_directory not in sys.path:
+    sys.path.append(description_utils_directory)
+
+from instruction_template_utils import load_task_instructions, normalize_instruction_bank, resolve_instruction_bank
 
 
 class Base_Task(gym.Env):
@@ -160,6 +167,7 @@ class Base_Task(gym.Env):
         self.render_freq = render_freq
 
         self.robot.set_origin_endpose()
+        self._init_rotate_subtask_runtime_state()
         self.load_actors()
 
         if self.cluttered_table:
@@ -173,6 +181,7 @@ class Base_Task(gym.Env):
         # starts exactly from configured homestate.
         self.robot.move_to_homestate()
         self.robot.set_origin_endpose()
+        self._reset_rotate_waist_heading_reference()
         self._sync_curobo_tabletop_collisions()
 
         if self.eval_mode:
@@ -194,6 +203,355 @@ class Base_Task(gym.Env):
         self.info["info"] = {}
 
         self.stage_success_tag = False
+
+    def _init_rotate_subtask_runtime_state(self):
+        self.object_registry = OrderedDict()
+        self.object_key_to_idx = OrderedDict()
+        self.subtask_defs = []
+        self.subtask_def_map = {}
+        self.subtask_instruction_map = {}
+        self.subtask_instruction_template_map = {}
+        self.subtask_task_instruction = None
+        self.subtask_task_instruction_bank = {}
+        self.subtask_description_source = None
+        self.current_subtask_idx = 0
+        self.current_stage = 0
+        self.current_instruction_idx = 0
+        self.current_focus_object_key = None
+        self.current_search_target_keys = []
+        self.current_action_target_keys = []
+        self.carried_object_keys = []
+        self.discovered_objects = OrderedDict()
+        self.visible_objects = OrderedDict()
+        self.subtask_done = OrderedDict()
+        self.transition_log = []
+        self.saved_frame_annotations = []
+        self._latest_frame_annotation = None
+        self.current_info_complete = 0
+        self.current_camera_mode = 0
+        self.current_camera_target_theta = np.nan
+        self.rotate_waist_heading_joint_index = None
+        self.rotate_waist_heading_joint_name = None
+        self.rotate_waist_heading_reference_rad = None
+
+    def _load_default_task_instruction_description(self):
+        try:
+            payload = self._load_task_instruction_payload()
+            if not isinstance(payload, dict):
+                return ""
+            full_description = payload.get("full_description", None)
+            if isinstance(full_description, str) and full_description.strip():
+                return full_description.strip()
+            for key in ("seen", "unseen"):
+                candidates = payload.get(key, [])
+                if isinstance(candidates, list) and len(candidates) > 0:
+                    first = candidates[0]
+                    if isinstance(first, str):
+                        return first.strip()
+        except Exception:
+            traceback.print_exc()
+        return ""
+
+    def _load_task_instruction_payload(self):
+        if self.task_name is None:
+            return {}
+        if (
+            isinstance(self.subtask_description_source, dict)
+            and self.subtask_description_source.get("task_name") == self.task_name
+            and isinstance(self.subtask_description_source.get("payload"), dict)
+        ):
+            return self.subtask_description_source["payload"]
+        try:
+            payload = load_task_instructions(self.task_name)
+        except Exception:
+            payload = {}
+        self.subtask_description_source = {
+            "task_name": self.task_name,
+            "payload": payload,
+            "path": str(Path(parent_directory).parent / "description" / "task_instruction" / f"{self.task_name}.json"),
+        }
+        return payload
+
+    def _load_default_subtask_instruction_templates(self):
+        payload = self._load_task_instruction_payload()
+        raw_templates = payload.get("subtask_instruction_template_map", {})
+        normalized_templates = {}
+        if isinstance(raw_templates, dict):
+            for key, value in raw_templates.items():
+                normalized_templates[int(key)] = normalize_instruction_bank(value)
+        return normalized_templates
+
+    def _load_default_task_instruction_bank(self):
+        payload = self._load_task_instruction_payload()
+        return normalize_instruction_bank({
+            "seen": payload.get("seen", []),
+            "unseen": payload.get("unseen", []),
+        })
+
+    def _build_instruction_rng(self, episode_idx, scope):
+        return random.Random(f"{self.task_name}:{int(episode_idx)}:{scope}")
+
+    def _resolve_task_instruction_for_episode(self, episode_idx, placeholder_info):
+        if len(self.subtask_task_instruction_bank) > 0:
+            resolved = resolve_instruction_bank(
+                self.subtask_task_instruction_bank,
+                placeholder_info,
+                preferred_splits=("seen", "unseen"),
+                max_descriptions=1,
+                rng=self._build_instruction_rng(episode_idx, "task_instruction"),
+            )
+            if len(resolved) > 0:
+                return resolved[0]
+        return self.subtask_task_instruction
+
+    def _resolve_subtask_instruction_map_for_episode(self, episode_idx, placeholder_info):
+        resolved_map = OrderedDict()
+        if len(self.subtask_instruction_template_map) > 0:
+            for instruction_idx in sorted(self.subtask_instruction_template_map.keys()):
+                resolved = resolve_instruction_bank(
+                    self.subtask_instruction_template_map[instruction_idx],
+                    placeholder_info,
+                    preferred_splits=("seen", "unseen"),
+                    max_descriptions=1,
+                    rng=self._build_instruction_rng(episode_idx, f"subtask_instruction:{instruction_idx}"),
+                )
+                if len(resolved) > 0:
+                    resolved_map[int(instruction_idx)] = resolved[0]
+
+        if len(resolved_map) == 0:
+            for key, value in self.subtask_instruction_map.items():
+                resolved_map[int(key)] = str(value)
+            return resolved_map
+
+        for key, value in self.subtask_instruction_map.items():
+            resolved_map.setdefault(int(key), str(value))
+        return resolved_map
+
+    def configure_rotate_subtask_plan(
+        self,
+        object_registry,
+        subtask_defs,
+        subtask_instruction_map=None,
+        subtask_instruction_template_map=None,
+        task_instruction=None,
+    ):
+        normalized_registry = OrderedDict()
+        for key, value in OrderedDict(object_registry).items():
+            norm_key = str(key)
+            normalized_registry[norm_key] = value
+
+        normalized_defs = []
+        for raw_def in subtask_defs:
+            subtask_id = int(raw_def["id"])
+            normalized_def = dict(raw_def)
+            normalized_def["id"] = subtask_id
+            normalized_def["instruction_idx"] = int(raw_def.get("instruction_idx", subtask_id))
+            normalized_def["search_target_keys"] = [str(k) for k in raw_def.get("search_target_keys", [])]
+            normalized_def["action_target_keys"] = [str(k) for k in raw_def.get("action_target_keys", [])]
+            normalized_def["required_carried_keys"] = [str(k) for k in raw_def.get("required_carried_keys", [])]
+            normalized_def["carry_keys_after_done"] = [str(k) for k in raw_def.get("carry_keys_after_done", [])]
+            normalized_def["allow_stage2_from_memory"] = bool(raw_def.get("allow_stage2_from_memory", True))
+            normalized_def["next_subtask_id"] = int(raw_def.get("next_subtask_id", -1))
+            normalized_defs.append(normalized_def)
+
+        normalized_instruction_map = {}
+        if subtask_instruction_map is not None:
+            for key, value in subtask_instruction_map.items():
+                normalized_instruction_map[int(key)] = str(value)
+        else:
+            for item in normalized_defs:
+                instruction_idx = int(item.get("instruction_idx", item["id"]))
+                normalized_instruction_map[instruction_idx] = str(item.get("name", f"subtask_{item['id']}"))
+
+        if subtask_instruction_template_map is None:
+            normalized_template_map = self._load_default_subtask_instruction_templates()
+        else:
+            normalized_template_map = {}
+            for key, value in subtask_instruction_template_map.items():
+                normalized_template_map[int(key)] = normalize_instruction_bank(value)
+
+        self.object_registry = normalized_registry
+        self.object_key_to_idx = OrderedDict((key, idx) for idx, key in enumerate(self.object_registry.keys()))
+        self.subtask_defs = normalized_defs
+        self.subtask_def_map = {item["id"]: item for item in normalized_defs}
+        self.subtask_instruction_map = normalized_instruction_map
+        self.subtask_instruction_template_map = normalized_template_map
+        self.subtask_task_instruction_bank = (
+            {}
+            if task_instruction is not None and str(task_instruction).strip()
+            else self._load_default_task_instruction_bank()
+        )
+        self.subtask_task_instruction = (
+            str(task_instruction).strip()
+            if task_instruction is not None and str(task_instruction).strip()
+            else self._load_default_task_instruction_description()
+        )
+        self.current_subtask_idx = 0
+        self.current_stage = 0
+        self.current_instruction_idx = 0
+        self.current_focus_object_key = None
+        self.current_search_target_keys = []
+        self.current_action_target_keys = []
+        self.carried_object_keys = []
+        self.discovered_objects = OrderedDict(
+            (
+                key,
+                {
+                    "discovered": False,
+                    "visible_now": False,
+                    "first_seen_frame": None,
+                    "last_seen_frame": None,
+                    "last_seen_subtask": 0,
+                    "last_seen_stage": 0,
+                    "last_uv_norm": None,
+                    "last_world_point": None,
+                },
+            )
+            for key in self.object_registry.keys()
+        )
+        self.visible_objects = OrderedDict((key, False) for key in self.object_registry.keys())
+        self.subtask_done = OrderedDict((item["id"], False) for item in normalized_defs)
+        self.transition_log = []
+        self.saved_frame_annotations = []
+        self._latest_frame_annotation = None
+        self.current_info_complete = 0
+        self.current_camera_mode = 0
+        self.current_camera_target_theta = np.nan
+
+    def _get_rotate_subtask_def(self, subtask_idx):
+        return self.subtask_def_map.get(int(subtask_idx), None)
+
+    def _build_object_mask(self, object_keys):
+        mask = np.zeros(len(self.object_key_to_idx), dtype=np.int8)
+        for key in object_keys:
+            key = str(key)
+            idx = self.object_key_to_idx.get(key, None)
+            if idx is not None:
+                mask[idx] = 1
+        return mask
+
+    def _set_carried_object_keys(self, object_keys):
+        unique_keys = []
+        for key in object_keys:
+            norm_key = str(key)
+            if norm_key not in unique_keys:
+                unique_keys.append(norm_key)
+        self.carried_object_keys = unique_keys
+
+    def _set_rotate_subtask_state(
+        self,
+        subtask_idx=None,
+        stage=None,
+        focus_object_key="__KEEP__",
+        search_target_keys=None,
+        action_target_keys=None,
+        info_complete=None,
+        camera_mode=None,
+        camera_target_theta=None,
+    ):
+        if subtask_idx is not None:
+            subtask_idx = int(subtask_idx)
+            self.current_subtask_idx = subtask_idx
+            subtask_def = self._get_rotate_subtask_def(subtask_idx)
+            if subtask_def is not None:
+                self.current_instruction_idx = int(subtask_def.get("instruction_idx", subtask_idx))
+                if search_target_keys is None:
+                    search_target_keys = subtask_def.get("search_target_keys", [])
+                if action_target_keys is None:
+                    action_target_keys = subtask_def.get("action_target_keys", [])
+            else:
+                self.current_instruction_idx = 0
+        if stage is not None:
+            self.current_stage = int(stage)
+        if focus_object_key != "__KEEP__":
+            self.current_focus_object_key = None if focus_object_key is None else str(focus_object_key)
+        if search_target_keys is not None:
+            self.current_search_target_keys = [str(k) for k in search_target_keys]
+        if action_target_keys is not None:
+            self.current_action_target_keys = [str(k) for k in action_target_keys]
+        if info_complete is not None:
+            self.current_info_complete = int(bool(info_complete))
+        if camera_mode is not None:
+            self.current_camera_mode = int(camera_mode)
+        if camera_target_theta is not None:
+            self.current_camera_target_theta = float(camera_target_theta)
+
+    def begin_rotate_subtask(self, subtask_idx):
+        subtask_idx = int(subtask_idx)
+        subtask_def = self._get_rotate_subtask_def(subtask_idx)
+        if subtask_def is None:
+            raise ValueError(f"Unknown rotate subtask id: {subtask_idx}")
+        start_stage = 1
+        self._set_rotate_subtask_state(
+            subtask_idx=subtask_idx,
+            stage=start_stage,
+            focus_object_key=None,
+            search_target_keys=subtask_def["search_target_keys"],
+            action_target_keys=subtask_def["action_target_keys"],
+            info_complete=0,
+            camera_mode=1,
+            camera_target_theta=np.nan,
+        )
+        self.transition_log.append(
+            {
+                "event": "begin_subtask",
+                "subtask": subtask_idx,
+                "stage": start_stage,
+                "frame_idx": int(self.FRAME_IDX),
+            }
+        )
+        return subtask_def
+
+    def enter_rotate_action_stage(self, subtask_idx=None, focus_object_key=None):
+        if subtask_idx is None:
+            subtask_idx = self.current_subtask_idx
+        subtask_def = self._get_rotate_subtask_def(subtask_idx)
+        action_target_keys = [] if subtask_def is None else subtask_def.get("action_target_keys", [])
+        self._set_rotate_subtask_state(
+            subtask_idx=subtask_idx,
+            stage=3,
+            focus_object_key=focus_object_key,
+            search_target_keys=[] if subtask_def is None else subtask_def.get("search_target_keys", []),
+            action_target_keys=action_target_keys,
+            info_complete=1,
+            camera_mode=0,
+            camera_target_theta=np.nan,
+        )
+
+    def complete_rotate_subtask(self, subtask_idx=None, carried_after=None):
+        if subtask_idx is None:
+            subtask_idx = self.current_subtask_idx
+        subtask_idx = int(subtask_idx)
+        subtask_def = self._get_rotate_subtask_def(subtask_idx)
+        if subtask_def is None:
+            return None
+        self.subtask_done[subtask_idx] = True
+        if carried_after is None:
+            carried_after = subtask_def.get("carry_keys_after_done", [])
+        self._set_carried_object_keys(carried_after)
+        self.transition_log.append(
+            {
+                "event": "complete_subtask",
+                "subtask": subtask_idx,
+                "frame_idx": int(self.FRAME_IDX),
+                "carried_after": list(self.carried_object_keys),
+            }
+        )
+        next_subtask_id = int(subtask_def.get("next_subtask_id", -1))
+        if next_subtask_id > 0:
+            self.begin_rotate_subtask(next_subtask_id)
+            return next_subtask_id
+        self._set_rotate_subtask_state(
+            subtask_idx=0,
+            stage=0,
+            focus_object_key=None,
+            search_target_keys=[],
+            action_target_keys=[],
+            info_complete=0,
+            camera_mode=0,
+            camera_target_theta=np.nan,
+        )
+        return None
 
     def check_stable(self):
         actors_list, actors_pose_list = [], []
@@ -343,6 +701,16 @@ class Base_Task(gym.Env):
         table_shape = str(kwargs.get("table_shape", "rect")).lower()
         table_static = bool(kwargs.get("table_static", True))
         table_thickness = float(kwargs.get("table_thickness", 0.05))
+        self.rotate_table_shape = table_shape
+        self.rotate_table_center_xy = np.array(table_xy_bias, dtype=np.float64)
+        self.rotate_table_top_z = float(table_height)
+        self.rotate_table_thickness = float(table_thickness)
+        self.rotate_fan_outer_radius = None
+        self.rotate_fan_inner_radius = None
+        self.rotate_fan_angle_deg = None
+        self.rotate_fan_center_deg = None
+        self.rotate_fan_theta_start_world_rad = None
+        self.rotate_fan_theta_end_world_rad = None
 
         if table_shape in ["fan", "sector", "arc"]:
             fan_center_on_robot = bool(kwargs.get("fan_center_on_robot", True))
@@ -355,14 +723,25 @@ class Base_Task(gym.Env):
                         table_xy_bias, dtype=np.float64
                     )
             self.table_xy_bias = fan_center_xy.tolist()
+            fan_outer_radius = float(kwargs.get("fan_outer_radius", 0.9))
+            fan_inner_radius = float(kwargs.get("fan_inner_radius", 0.3))
+            fan_angle_deg = float(kwargs.get("fan_angle_deg", 200))
+            fan_center_deg = float(kwargs.get("fan_center_deg", 90))
+            self.rotate_table_center_xy = np.array(fan_center_xy, dtype=np.float64)
+            self.rotate_fan_outer_radius = float(fan_outer_radius)
+            self.rotate_fan_inner_radius = float(fan_inner_radius)
+            self.rotate_fan_angle_deg = float(fan_angle_deg)
+            self.rotate_fan_center_deg = float(fan_center_deg)
+            self.rotate_fan_theta_start_world_rad = float(np.deg2rad(fan_center_deg - fan_angle_deg * 0.5))
+            self.rotate_fan_theta_end_world_rad = float(np.deg2rad(fan_center_deg + fan_angle_deg * 0.5))
 
             self.table = create_fan_table(
                 self.scene,
                 sapien.Pose(p=[float(fan_center_xy[0]), float(fan_center_xy[1]), table_height]),
-                outer_radius=float(kwargs.get("fan_outer_radius", 0.9)),
-                inner_radius=float(kwargs.get("fan_inner_radius", 0.3)),
-                angle_deg=float(kwargs.get("fan_angle_deg", 200)),
-                center_deg=float(kwargs.get("fan_center_deg", 90)),
+                outer_radius=fan_outer_radius,
+                inner_radius=fan_inner_radius,
+                angle_deg=fan_angle_deg,
+                center_deg=fan_center_deg,
                 radial_segments=int(kwargs.get("fan_radial_segments", 14)),
                 min_theta_segments=int(kwargs.get("fan_min_theta_segments", 24)),
                 theta_segments_per_meter=float(kwargs.get("fan_theta_segments_per_meter", 18.0)),
@@ -665,6 +1044,8 @@ class Base_Task(gym.Env):
         if self.data_type.get("pointcloud", False):
             pkl_dic["pointcloud"] = self.cameras.get_pcd(self.data_type.get("conbine", False))
 
+        annotation_payload = self._build_rotate_frame_annotation_payload()
+        pkl_dic.update(annotation_payload)
         self.now_obs = deepcopy(pkl_dic)
         return pkl_dic
 
@@ -696,6 +1077,10 @@ class Base_Task(gym.Env):
 
         pkl_dic = self.get_obs()
         save_pkl(self.folder_path["cache"] + f"{self.FRAME_IDX}.pkl", pkl_dic)  # use cache
+        if self._latest_frame_annotation is not None:
+            frame_annotation = dict(self._latest_frame_annotation)
+            frame_annotation["frame_idx"] = int(self.FRAME_IDX)
+            self.saved_frame_annotations.append(frame_annotation)
         self.FRAME_IDX += 1
 
     def save_traj_data(self, idx):
@@ -713,12 +1098,88 @@ class Base_Task(gym.Env):
             traj_data = pickle.load(f)
         return traj_data
 
+    def _make_json_safe(self, value):
+        if value is None or isinstance(value, (str, bool, int, float)):
+            return value
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, OrderedDict):
+            return {str(k): self._make_json_safe(v) for k, v in value.items()}
+        if isinstance(value, dict):
+            return {str(k): self._make_json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._make_json_safe(item) for item in value]
+        return str(value)
+
+    def get_rotate_annotated_video_path(self, episode_idx=None):
+        if self.save_dir is None:
+            return None
+        if episode_idx is None:
+            episode_idx = self.ep_num
+        return os.path.join(self.save_dir, "video", f"episode{int(episode_idx)}_annotated.mp4")
+
+    def _compose_rotate_subtask_episode_metadata(self, episode_idx):
+        placeholder_info = self._make_json_safe(self.info.get("info", {}))
+        object_key_to_name = OrderedDict()
+        for key in self.object_registry.keys():
+            placeholder_key = "{" + str(key) + "}"
+            if placeholder_key in placeholder_info:
+                object_key_to_name[key] = placeholder_info[placeholder_key]
+                continue
+            obj = self.object_registry[key]
+            try:
+                object_key_to_name[key] = str(obj.get_name())
+            except Exception:
+                object_key_to_name[key] = str(key)
+
+        resolved_task_instruction = self._resolve_task_instruction_for_episode(episode_idx, placeholder_info)
+        resolved_subtask_instruction_map = self._resolve_subtask_instruction_map_for_episode(episode_idx, placeholder_info)
+        description_source_path = None
+        if isinstance(self.subtask_description_source, dict):
+            description_source_path = self.subtask_description_source.get("path", None)
+
+        return {
+            "task_name": self.task_name,
+            "episode_idx": int(episode_idx),
+            "task_instruction": resolved_task_instruction,
+            "object_key_to_idx": {key: int(idx) for key, idx in self.object_key_to_idx.items()},
+            "object_key_to_name": dict(object_key_to_name),
+            "subtask_instruction_map": self._make_json_safe(
+                {str(k): v for k, v in resolved_subtask_instruction_map.items()}
+            ),
+            "subtask_instruction_template_map": self._make_json_safe(
+                {str(k): v for k, v in self.subtask_instruction_template_map.items()}
+            ),
+            "subtask_defs": self._make_json_safe(self.subtask_defs),
+            "transition_log": self._make_json_safe(self.transition_log),
+            "frame_annotations": self._make_json_safe(self.saved_frame_annotations),
+            "final_discovered_objects": self._make_json_safe(self.discovered_objects),
+            "scene_info_placeholders": placeholder_info,
+            "instruction_source_path": description_source_path,
+            "annotated_video_path": self.get_rotate_annotated_video_path(episode_idx),
+        }
+
+    def save_rotate_subtask_metadata(self, episode_idx):
+        if self.save_dir is None:
+            return None
+        if len(self.subtask_defs) == 0 and len(self.saved_frame_annotations) == 0:
+            return None
+        metadata_dir = os.path.join(self.save_dir, "subtask_metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        metadata_path = os.path.join(metadata_dir, f"episode{episode_idx}.json")
+        payload = self._compose_rotate_subtask_episode_metadata(episode_idx)
+        save_json(metadata_path, payload)
+        return metadata_path
+
     def merge_pkl_to_hdf5_video(self):
         if not self.save_data:
             return
         cache_path = self.folder_path["cache"]
         target_file_path = f"{self.save_dir}/data/episode{self.ep_num}.hdf5"
         target_video_path = f"{self.save_dir}/video/episode{self.ep_num}.mp4"
+        target_annotated_video_path = self.get_rotate_annotated_video_path(self.ep_num)
         target_video_path_map = {
             "left_camera": f"{self.save_dir}/video/episode{self.ep_num}_left_camera.mp4",
             "right_camera": f"{self.save_dir}/video/episode{self.ep_num}_right_camera.mp4",
@@ -728,6 +1189,15 @@ class Base_Task(gym.Env):
 
         os.makedirs(f"{self.save_dir}/data", exist_ok=True)
         os.makedirs(f"{self.save_dir}/video", exist_ok=True)
+        annotated_video_metadata = None
+        if len(self.saved_frame_annotations) > 0:
+            rotate_metadata = self._compose_rotate_subtask_episode_metadata(self.ep_num)
+            annotated_video_metadata = {
+                "task_name": rotate_metadata.get("task_name"),
+                "frame_annotations": rotate_metadata.get("frame_annotations", []),
+                "subtask_instruction_map": rotate_metadata.get("subtask_instruction_map", {}),
+                "object_key_to_name": rotate_metadata.get("object_key_to_name", {}),
+            }
         process_folder_to_hdf5_video(
             cache_path,
             target_file_path,
@@ -735,6 +1205,9 @@ class Base_Task(gym.Env):
             video_camera_names=["left_camera", "right_camera", "camera_head"],
             video_path_map=target_video_path_map,
             main_video_camera="camera_head",
+            annotated_video_path=(target_annotated_video_path if annotated_video_metadata is not None else None),
+            annotated_video_camera="camera_head",
+            annotated_video_metadata=annotated_video_metadata,
         )
 
     def remove_data_cache(self):
@@ -2423,6 +2896,702 @@ class Base_Task(gym.Env):
                 return None
         return None
 
+    def _resolve_rotate_registry_object(self, object_key):
+        if object_key is None:
+            return None
+        return self.object_registry.get(str(object_key), None)
+
+    def _project_rotate_registry_object(self, object_key, camera_pose=None, camera_spec=None):
+        obj = self._resolve_rotate_registry_object(object_key)
+        if obj is None:
+            return None
+        if camera_pose is None:
+            camera_pose = self._get_scan_camera_pose()
+        if camera_spec is None:
+            camera_spec = self._get_scan_camera_runtime_spec()
+        if camera_pose is None or camera_spec is None:
+            return None
+        try:
+            visibility_mode = str(getattr(self, "rotate_scan_visibility_mode", "aabb")).lower()
+            (u_norm, v_norm), debug = project_object_to_image_uv(
+                obj=obj,
+                camera_pose=camera_pose,
+                image_w=int(camera_spec["w"]),
+                image_h=int(camera_spec["h"]),
+                fovy_rad=float(camera_spec["fovy_rad"]),
+                mode=visibility_mode,
+                far=camera_spec.get("far", None),
+                horizontal_margin_rad=float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0)),
+                vertical_margin_rad=float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0)),
+                ret_debug=True,
+            )
+            world_point = np.array(debug.get("world_point", self._resolve_object_world_point(obj=obj)), dtype=np.float64)
+            return {
+                "world_point": world_point,
+                "u_norm": float(u_norm) if np.isfinite(u_norm) else None,
+                "v_norm": float(v_norm) if np.isfinite(v_norm) else None,
+                "inside": bool(debug["inside"]),
+            }
+        except Exception:
+            return None
+
+    def _refresh_rotate_discovery_from_current_view(self):
+        results = OrderedDict()
+        if len(self.object_registry) == 0:
+            return results
+        camera_pose = self._get_scan_camera_pose()
+        camera_spec = self._get_scan_camera_runtime_spec()
+        if camera_pose is None or camera_spec is None:
+            return results
+        for key in self.object_registry.keys():
+            proj = self._project_rotate_registry_object(key, camera_pose=camera_pose, camera_spec=camera_spec)
+            visible = bool(proj is not None and proj["inside"])
+            self.visible_objects[key] = visible
+            state = self.discovered_objects.get(key, None)
+            if state is None:
+                state = {
+                    "discovered": False,
+                    "visible_now": False,
+                    "first_seen_frame": None,
+                    "last_seen_frame": None,
+                    "last_seen_subtask": 0,
+                    "last_seen_stage": 0,
+                    "last_uv_norm": None,
+                    "last_world_point": None,
+                }
+                self.discovered_objects[key] = state
+            state["visible_now"] = visible
+            if visible and proj is not None:
+                if not state["discovered"]:
+                    state["first_seen_frame"] = int(self.FRAME_IDX)
+                state["discovered"] = True
+                state["last_seen_frame"] = int(self.FRAME_IDX)
+                state["last_seen_subtask"] = int(self.current_subtask_idx)
+                state["last_seen_stage"] = int(self.current_stage)
+                state["last_uv_norm"] = [float(proj["u_norm"]), float(proj["v_norm"])]
+                state["last_world_point"] = np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist()
+            results[key] = {
+                "visible": visible,
+                "u_norm": None if proj is None else proj["u_norm"],
+                "v_norm": None if proj is None else proj["v_norm"],
+                "world_point": None if proj is None else np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist(),
+            }
+        return results
+
+    def _get_rotate_target_key(self, candidate_keys, visible_only=False):
+        for key in candidate_keys:
+            key = str(key)
+            state = self.discovered_objects.get(key, {})
+            if visible_only and bool(self.visible_objects.get(key, False)):
+                return key
+            if (not visible_only) and bool(state.get("discovered", False)):
+                return key
+        return None
+
+    @staticmethod
+    def _compute_pose_planar_facing_yaw(pose):
+        if pose is None:
+            return None, None
+        rot = t3d.quaternions.quat2mat(np.array(pose.q, dtype=np.float64))
+        forward = np.array(rot[:, 0], dtype=np.float64)
+        fxy = forward[:2]
+        fxy_norm = float(np.linalg.norm(fxy))
+        if fxy_norm < 1e-9:
+            forward = np.array(rot[:, 1], dtype=np.float64)
+            fxy = forward[:2]
+            fxy_norm = float(np.linalg.norm(fxy))
+            if fxy_norm < 1e-9:
+                return None, np.array(pose.p, dtype=np.float64)
+        fxy = fxy / fxy_norm
+        yaw = float(np.arctan2(fxy[1], fxy[0]))
+        return yaw, np.array(pose.p, dtype=np.float64)
+
+    def _get_scan_camera_planar_facing_yaw(self, camera_name=None):
+        pose = self._get_scan_camera_pose(camera_name)
+        if pose is None:
+            return None, None
+        return self._compute_pose_planar_facing_yaw(pose)
+
+    def _get_current_scan_camera_theta(self, camera_name=None):
+        facing_yaw, _ = self._get_scan_camera_planar_facing_yaw(camera_name=camera_name)
+        if facing_yaw is None:
+            return None
+        if hasattr(self, "robot_yaw"):
+            return float(self._wrap_to_pi(facing_yaw - float(self.robot_yaw)))
+        return float(facing_yaw)
+
+    def _get_rotate_waist_heading_joint_index(self):
+        torso_now = self._get_torso_joint_state_now()
+        if torso_now is None or torso_now.shape[0] == 0:
+            return None
+        joint_name_prefer = str(getattr(self, "rotate_scan_joint_name_prefer", "astribot_torso_joint_2"))
+        joint_idx = self._get_preferred_torso_joint_index(joint_name_prefer=joint_name_prefer)
+        if joint_idx is None or joint_idx < 0 or joint_idx >= torso_now.shape[0]:
+            return None
+        return int(joint_idx)
+
+    def _reset_rotate_waist_heading_reference(self):
+        self.rotate_waist_heading_joint_index = None
+        self.rotate_waist_heading_joint_name = None
+        self.rotate_waist_heading_reference_rad = None
+
+        torso_now = self._get_torso_joint_state_now()
+        joint_idx = self._get_rotate_waist_heading_joint_index()
+        if torso_now is None or joint_idx is None or joint_idx >= torso_now.shape[0]:
+            return
+
+        self.rotate_waist_heading_joint_index = int(joint_idx)
+        self.rotate_waist_heading_reference_rad = float(torso_now[joint_idx])
+
+        torso_joints = list(getattr(self.robot, "torso_joints", []) or [])
+        if joint_idx < len(torso_joints) and torso_joints[joint_idx] is not None:
+            try:
+                self.rotate_waist_heading_joint_name = str(torso_joints[joint_idx].get_name())
+            except Exception:
+                self.rotate_waist_heading_joint_name = None
+
+    def _get_current_rotate_waist_heading_deg(self):
+        torso_now = self._get_torso_joint_state_now()
+        if torso_now is None or torso_now.shape[0] == 0:
+            return None
+
+        joint_idx = getattr(self, "rotate_waist_heading_joint_index", None)
+        if joint_idx is None or joint_idx < 0 or joint_idx >= torso_now.shape[0]:
+            joint_idx = self._get_rotate_waist_heading_joint_index()
+        if joint_idx is None or joint_idx < 0 or joint_idx >= torso_now.shape[0]:
+            return None
+
+        reference_rad = getattr(self, "rotate_waist_heading_reference_rad", None)
+        if reference_rad is None:
+            torso_homestate = np.array(getattr(self.robot, "torso_homestate", []), dtype=np.float64).reshape(-1)
+            reference_rad = float(torso_homestate[joint_idx]) if joint_idx < torso_homestate.shape[0] else 0.0
+
+        delta_rad = self._wrap_to_pi(float(torso_now[joint_idx]) - float(reference_rad))
+        return float(np.rad2deg(delta_rad))
+
+    def _get_rotate_scan_world_point(self, theta_rad, scan_r, scan_z):
+        if hasattr(self, "robot_root_xy") and hasattr(self, "robot_yaw"):
+            return place_point_cyl(
+                [float(scan_r), float(theta_rad), float(scan_z)],
+                robot_root_xy=self.robot_root_xy,
+                robot_yaw_rad=self.robot_yaw,
+                ret="list",
+            )
+        return [
+            float(scan_r * np.cos(theta_rad)),
+            float(scan_r * np.sin(theta_rad)),
+            float(scan_z),
+        ]
+
+    def _move_scan_camera_to_theta(
+        self,
+        theta_rad,
+        scan_r,
+        scan_z,
+        joint_name_prefer="astribot_torso_joint_2",
+        max_iter=35,
+        tol_yaw_rad=2e-3,
+    ):
+        scan_point = self._get_rotate_scan_world_point(theta_rad=theta_rad, scan_r=scan_r, scan_z=scan_z)
+        return self.face_world_point_with_torso(
+            scan_point,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+            joint_name_prefer=joint_name_prefer,
+        )
+
+    def _get_rotate_fan_table_edge_world_points(self, side):
+        table_shape = str(getattr(self, "rotate_table_shape", "")).lower()
+        if table_shape not in ("fan", "sector", "arc"):
+            return []
+        center_xy = np.array(getattr(self, "rotate_table_center_xy", []), dtype=np.float64).reshape(-1)
+        if center_xy.shape[0] < 2:
+            return []
+        inner_radius = getattr(self, "rotate_fan_inner_radius", None)
+        outer_radius = getattr(self, "rotate_fan_outer_radius", None)
+        theta_start = getattr(self, "rotate_fan_theta_start_world_rad", None)
+        theta_end = getattr(self, "rotate_fan_theta_end_world_rad", None)
+        if inner_radius is None or outer_radius is None or theta_start is None or theta_end is None:
+            return []
+
+        side = str(side).lower()
+        theta_world = float(theta_end if side == "left" else theta_start)
+        z = float(getattr(self, "rotate_table_top_z", 0.0))
+        points = []
+        for radius in [float(inner_radius), float(outer_radius)]:
+            points.append(
+                np.array(
+                    [
+                        center_xy[0] + radius * np.cos(theta_world),
+                        center_xy[1] + radius * np.sin(theta_world),
+                        z,
+                    ],
+                    dtype=np.float64,
+                )
+            )
+        return points
+
+    def _get_rotate_fan_table_side_mid_world_point(self, side):
+        edge_points = self._get_rotate_fan_table_edge_world_points(side)
+        if len(edge_points) < 2:
+            return None
+        return 0.5 * (np.array(edge_points[0], dtype=np.float64) + np.array(edge_points[1], dtype=np.float64))
+
+    def _get_rotate_table_edge_theta_limit(self, side):
+        edge_points = self._get_rotate_fan_table_edge_world_points(side)
+        if len(edge_points) == 0 or (not hasattr(self, "robot_root_xy")) or (not hasattr(self, "robot_yaw")):
+            half_rad = float(getattr(self, "rotate_object_theta_half_rad", np.pi))
+            return float(half_rad if str(side).lower() == "left" else -half_rad)
+        thetas = [
+            float(world_to_robot(point.tolist(), self.robot_root_xy, self.robot_yaw)[1])
+            for point in edge_points
+        ]
+        if str(side).lower() == "left":
+            return float(max(thetas))
+        return float(min(thetas))
+
+    def _is_rotate_table_edge_visible_in_current_view(self, side, camera_pose=None, camera_spec=None):
+        side = str(side).lower()
+        debug_mode = "edge_pair"
+        edge_points = self._get_rotate_fan_table_edge_world_points(side)
+        if side == "left":
+            mid_point = self._get_rotate_fan_table_side_mid_world_point(side)
+            if mid_point is not None:
+                edge_points = [mid_point]
+                debug_mode = "midpoint"
+        if len(edge_points) == 0:
+            return False, {"side": side, "mode": debug_mode, "point_visibilities": []}
+        if camera_pose is None:
+            camera_pose = self._get_scan_camera_pose()
+        if camera_spec is None:
+            camera_spec = self._get_scan_camera_runtime_spec()
+        if camera_pose is None or camera_spec is None:
+            return False, {"side": side, "mode": debug_mode, "point_visibilities": []}
+
+        far = camera_spec.get("far", None)
+        point_visibilities = []
+        for point in edge_points:
+            visible, debug = is_world_point_in_camera_fov(
+                world_point=point,
+                camera_pose=camera_pose,
+                image_w=int(camera_spec["w"]),
+                image_h=int(camera_spec["h"]),
+                fovy_rad=float(camera_spec["fovy_rad"]),
+                far=far,
+                horizontal_margin_rad=0.0,
+                vertical_margin_rad=0.0,
+                ret_debug=True,
+            )
+            point_visibilities.append(
+                {
+                    "world_point": np.array(point, dtype=np.float64).reshape(-1).tolist(),
+                    "visible": bool(visible),
+                    "yaw_err_rad": float(debug["yaw_err_rad"]),
+                    "pitch_err_rad": float(debug["pitch_err_rad"]),
+                }
+            )
+        return bool(all(item["visible"] for item in point_visibilities)), {
+            "side": side,
+            "mode": debug_mode,
+            "point_visibilities": point_visibilities,
+        }
+
+    def _get_rotate_visible_target_yaw_error(self, object_key, camera_pose=None, camera_spec=None):
+        if object_key is None:
+            return None
+        if camera_pose is None:
+            camera_pose = self._get_scan_camera_pose()
+        if camera_spec is None:
+            camera_spec = self._get_scan_camera_runtime_spec()
+        if camera_pose is None or camera_spec is None:
+            return None
+
+        proj = self._project_rotate_registry_object(object_key, camera_pose=camera_pose, camera_spec=camera_spec)
+        if proj is None or (not bool(proj["inside"])) or proj["u_norm"] is None:
+            return None
+
+        yaw_error_rad = image_u_to_yaw_error_rad(
+            proj["u_norm"],
+            image_w=int(camera_spec["w"]),
+            image_h=int(camera_spec["h"]),
+            fovy_rad=float(camera_spec["fovy_rad"]),
+        )
+        return {
+            "object_key": str(object_key),
+            "u_norm": float(proj["u_norm"]),
+            "v_norm": None if proj["v_norm"] is None else float(proj["v_norm"]),
+            "yaw_error_rad": float(yaw_error_rad),
+            "world_point": np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist(),
+        }
+
+    def _fine_center_rotate_registry_target(
+        self,
+        object_key,
+        subtask_idx,
+        target_keys,
+        action_target_keys,
+        scan_r,
+        scan_z,
+        joint_name_prefer="astribot_torso_joint_2",
+        max_iter=35,
+        tol_yaw_rad=2e-3,
+    ):
+        stage2_tol = max(float(getattr(self, "rotate_stage2_center_tol_rad", 0.0)), float(tol_yaw_rad))
+        focus_key = None if object_key is None else str(object_key)
+
+        self._refresh_rotate_discovery_from_current_view()
+        if focus_key is None or (not bool(self.visible_objects.get(focus_key, False))):
+            return focus_key
+
+        yaw_error = self._get_rotate_visible_target_yaw_error(focus_key)
+        if yaw_error is None:
+            return focus_key
+
+        current_theta = self._get_current_scan_camera_theta()
+        if current_theta is None:
+            current_theta = 0.0
+        self._set_rotate_subtask_state(
+            subtask_idx=subtask_idx,
+            stage=2,
+            focus_object_key=focus_key,
+            search_target_keys=target_keys,
+            action_target_keys=action_target_keys,
+            info_complete=1,
+            camera_mode=2,
+            camera_target_theta=current_theta,
+        )
+
+        yaw_error_rad = float(yaw_error["yaw_error_rad"])
+        if abs(yaw_error_rad) <= stage2_tol:
+            return focus_key
+
+        desired_theta = float(self._wrap_to_pi(current_theta + yaw_error_rad))
+        self._set_rotate_subtask_state(
+            subtask_idx=subtask_idx,
+            stage=2,
+            focus_object_key=focus_key,
+            search_target_keys=target_keys,
+            action_target_keys=action_target_keys,
+            info_complete=1,
+            camera_mode=2,
+            camera_target_theta=desired_theta,
+        )
+        self._move_scan_camera_to_theta(
+            desired_theta,
+            scan_r=scan_r,
+            scan_z=scan_z,
+            joint_name_prefer=joint_name_prefer,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+        )
+        self._refresh_rotate_discovery_from_current_view()
+        return focus_key
+
+    def _face_rotate_registry_target(
+        self,
+        object_key,
+        joint_name_prefer="astribot_torso_joint_2",
+        max_iter=35,
+        tol_yaw_rad=2e-3,
+    ):
+        obj = self._resolve_rotate_registry_object(object_key)
+        if obj is None:
+            return False
+        world_point = self._resolve_object_world_point(obj=obj)
+        return self.face_world_point_with_torso(
+            world_point,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+            joint_name_prefer=joint_name_prefer,
+        )
+
+    def _reacquire_rotate_target_from_history(
+        self,
+        object_key,
+        subtask_idx,
+        target_keys,
+        action_target_keys,
+        scan_r,
+        scan_z,
+        joint_name_prefer="astribot_torso_joint_2",
+        max_iter=35,
+        tol_yaw_rad=2e-3,
+    ):
+        focus_key = None if object_key is None else str(object_key)
+        if focus_key is None:
+            return None
+
+        state = self.discovered_objects.get(focus_key, {})
+        last_world_point = state.get("last_world_point", None)
+        if last_world_point is None:
+            return None
+
+        world_point = np.array(last_world_point, dtype=np.float64).reshape(-1)
+        if world_point.shape[0] != 3 or (not np.all(np.isfinite(world_point))):
+            return None
+
+        if hasattr(self, "robot_root_xy") and hasattr(self, "robot_yaw"):
+            root_xy = np.array(getattr(self, "robot_root_xy"), dtype=np.float64).reshape(-1)
+            if root_xy.shape[0] >= 2:
+                desired_theta = float(
+                    self._wrap_to_pi(np.arctan2(world_point[1] - root_xy[1], world_point[0] - root_xy[0]) - float(self.robot_yaw))
+                )
+            else:
+                desired_theta = float(self._wrap_to_pi(np.arctan2(world_point[1], world_point[0])))
+        else:
+            desired_theta = float(self._wrap_to_pi(np.arctan2(world_point[1], world_point[0])))
+
+        self._set_rotate_subtask_state(
+            subtask_idx=subtask_idx,
+            stage=2,
+            focus_object_key=focus_key,
+            search_target_keys=target_keys,
+            action_target_keys=action_target_keys,
+            info_complete=1,
+            camera_mode=2,
+            camera_target_theta=desired_theta,
+        )
+        self._move_scan_camera_to_theta(
+            desired_theta,
+            scan_r=scan_r,
+            scan_z=scan_z,
+            joint_name_prefer=joint_name_prefer,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+        )
+        self._refresh_rotate_discovery_from_current_view()
+        if bool(self.visible_objects.get(focus_key, False)):
+            return focus_key
+        return None
+
+    def search_and_focus_rotate_subtask(
+        self,
+        subtask_idx,
+        scan_r,
+        scan_z,
+        joint_name_prefer="astribot_torso_joint_2",
+        max_iter=35,
+        tol_yaw_rad=2e-3,
+    ):
+        subtask_idx = int(subtask_idx)
+        subtask_def = self._get_rotate_subtask_def(subtask_idx)
+        if subtask_def is None:
+            raise ValueError(f"Unknown rotate subtask id: {subtask_idx}")
+        if self.current_subtask_idx != subtask_idx:
+            self.begin_rotate_subtask(subtask_idx)
+
+        target_keys = [str(k) for k in subtask_def.get("search_target_keys", [])]
+        action_target_keys = [str(k) for k in subtask_def.get("action_target_keys", [])]
+
+        self._refresh_rotate_discovery_from_current_view()
+        found_key = self._get_rotate_target_key(target_keys, visible_only=True)
+        if found_key is None:
+            remembered_key = self._get_rotate_target_key(target_keys, visible_only=False)
+            if remembered_key is not None:
+                found_key = self._reacquire_rotate_target_from_history(
+                    remembered_key,
+                    subtask_idx=subtask_idx,
+                    target_keys=target_keys,
+                    action_target_keys=action_target_keys,
+                    scan_r=scan_r,
+                    scan_z=scan_z,
+                    joint_name_prefer=joint_name_prefer,
+                    max_iter=max_iter,
+                    tol_yaw_rad=tol_yaw_rad,
+                )
+
+        if found_key is None:
+            stage1_unit = float(getattr(self, "rotate_stage1_theta_unit_rad", 0.0))
+            if stage1_unit <= 1e-9:
+                stage1_unit = float(np.deg2rad(45.0))
+
+            scan_order = str(getattr(self, "rotate_scan_order", "left_to_right")).lower()
+            direction = -1.0 if scan_order in ("right_to_left", "right-left", "rtl") else 1.0
+            edge_limits = {
+                "left": float(self._get_rotate_table_edge_theta_limit("left")),
+                "right": float(self._get_rotate_table_edge_theta_limit("right")),
+            }
+            exhausted = {"left": False, "right": False}
+
+            camera_pose = self._get_scan_camera_pose()
+            camera_spec = self._get_scan_camera_runtime_spec()
+            for side in ["left", "right"]:
+                edge_visible, _ = self._is_rotate_table_edge_visible_in_current_view(
+                    side,
+                    camera_pose=camera_pose,
+                    camera_spec=camera_spec,
+                )
+                exhausted[side] = bool(edge_visible)
+
+            theta_span = max(
+                abs(edge_limits["left"] - edge_limits["right"]),
+                2.0 * float(getattr(self, "rotate_object_theta_half_rad", np.pi)),
+            )
+            max_stage1_steps = max(int(np.ceil(theta_span / stage1_unit)) * 2 + 4, 4)
+            pending_direction_switch = False
+
+            for _ in range(max_stage1_steps):
+                if exhausted["left"] and exhausted["right"]:
+                    break
+
+                side = "left" if direction > 0 else "right"
+                switched_direction = bool(pending_direction_switch)
+                pending_direction_switch = False
+                if exhausted[side]:
+                    other = "right" if side == "left" else "left"
+                    if exhausted[other]:
+                        break
+                    direction = -direction
+                    side = other
+                    switched_direction = True
+
+                current_theta = self._get_current_scan_camera_theta()
+                if current_theta is None:
+                    current_theta = 0.0
+                theta_limit = edge_limits[side]
+                move_direction = float(np.sign(direction) if abs(float(direction)) > 1e-8 else 1.0)
+                step_multiplier = 1
+                if switched_direction:
+                    step_multiplier = max(int(np.floor(abs(float(current_theta)) / stage1_unit + 1e-6)) + 1, 1)
+                    if abs(float(current_theta)) > 1e-8:
+                        move_direction = float(-np.sign(float(current_theta)))
+                target_theta = float(current_theta + move_direction * stage1_unit * step_multiplier)
+                if side == "left" and target_theta > theta_limit + 1e-8:
+                    exhausted["left"] = True
+                    direction = -1.0
+                    pending_direction_switch = True
+                    continue
+                if side == "right" and target_theta < theta_limit - 1e-8:
+                    exhausted["right"] = True
+                    direction = 1.0
+                    pending_direction_switch = True
+                    continue
+                direction = move_direction
+
+                self._set_rotate_subtask_state(
+                    subtask_idx=subtask_idx,
+                    stage=1,
+                    focus_object_key=None,
+                    search_target_keys=target_keys,
+                    action_target_keys=action_target_keys,
+                    info_complete=0,
+                    camera_mode=1,
+                    camera_target_theta=target_theta,
+                )
+                self._move_scan_camera_to_theta(
+                    target_theta,
+                    scan_r=scan_r,
+                    scan_z=scan_z,
+                    joint_name_prefer=joint_name_prefer,
+                    max_iter=max_iter,
+                    tol_yaw_rad=tol_yaw_rad,
+                )
+
+                self._refresh_rotate_discovery_from_current_view()
+                found_key = self._get_rotate_target_key(target_keys, visible_only=True)
+                if found_key is not None:
+                    break
+
+                camera_pose = self._get_scan_camera_pose()
+                camera_spec = self._get_scan_camera_runtime_spec()
+                current_theta = self._get_current_scan_camera_theta()
+                if current_theta is not None:
+                    exhausted["left"] = bool(exhausted["left"] or current_theta >= edge_limits["left"] - 1e-3)
+                    exhausted["right"] = bool(exhausted["right"] or current_theta <= edge_limits["right"] + 1e-3)
+                for edge_side in ["left", "right"]:
+                    edge_visible, _ = self._is_rotate_table_edge_visible_in_current_view(
+                        edge_side,
+                        camera_pose=camera_pose,
+                        camera_spec=camera_spec,
+                    )
+                    exhausted[edge_side] = bool(exhausted[edge_side] or edge_visible)
+
+                if exhausted[side]:
+                    other = "right" if side == "left" else "left"
+                    if not exhausted[other]:
+                        direction = -direction
+                        pending_direction_switch = True
+
+        if found_key is None:
+            return None
+
+        return self._fine_center_rotate_registry_target(
+            found_key,
+            subtask_idx=subtask_idx,
+            target_keys=target_keys,
+            action_target_keys=action_target_keys,
+            scan_r=scan_r,
+            scan_z=scan_z,
+            joint_name_prefer=joint_name_prefer,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+        )
+
+    def _build_rotate_frame_annotation_payload(self):
+        visibility_map = self._refresh_rotate_discovery_from_current_view()
+        focus_object_key = self.current_focus_object_key
+        focus_object_idx = self.object_key_to_idx.get(focus_object_key, -1) if focus_object_key is not None else -1
+        target_uv_norm = np.array([-1.0, -1.0], dtype=np.float32)
+        waist_heading_deg = self._get_current_rotate_waist_heading_deg()
+        focus_object_visible = 0
+        if focus_object_key is not None:
+            focus_proj = visibility_map.get(focus_object_key, None)
+            if (
+                focus_proj is not None
+                and bool(focus_proj["visible"])
+                and focus_proj["u_norm"] is not None
+                and focus_proj["v_norm"] is not None
+            ):
+                target_uv_norm = np.array([focus_proj["u_norm"], focus_proj["v_norm"]], dtype=np.float32)
+                focus_object_visible = int(bool(focus_proj["visible"]))
+
+        visible_mask = self._build_object_mask([key for key, visible in self.visible_objects.items() if visible])
+        discovered_mask = self._build_object_mask(
+            [key for key, state in self.discovered_objects.items() if bool(state.get("discovered", False))]
+        )
+        search_target_mask = self._build_object_mask(self.current_search_target_keys)
+        action_target_mask = self._build_object_mask(self.current_action_target_keys)
+        carried_object_mask = self._build_object_mask(self.carried_object_keys)
+
+        payload = {
+            "subtask": np.int32(self.current_subtask_idx),
+            "stage": np.int8(self.current_stage),
+            "subtask_instruction_idx": np.int32(self.current_instruction_idx),
+            "focus_object_idx": np.int16(focus_object_idx),
+            "focus_object_visible": np.int8(focus_object_visible),
+            "info_complete": np.int8(self.current_info_complete),
+            "camera_mode": np.int8(self.current_camera_mode),
+            "camera_target_theta": np.float32(self.current_camera_target_theta),
+            "waist_heading_deg": np.float32(np.nan if waist_heading_deg is None else waist_heading_deg),
+            "visible_object_mask": visible_mask.astype(np.int8),
+            "discovered_object_mask": discovered_mask.astype(np.int8),
+            "search_target_mask": search_target_mask.astype(np.int8),
+            "action_target_mask": action_target_mask.astype(np.int8),
+            "carried_object_mask": carried_object_mask.astype(np.int8),
+            "target_uv_norm": target_uv_norm.astype(np.float32),
+        }
+        self._latest_frame_annotation = {
+            "subtask": int(self.current_subtask_idx),
+            "stage": int(self.current_stage),
+            "subtask_instruction_idx": int(self.current_instruction_idx),
+            "focus_object_key": focus_object_key,
+            "search_target_keys": list(self.current_search_target_keys),
+            "action_target_keys": list(self.current_action_target_keys),
+            "carried_object_keys": list(self.carried_object_keys),
+            "visible_object_keys": [key for key, visible in self.visible_objects.items() if visible],
+            "discovered_object_keys": [
+                key for key, state in self.discovered_objects.items() if bool(state.get("discovered", False))
+            ],
+            "target_uv_norm": target_uv_norm.tolist(),
+            "camera_mode": int(self.current_camera_mode),
+            "waist_heading_deg": (None if waist_heading_deg is None else float(waist_heading_deg)),
+            "waist_heading_joint_name": self.rotate_waist_heading_joint_name,
+            "camera_target_theta": (
+                None if not np.isfinite(self.current_camera_target_theta) else float(self.current_camera_target_theta)
+            ),
+        }
+        return payload
+
     def _get_scan_camera_name(self, preferred_name=None):
         candidates = []
         if preferred_name is not None:
@@ -2557,7 +3726,7 @@ class Base_Task(gym.Env):
             return False
 
         visibility_mode = str(
-            visibility_mode if visibility_mode is not None else getattr(self, "rotate_scan_visibility_mode", "center")
+            visibility_mode if visibility_mode is not None else getattr(self, "rotate_scan_visibility_mode", "aabb")
         ).lower()
         horizontal_margin_rad = float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0))
         vertical_margin_rad = float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0))

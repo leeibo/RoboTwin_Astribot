@@ -65,5 +65,23 @@
     "Use {a} to place {A} left of {B}.",
     "Set {A} on the left side of {B}",
     "Place {A} to the left of {B} using {a}"
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and pick it up"
+      ],
+      "unseen": [
+        "find {A} and pick it up"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {B} and place {A} to its left"
+      ],
+      "unseen": [
+        "find {B} and place {A} to its left"
+      ]
+    }
+  }
 }

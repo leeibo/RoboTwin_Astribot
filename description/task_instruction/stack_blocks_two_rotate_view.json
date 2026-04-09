@@ -28,5 +28,23 @@
     "Complete the stack by placing {B} on {A}.",
     "Make {A} the lower block and {B} the upper block.",
     "Build the tower by setting {B} over {A}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {B} and grasp it"
+      ],
+      "unseen": [
+        "find {B} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {A} and stack {B} on it"
+      ],
+      "unseen": [
+        "find {A} and stack {B} on it"
+      ]
+    }
+  }
 }

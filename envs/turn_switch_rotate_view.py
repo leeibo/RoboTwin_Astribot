@@ -6,6 +6,27 @@ import transforms3d as t3d
 
 class turn_switch_rotate_view(turn_switch):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.switch,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "turn_switch",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "switch_triggered",
+                    "next_subtask_id": -1,
+                }
+            ]
+        )
+
     def setup_demo(self, is_test=False, **kwargs):
         kwargs.setdefault("table_shape", "fan")
         kwargs.setdefault("fan_center_on_robot", True)
@@ -68,18 +89,25 @@ class turn_switch_rotate_view(turn_switch):
             fix_root_link=True,
         )
         self.prohibited_area.append([-0.4, -0.2, 0.4, 0.2])
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        focus_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.92 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         switch_pose = self.switch.get_pose()
         face_dir = -switch_pose.to_transformation_matrix()[:3, 0]
         arm_tag = ArmTag("right" if face_dir[0] > 0 else "left")
 
-        self.face_object_with_torso(self.switch, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(focus_key or "A"))
         self.move(self.close_gripper(arm_tag=arm_tag, pos=-0.1))
         self.face_object_with_torso(self.switch, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.switch, arm_tag=arm_tag, pre_grasp_dis=0.04))
+        self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {"{A}": f"056_switch/base{self.model_id}", "{a}": str(arm_tag)}
         return self.info

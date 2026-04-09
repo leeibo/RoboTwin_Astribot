@@ -65,5 +65,15 @@
     "Press {A} using {a}",
     "Move and click the {A}",
     "Use {a} to press {A}"
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and press it"
+      ],
+      "unseen": [
+        "find {A} and press it"
+      ]
+    }
+  }
 }

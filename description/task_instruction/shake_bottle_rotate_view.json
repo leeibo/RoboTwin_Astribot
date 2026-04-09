@@ -65,5 +65,15 @@
     "Grab {A}, shake it properly, then set it down.",
     "Grab {A} and shake it.",
     "Use {a} to pick {A}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A}, grasp it, and shake it"
+      ],
+      "unseen": [
+        "find {A}, grasp it, and shake it"
+      ]
+    }
+  }
 }

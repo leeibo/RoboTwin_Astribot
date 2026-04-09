@@ -11,12 +11,15 @@ DEFAULT_SCAN_MIN_STEPS = 1
 DEFAULT_SCAN_STRATEGY = "object_coverage"
 DEFAULT_SCAN_SEQUENCE_STEPS = (4, -4, 2, -2, 0)
 DEFAULT_SCAN_ORDER = "left_to_right"
-DEFAULT_SCAN_VISIBILITY_MODE = "center"
+DEFAULT_SCAN_VISIBILITY_MODE = "aabb"
 DEFAULT_SCAN_VISIBILITY_CAMERA_NAME = "camera_head"
 DEFAULT_SCAN_HORIZONTAL_MARGIN_DEG = 5.0
 DEFAULT_SCAN_VERTICAL_MARGIN_DEG = 3.0
 DEFAULT_SCAN_REFERENCE_R = 0.63
 DEFAULT_SCAN_JOINT_NAME = "astribot_torso_joint_2"
+DEFAULT_STAGE1_THETA_UNIT_DEG = 45.0
+DEFAULT_STAGE2_MAX_THETA_STEP_DEG = 30.0
+DEFAULT_STAGE2_CENTER_TOL_DEG = 3.0
 
 
 def _normalize_theta_range(theta_lim):
@@ -104,6 +107,24 @@ def init_rotate_theta_bounds(
     task.rotate_scan_vertical_margin_rad = float(np.deg2rad(task.rotate_scan_vertical_margin_deg))
     task.rotate_scan_reference_r = max(float(kwargs.get("rotate_scan_reference_r", DEFAULT_SCAN_REFERENCE_R)), 0.0)
     task.rotate_scan_joint_name_prefer = str(kwargs.get("rotate_scan_joint_name_prefer", DEFAULT_SCAN_JOINT_NAME))
+    rotate_stage1_theta_unit_deg = max(
+        float(kwargs.get("rotate_stage1_theta_unit_deg", DEFAULT_STAGE1_THETA_UNIT_DEG)),
+        0.0,
+    )
+    task.rotate_stage1_theta_unit_deg = float(rotate_stage1_theta_unit_deg)
+    task.rotate_stage1_theta_unit_rad = float(np.deg2rad(rotate_stage1_theta_unit_deg))
+    rotate_stage2_max_theta_step_deg = max(
+        float(kwargs.get("rotate_stage2_max_theta_step_deg", DEFAULT_STAGE2_MAX_THETA_STEP_DEG)),
+        0.0,
+    )
+    task.rotate_stage2_max_theta_step_deg = float(rotate_stage2_max_theta_step_deg)
+    task.rotate_stage2_max_theta_step_rad = float(np.deg2rad(rotate_stage2_max_theta_step_deg))
+    rotate_stage2_center_tol_deg = max(
+        float(kwargs.get("rotate_stage2_center_tol_deg", DEFAULT_STAGE2_CENTER_TOL_DEG)),
+        0.0,
+    )
+    task.rotate_stage2_center_tol_deg = float(rotate_stage2_center_tol_deg)
+    task.rotate_stage2_center_tol_rad = float(np.deg2rad(rotate_stage2_center_tol_deg))
     scan_sequence_steps = kwargs.get("rotate_scan_sequence_steps", DEFAULT_SCAN_SEQUENCE_STEPS)
     if isinstance(scan_sequence_steps, str):
         scan_sequence_steps = [item.strip() for item in scan_sequence_steps.split(",") if item.strip()]

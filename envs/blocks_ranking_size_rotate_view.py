@@ -6,6 +6,65 @@ import transforms3d as t3d
 
 class blocks_ranking_size_rotate_view(blocks_ranking_size):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.block1,
+                "B": self.block2,
+                "C": self.block3,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_medium_block",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["B"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["B"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "medium_block_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "place_medium_block_right_of_large",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["B"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "medium_block_placed",
+                    "next_subtask_id": 3,
+                },
+                {
+                    "id": 3,
+                    "name": "pick_small_block",
+                    "instruction_idx": 3,
+                    "search_target_keys": ["C"],
+                    "action_target_keys": ["C"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["C"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "small_block_grasped",
+                    "next_subtask_id": 4,
+                },
+                {
+                    "id": 4,
+                    "name": "place_small_block_right_of_medium",
+                    "instruction_idx": 4,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["B", "C"],
+                    "required_carried_keys": ["C"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "small_block_placed",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -123,6 +182,10 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
             rotate_rand=False,
         )
 
+    def _get_block_arm_tag(self, block):
+        block_cyl = world_to_robot(block.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
+        return ArmTag("left" if block_cyl[1] >= 0 else "right")
+
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
@@ -186,23 +249,93 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
             robot_yaw_rad=self.robot_yaw,
             ret="list",
         )
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
         self.last_gripper = None
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        block2_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.64,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
-        block1_cyl = world_to_robot(self.block1.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
-        anchor_arm = ArmTag("left" if block1_cyl[1] >= 0 else "right")
-        arm_tag2 = self.pick_and_place_block(self.block2, self.block2_target_pose)
-        arm_tag3 = self.pick_and_place_block(self.block3, self.block3_target_pose)
+        anchor_arm = self._get_block_arm_tag(self.block1)
+        arm_tag2 = self._get_block_arm_tag(self.block2)
+        self.enter_rotate_action_stage(1, focus_object_key=(block2_key or "B"))
+        self.move(self.grasp_actor(self.block2, arm_tag=arm_tag2, pre_grasp_dis=0.09))
+        self._set_carried_object_keys(["B"])
+        self.move(self.move_by_displacement(arm_tag=arm_tag2, z=0.12))
+        self.complete_rotate_subtask(1, carried_after=["B"])
+
+        block1_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.64,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        self.enter_rotate_action_stage(2, focus_object_key=(block1_key or "A"))
+        self.move(
+            self.place_actor(
+                self.block2,
+                target_pose=self.block2_target_pose,
+                arm_tag=arm_tag2,
+                functional_point_id=0,
+                pre_dis=0.09,
+                dis=0.02,
+                constrain="free",
+            )
+        )
+        self._set_carried_object_keys([])
+        self.move(self.move_by_displacement(arm_tag=arm_tag2, z=0.07, move_axis="arm"))
+        self.complete_rotate_subtask(2, carried_after=[])
+        self.last_gripper = arm_tag2
+
+        block3_key = self.search_and_focus_rotate_subtask(
+            3,
+            scan_r=0.64,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        arm_tag3 = self._get_block_arm_tag(self.block3)
+        self.enter_rotate_action_stage(3, focus_object_key=(block3_key or "C"))
+        if self.last_gripper is not None and self.last_gripper != arm_tag3:
+            self.move(self.back_to_origin(arm_tag=arm_tag3.opposite))
+        self.move(self.grasp_actor(self.block3, arm_tag=arm_tag3, pre_grasp_dis=0.09))
+        self._set_carried_object_keys(["C"])
+        self.move(self.move_by_displacement(arm_tag=arm_tag3, z=0.12))
+        self.complete_rotate_subtask(3, carried_after=["C"])
+
+        block2_anchor_key = self.search_and_focus_rotate_subtask(
+            4,
+            scan_r=0.64,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        self.enter_rotate_action_stage(4, focus_object_key=(block2_anchor_key or "B"))
+        self.move(
+            self.place_actor(
+                self.block3,
+                target_pose=self.block3_target_pose,
+                arm_tag=arm_tag3,
+                functional_point_id=0,
+                pre_dis=0.09,
+                dis=0.02,
+                constrain="free",
+            )
+        )
+        self._set_carried_object_keys([])
+        self.move(self.move_by_displacement(arm_tag=arm_tag3, z=0.07, move_axis="arm"))
+        self.complete_rotate_subtask(4, carried_after=[])
+        self.last_gripper = arm_tag3
 
         self.info["info"] = {
             "{A}": "large block",
             "{B}": "medium block",
             "{C}": "small block",
             "{a}": str(anchor_arm),
-            "{b}": arm_tag2,
-            "{c}": arm_tag3,
+            "{b}": str(arm_tag2),
+            "{c}": str(arm_tag3),
         }
         return self.info
 

@@ -65,5 +65,15 @@
     "Open {A} with one motion.",
     "Lift {A}'s lid gently.",
     "Open {A} carefully using {a}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and open it"
+      ],
+      "unseen": [
+        "find {A} and open it"
+      ]
+    }
+  }
 }

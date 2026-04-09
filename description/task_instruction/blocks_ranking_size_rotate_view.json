@@ -28,5 +28,39 @@
     "Make {A}, {B}, and {C} form a left-to-right size sequence.",
     "Put the blocks in order so {A} comes before {B}, and {B} comes before {C}.",
     "Build the lineup from largest to smallest, placing each block to the right of the previous one."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {B} and grasp it"
+      ],
+      "unseen": [
+        "find {B} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {A} and place {B} to its right"
+      ],
+      "unseen": [
+        "find {A} and place {B} to its right"
+      ]
+    },
+    "3": {
+      "seen": [
+        "find {C} and grasp it"
+      ],
+      "unseen": [
+        "find {C} and grasp it"
+      ]
+    },
+    "4": {
+      "seen": [
+        "find {B} and place {C} to its right"
+      ],
+      "unseen": [
+        "find {B} and place {C} to its right"
+      ]
+    }
+  }
 }

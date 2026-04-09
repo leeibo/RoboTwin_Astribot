@@ -9,6 +9,7 @@ import yaml
 import os
 import transforms3d as t3d
 from copy import deepcopy
+from collections import OrderedDict
 import sapien.core as sapien
 import envs._GLOBAL_CONFIGS as CONFIGS
 from envs.utils import transforms
@@ -190,6 +191,7 @@ class Robot:
         self.head_homestate = self._parse_head_homestate(left_embodiment_args, len(self.head_joints_name))
         self.head_motion_max_vel = float(left_embodiment_args.get("head_motion_max_vel", 1.2))
         self.head_motion_acc = float(left_embodiment_args.get("head_motion_acc", 2.5))
+        self.head_collision_filter_mode = str(left_embodiment_args.get("head_collision_filter_mode", "keep")).lower()
         self.torso_joints_name = left_embodiment_args.get("torso_joints_name", [])
         if isinstance(self.torso_joints_name, str):
             self.torso_joints_name = [self.torso_joints_name]
@@ -550,6 +552,164 @@ class Robot:
                 force_limit=self.right_gripper_force_limit,
             )
 
+        self._configure_head_collision_filter()
+
+    @staticmethod
+    def _iter_link_subtree(root_link):
+        if root_link is None:
+            return []
+        ordered = []
+        stack = [root_link]
+        visited = set()
+        while stack:
+            link = stack.pop()
+            if link is None:
+                continue
+            link_name = None
+            try:
+                link_name = link.get_name()
+            except Exception:
+                link_name = str(id(link))
+            if link_name in visited:
+                continue
+            visited.add(link_name)
+            ordered.append(link)
+            children = []
+            if hasattr(link, "get_children"):
+                try:
+                    children = list(link.get_children())
+                except Exception:
+                    children = []
+            elif hasattr(link, "children"):
+                try:
+                    children = list(link.children)
+                except Exception:
+                    children = []
+            stack.extend(children)
+        return ordered
+
+    @staticmethod
+    def _get_link_collision_shapes(link):
+        if link is None:
+            return []
+        if hasattr(link, "get_collision_shapes"):
+            try:
+                return list(link.get_collision_shapes())
+            except Exception:
+                pass
+        try:
+            return list(link.collision_shapes)
+        except Exception:
+            return []
+
+    def _collect_head_collision_links(self):
+        links = []
+        for joint in self.head_joints:
+            try:
+                links.extend(self._iter_link_subtree(joint.get_child_link()))
+            except Exception:
+                continue
+        if self.head_camera is not None:
+            links.extend(self._iter_link_subtree(self.head_camera))
+
+        unique = OrderedDict()
+        for link in links:
+            try:
+                unique[link.get_name()] = link
+            except Exception:
+                continue
+        return list(unique.values())
+
+    def _collect_arm_collision_links(self):
+        roots = []
+        for joint in self.left_arm_joints + self.right_arm_joints:
+            try:
+                roots.append(joint.get_child_link())
+            except Exception:
+                continue
+        for joint_info in self.left_gripper + self.right_gripper:
+            joint = joint_info[0]
+            if joint is None:
+                continue
+            try:
+                roots.append(joint.get_child_link())
+            except Exception:
+                continue
+
+        unique = OrderedDict()
+        for root in roots:
+            for link in self._iter_link_subtree(root):
+                try:
+                    unique[link.get_name()] = link
+                except Exception:
+                    continue
+        return list(unique.values())
+
+    @staticmethod
+    def _set_collision_groups_or(link, bitmask):
+        if int(bitmask) == 0:
+            return
+        for shape in Robot._get_link_collision_shapes(link):
+            try:
+                groups = list(shape.get_collision_groups())
+                groups[2] = int(groups[2]) | int(bitmask)
+                shape.set_collision_groups(groups)
+            except Exception:
+                continue
+
+    @staticmethod
+    def _disable_link_collisions(link):
+        for shape in Robot._get_link_collision_shapes(link):
+            try:
+                groups = list(shape.get_collision_groups())
+                groups[0] = 0
+                groups[1] = 0
+                shape.set_collision_groups(groups)
+            except Exception:
+                continue
+
+    def _configure_head_collision_filter(self):
+        mode = str(getattr(self, "head_collision_filter_mode", "keep")).lower()
+        if mode in {"", "keep", "none", "off", "false"}:
+            return
+
+        head_links = self._collect_head_collision_links()
+        if len(head_links) == 0:
+            return
+
+        if mode in {"disable_head", "disable_all", "disable_head_collisions"}:
+            for link in head_links:
+                self._disable_link_collisions(link)
+            return
+
+        if mode not in {"disable_head_vs_arms", "ignore_arm_links"}:
+            print(f"[Robot.collision] unknown head_collision_filter_mode='{mode}', skip")
+            return
+
+        head_name_set = {link.get_name() for link in head_links}
+        arm_links = [link for link in self._collect_arm_collision_links() if link.get_name() not in head_name_set]
+        arm_links = [link for link in arm_links if len(self._get_link_collision_shapes(link)) > 0]
+        if len(arm_links) == 0:
+            return
+
+        if len(arm_links) > 30:
+            print(
+                f"[Robot.collision] too many arm collision links ({len(arm_links)}), "
+                "fallback to disabling head collisions entirely"
+            )
+            for link in head_links:
+                self._disable_link_collisions(link)
+            return
+
+        head_bitmask = 0
+        for idx, link in enumerate(sorted(arm_links, key=lambda item: item.get_name())):
+            bit = 1 << idx
+            head_bitmask |= bit
+            self._set_collision_groups_or(link, bit)
+
+        for link in head_links:
+            self._set_collision_groups_or(link, head_bitmask)
+
     @staticmethod
     def _set_joint_drive_property(joint, stiffness, damping, force_limit=None):
         # Some SAPIEN builds support `force_limit` in set_drive_property while others
@@ -816,6 +976,8 @@ class Robot:
         print("[Robot.symmetry_check] =================================")
 
     def print_info(self):
+        if not self.verbose_robot_init_log:
+            return
         print(
             "active joints: ",
             [joint.get_name() for joint in self.left_active_joints + self.right_active_joints],

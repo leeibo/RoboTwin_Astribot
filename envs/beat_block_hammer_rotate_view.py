@@ -7,6 +7,40 @@ import transforms3d as t3d
 
 class beat_block_hammer_rotate_view(beat_block_hammer):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.hammer,
+                "B": self.block,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_hammer",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["A"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "hammer_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "hammer_block",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["A"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "block_hit",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -107,24 +141,34 @@ class beat_block_hammer_rotate_view(beat_block_hammer):
             block_pose.p[0] + 0.05,
             block_pose.p[1] + 0.05,
         ])
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        # print(self._get_default_scan_object_list())
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        hammer_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.64,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         block_pose = self.block.get_functional_point(0, "pose").p.tolist()
         block_cyl = world_to_robot(block_pose, self.robot_root_xy, self.robot_yaw)
         arm_tag = ArmTag("left" if block_cyl[1] >= 0 else "right")
 
-        self.face_object_with_torso(self.hammer, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(hammer_key or "A"))
         self.move(self.grasp_actor(self.hammer, arm_tag=arm_tag, pre_grasp_dis=0.12, grasp_dis=0.01))
+        self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag, z=0.07, move_axis="arm"))
+        self.complete_rotate_subtask(1, carried_after=["A"])
 
-        target_pose = self.block.get_functional_point(1, "pose")
-        self.face_world_point_with_torso(
-            target_pose.p.tolist(),
+        block_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.64,
+            scan_z=0.88 + self.table_z_bias,
             joint_name_prefer="astribot_torso_joint_2",
         )
+        target_pose = self.block.get_functional_point(1, "pose")
+        self.enter_rotate_action_stage(2, focus_object_key=(block_key or "B"))
         self.move(
             self.place_actor(
                 self.hammer,
@@ -137,6 +181,7 @@ class beat_block_hammer_rotate_view(beat_block_hammer):
                 constrain="free",
             )
         )
+        self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {"{A}": "020_hammer/base0", "{a}": str(arm_tag)}
         return self.info

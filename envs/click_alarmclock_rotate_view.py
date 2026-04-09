@@ -6,6 +6,27 @@ import transforms3d as t3d
 
 class click_alarmclock_rotate_view(click_alarmclock):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.alarm,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "click_alarmclock_top_button",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "alarmclock_clicked",
+                    "next_subtask_id": -1,
+                }
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -69,14 +90,20 @@ class click_alarmclock_rotate_view(click_alarmclock):
         )
         self.add_prohibit_area(self.alarm, padding=0.05)
         self.check_arm_function = self.is_left_gripper_close if self.alarm.get_pose().p[0] < 0 else self.is_right_gripper_close
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        alarm_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         alarm_cyl = world_to_robot(self.alarm.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
         arm_tag = ArmTag("left" if alarm_cyl[1] >= 0 else "right")
 
-        self.face_object_with_torso(self.alarm, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(alarm_key or "A"))
         self.move(
             (
                 ArmTag(arm_tag),
@@ -96,6 +123,7 @@ class click_alarmclock_rotate_view(click_alarmclock):
         self.check_success()
         self.move(self.move_by_displacement(arm_tag, z=0.065))
         self.check_success()
+        self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {
             "{A}": f"046_alarm-clock/base{self.alarmclock_id}",

@@ -65,5 +65,15 @@
     "Press {A} firmly using your arm.",
     "Press the stapler {A} with the arm {a}.",
     "Use {a} to press down on {A}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and press it"
+      ],
+      "unseen": [
+        "find {A} and press it"
+      ]
+    }
+  }
 }

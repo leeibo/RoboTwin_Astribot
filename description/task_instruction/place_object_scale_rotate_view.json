@@ -65,5 +65,23 @@
     "With {a}, grab {B} and position it on {A}",
     "Grab {B} and put it on {A}",
     "Pick up {B} and set it on {A}"
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {B} and grasp it"
+      ],
+      "unseen": [
+        "find {B} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {A} and place {B} on it"
+      ],
+      "unseen": [
+        "find {A} and place {B} on it"
+      ]
+    }
+  }
 }

@@ -6,6 +6,40 @@ import transforms3d as t3d
 
 class stack_blocks_two_rotate_view(stack_blocks_two):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.block1,
+                "B": self.block2,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "pick_green_block",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["B"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["B"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "green_block_grasped",
+                    "next_subtask_id": 2,
+                },
+                {
+                    "id": 2,
+                    "name": "stack_green_on_red",
+                    "instruction_idx": 2,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A", "B"],
+                    "required_carried_keys": ["B"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "green_block_stacked",
+                    "next_subtask_id": -1,
+                },
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -105,6 +139,7 @@ class stack_blocks_two_rotate_view(stack_blocks_two):
         self.block2 = create_block(block_pose_lst[1], (0, 1, 0))
         self.add_prohibit_area(self.block1, padding=0.07)
         self.add_prohibit_area(self.block2, padding=0.07)
+        self._configure_rotate_subtask_plan()
 
     def pick_and_place_block(self, block: Actor):
         arm_tag = self._get_block_arm_tag(block)
@@ -141,18 +176,50 @@ class stack_blocks_two_rotate_view(stack_blocks_two):
         return str(arm_tag)
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        block2_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.64,
+            scan_z=0.9 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
-        self.last_gripper = None
-        self.last_actor = self.block1
         anchor_arm = self._get_block_arm_tag(self.block1)
+        arm_tag2 = self._get_block_arm_tag(self.block2)
 
-        arm_tag2 = self.pick_and_place_block(self.block2)
+        self.enter_rotate_action_stage(1, focus_object_key=(block2_key or "B"))
+        self.move(self.grasp_actor(self.block2, arm_tag=arm_tag2, pre_grasp_dis=0.09))
+        self._set_carried_object_keys(["B"])
+        self.move(self.move_by_displacement(arm_tag=arm_tag2, z=0.1))
+        self.complete_rotate_subtask(1, carried_after=["B"])
+
+        block1_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=0.64,
+            scan_z=0.9 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
+        target_pose = self.block1.get_functional_point(1)
+        self.enter_rotate_action_stage(2, focus_object_key=(block1_key or "A"))
+        self.move(
+            self.place_actor(
+                self.block2,
+                target_pose=target_pose,
+                arm_tag=arm_tag2,
+                functional_point_id=0,
+                pre_dis=0.05,
+                dis=0.0,
+                pre_dis_axis="fp",
+                constrain="free",
+            )
+        )
+        self._set_carried_object_keys([])
+        self.move(self.move_by_displacement(arm_tag=arm_tag2, z=0.07))
+        self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
             "{A}": "red block",
             "{B}": "green block",
             "{a}": str(anchor_arm),
-            "{b}": arm_tag2,
+            "{b}": str(arm_tag2),
         }
         return self.info

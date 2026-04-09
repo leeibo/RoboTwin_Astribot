@@ -65,5 +65,15 @@
     "Use {a} to pick {A} and shake it.",
     "Shake {A} horizontally after grabbing.",
     "Grab {A}, shake it horizontally."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A}, grasp it, and shake it horizontally"
+      ],
+      "unseen": [
+        "find {A}, grasp it, and shake it horizontally"
+      ]
+    }
+  }
 }

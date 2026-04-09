@@ -6,6 +6,27 @@ import transforms3d as t3d
 
 class press_stapler_rotate_view(press_stapler):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.stapler,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "press_stapler",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "stapler_pressed",
+                    "next_subtask_id": -1,
+                }
+            ]
+        )
+
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -62,12 +83,18 @@ class press_stapler_rotate_view(press_stapler):
             is_static=True,
         )
         self.add_prohibit_area(self.stapler, padding=0.05)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        stapler_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         arm_tag = ArmTag("left" if self.stapler.get_pose().p[0] < 0 else "right")
-        self.face_object_with_torso(self.stapler, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(stapler_key or "A"))
         self.move(
             self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=0.1, contact_point_id=2)
         )
@@ -77,6 +104,7 @@ class press_stapler_rotate_view(press_stapler):
         self.move(
             self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.02, grasp_dis=0.02, contact_point_id=2)
         )
+        self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {"{A}": f"048_stapler/base{self.stapler_id}", "{a}": str(arm_tag)}
         return self.info

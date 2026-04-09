@@ -1,0 +1,31 @@
+# Edit this list to keep only the rotate-view tasks you want to collect.
+# Used by:
+#   - collect_rotate_tasks_whitelist.sh
+#   - collect_rotate_tasks_multi_difficulty_whitelist.sh
+
+- beat_block_hammer_rotate_view
+- blocks_ranking_rgb_rotate_view
+- blocks_ranking_size_rotate_view
+- click_alarmclock_rotate_view
+- click_bell_rotate_view
+- move_pillbottle_pad_rotate_view
+- move_stapler_pad_rotate_view
+- open_laptop_rotate_view
+- place_a2b_left_rotate_view
+- place_a2b_right_rotate_view
+- place_burger_fries_rotate_view
+- place_cans_plasticbox_rotate_view
+- place_container_plate_rotate_view
+- place_empty_cup_rotate_view
+- place_fan_rotate_view
+- place_mouse_pad_rotate_view
+- place_object_scale_rotate_view
+- place_object_stand_rotate_view
+- place_shoe_rotate_view
+- press_stapler_rotate_view
+- shake_bottle_horizontally_rotate_view
+- shake_bottle_rotate_view
+- stack_blocks_three_rotate_view
+- stack_blocks_two_rotate_view
+- stamp_seal_rotate_view
+- turn_switch_rotate_view

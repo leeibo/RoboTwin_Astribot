@@ -65,5 +65,15 @@
     "Use {a} to press {A}'s top center.",
     "Click the bell at its top center.",
     "Use {a} to press {A}'s top center."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and press its top center"
+      ],
+      "unseen": [
+        "find {A} and press its top center"
+      ]
+    }
+  }
 }

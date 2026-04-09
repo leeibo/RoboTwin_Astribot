@@ -65,5 +65,39 @@
     "Lift {A} and {C}, drop both into {B}.",
     "Move {A} into {B}, then move {C} into {B}.",
     "Grab {A} and drop it into {B}, then do the same for {C}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and grasp it"
+      ],
+      "unseen": [
+        "find {A} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {B} and place {A} into it"
+      ],
+      "unseen": [
+        "find {B} and place {A} into it"
+      ]
+    },
+    "3": {
+      "seen": [
+        "find {C} and grasp it"
+      ],
+      "unseen": [
+        "find {C} and grasp it"
+      ]
+    },
+    "4": {
+      "seen": [
+        "find {B} and place {C} into it"
+      ],
+      "unseen": [
+        "find {B} and place {C} into it"
+      ]
+    }
+  }
 }

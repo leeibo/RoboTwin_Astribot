@@ -65,5 +65,23 @@
     "Pick {A} and set it onto the pad.",
     "Pick {A} and set it on the pad",
     "Use {a} to grab {A} and place it"
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and pick it up"
+      ],
+      "unseen": [
+        "find {A} and pick it up"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find the pad and place {A} on it"
+      ],
+      "unseen": [
+        "find the pad and place {A} on it"
+      ]
+    }
+  }
 }

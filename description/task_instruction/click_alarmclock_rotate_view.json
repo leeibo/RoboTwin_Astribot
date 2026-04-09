@@ -65,5 +65,15 @@
     "Tap the center top button of {A}",
     "Press {A}'s top center button.",
     "Click the central top button on {A}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and click its top button"
+      ],
+      "unseen": [
+        "find {A} and click its top button"
+      ]
+    }
+  }
 }

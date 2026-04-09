@@ -6,6 +6,27 @@ import transforms3d as t3d
 
 class open_laptop_rotate_view(open_laptop):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.laptop,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "open_laptop",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "laptop_opened",
+                    "next_subtask_id": -1,
+                }
+            ]
+        )
+
     def setup_demo(self, is_test=False, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -66,15 +87,21 @@ class open_laptop_rotate_view(open_laptop):
         self.laptop.set_mass(0.01)
         self.laptop.set_properties(1, 0)
         self.add_prohibit_area(self.laptop, padding=0.1)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        laptop_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.62,
+            scan_z=0.88 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         face_prod = get_face_prod(self.laptop.get_pose().q, [1, 0, 0], [1, 0, 0])
         arm_tag = ArmTag("left" if face_prod > 0 else "right")
         self.arm_tag = arm_tag
 
-        self.face_object_with_torso(self.laptop, joint_name_prefer="astribot_torso_joint_2")
+        self.enter_rotate_action_stage(1, focus_object_key=(laptop_key or "A"))
         self.move(self.grasp_actor(self.laptop, arm_tag=arm_tag, pre_grasp_dis=0.08, contact_point_id=0))
         for _ in range(15):
             self.face_object_with_torso(self.laptop, joint_name_prefer="astribot_torso_joint_2")
@@ -91,6 +118,7 @@ class open_laptop_rotate_view(open_laptop):
                 break
             if self.check_success(target=0.5):
                 break
+        self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {
             "{A}": f"{self.model_name}/base{self.model_id}",

@@ -65,5 +65,39 @@
     "Place {A} and {C} onto {B}.",
     "Pick up {A} and {C} and place them on {B}.",
     "Use both arms to grab {A} and {C} and set them on {B}."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and grasp it"
+      ],
+      "unseen": [
+        "find {A} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {B} and place {A} on it"
+      ],
+      "unseen": [
+        "find {B} and place {A} on it"
+      ]
+    },
+    "3": {
+      "seen": [
+        "find {C} and grasp it"
+      ],
+      "unseen": [
+        "find {C} and grasp it"
+      ]
+    },
+    "4": {
+      "seen": [
+        "find {B} and place {C} on it"
+      ],
+      "unseen": [
+        "find {B} and place {C} on it"
+      ]
+    }
+  }
 }

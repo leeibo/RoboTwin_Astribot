@@ -65,5 +65,23 @@
     "Lift the {A} and drop it on the {B} mat.",
     "Grab {A} and set it on {B} mat.",
     "Use {a} to pick up {A} and drop it on {B} mat."
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and grasp it"
+      ],
+      "unseen": [
+        "find {A} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find the {B} pad and place {A} on it"
+      ],
+      "unseen": [
+        "find the {B} pad and place {A} on it"
+      ]
+    }
+  }
 }

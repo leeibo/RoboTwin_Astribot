@@ -6,6 +6,27 @@ import transforms3d as t3d
 
 class shake_bottle_rotate_view(shake_bottle):
 
+    def _configure_rotate_subtask_plan(self):
+        self.configure_rotate_subtask_plan(
+            object_registry={
+                "A": self.bottle,
+            },
+            subtask_defs=[
+                {
+                    "id": 1,
+                    "name": "shake_bottle",
+                    "instruction_idx": 1,
+                    "search_target_keys": ["A"],
+                    "action_target_keys": ["A"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "bottle_shaken",
+                    "next_subtask_id": -1,
+                }
+            ]
+        )
+
     def setup_demo(self, is_test=False, **kwags):
         kwags.setdefault("table_shape", "fan")
         kwags.setdefault("fan_center_on_robot", True)
@@ -71,13 +92,20 @@ class shake_bottle_rotate_view(shake_bottle):
         )
         self.bottle.set_mass(0.01)
         self.add_prohibit_area(self.bottle, padding=0.05)
+        self._configure_rotate_subtask_plan()
 
     def play_once(self):
-        self._scan_scene_two_views(self._get_default_scan_object_list())
+        bottle_key = self.search_and_focus_rotate_subtask(
+            1,
+            scan_r=0.6,
+            scan_z=0.9 + self.table_z_bias,
+            joint_name_prefer="astribot_torso_joint_2",
+        )
 
         arm_tag = ArmTag("right" if self.bottle.get_pose().p[0] > 0 else "left")
-        self.face_object_with_torso(self.bottle, joint_name_prefer="astribot_torso_joint_2")
-        self.move(self.grasp_actor(self.bottle, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.01,gripper_pos=0.2))
+        self.enter_rotate_action_stage(1, focus_object_key=(bottle_key or "A"))
+        self.move(self.grasp_actor(self.bottle, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.01, gripper_pos=0.2))
+        self._set_carried_object_keys(["A"])
 
         target_quat = [0.707, 0, 0, 0.707]
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, quat=target_quat))
@@ -97,6 +125,7 @@ class shake_bottle_rotate_view(shake_bottle):
             self.move(self.move_by_displacement(arm_tag=arm_tag, z=-0.05, quat=quat2))
 
         self.move(self.move_by_displacement(arm_tag=arm_tag, quat=target_quat))
+        self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {
             "{A}": f"001_bottle/base{self.bottle_id}",

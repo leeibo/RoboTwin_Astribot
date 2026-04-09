@@ -65,5 +65,23 @@
     "Pick {A} to stamp {B}",
     "Grab {A} and stamp {B}",
     "Stamp {B} using {A}"
-  ]
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and grasp it"
+      ],
+      "unseen": [
+        "find {A} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find the {B} pad and stamp {A} on it"
+      ],
+      "unseen": [
+        "find the {B} pad and stamp {A} on it"
+      ]
+    }
+  }
 }
