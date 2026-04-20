@@ -104,7 +104,7 @@ class open_laptop_rotate_view(open_laptop):
         self.enter_rotate_action_stage(1, focus_object_key=(laptop_key or "A"))
         self.move(self.grasp_actor(self.laptop, arm_tag=arm_tag, pre_grasp_dis=0.08, contact_point_id=0))
         for _ in range(15):
-            self.face_object_with_torso(self.laptop, joint_name_prefer="astribot_torso_joint_2")
+            # # self.face_object_with_torso(self.laptop, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.grasp_actor(
                     self.laptop,

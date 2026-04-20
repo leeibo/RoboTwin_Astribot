@@ -82,7 +82,7 @@ class handover_mic_rotate_view(handover_mic):
         grasp_arm_tag = ArmTag("right" if self.microphone.get_pose().p[0] > 0 else "left")
         handover_arm_tag = grasp_arm_tag.opposite
 
-        self.face_object_with_torso(self.microphone, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.microphone, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(
                 self.microphone,
@@ -118,7 +118,7 @@ class handover_mic_rotate_view(handover_mic):
             )
         )
 
-        self.face_object_with_torso(self.microphone, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.microphone, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(
                 self.microphone,

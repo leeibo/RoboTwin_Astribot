@@ -71,7 +71,7 @@ class grab_roller_rotate_view(grab_roller):
         left_arm_tag = ArmTag("left")
         right_arm_tag = ArmTag("right")
 
-        self.face_object_with_torso(self.roller, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.roller, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(self.roller, left_arm_tag, pre_grasp_dis=0.08, contact_point_id=0),
             self.grasp_actor(self.roller, right_arm_tag, pre_grasp_dis=0.08, contact_point_id=1),

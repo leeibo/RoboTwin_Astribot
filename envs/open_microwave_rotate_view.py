@@ -69,12 +69,12 @@ class open_microwave_rotate_view(open_microwave):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
         arm_tag = ArmTag("left")
-        self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.microwave, arm_tag=arm_tag, pre_grasp_dis=0.08, contact_point_id=0))
 
         start_qpos = self.microwave.get_qpos()[0]
         for _ in range(50):
-            self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.grasp_actor(
                     self.microwave,
@@ -98,7 +98,7 @@ class open_microwave_rotate_view(open_microwave):
             self.move(self.open_gripper(arm_tag=arm_tag))
             self.move(self.move_by_displacement(arm_tag=arm_tag, y=-0.05, z=0.05))
 
-            self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
             self.move(self.grasp_actor(self.microwave, arm_tag=arm_tag, contact_point_id=1))
             self.move(
                 self.grasp_actor(
@@ -111,7 +111,7 @@ class open_microwave_rotate_view(open_microwave):
 
             start_qpos = self.microwave.get_qpos()[0]
             for _ in range(30):
-                self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
+                # self.face_object_with_torso(self.microwave, joint_name_prefer="astribot_torso_joint_2")
                 self.move(
                     self.grasp_actor(
                         self.microwave,

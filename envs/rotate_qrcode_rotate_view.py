@@ -85,7 +85,7 @@ class rotate_qrcode_rotate_view(rotate_qrcode):
 
         arm_tag = ArmTag("left" if self.qrcode.get_pose().p[0] < 0 else "right")
 
-        self.face_object_with_torso(self.qrcode, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.qrcode, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.qrcode, arm_tag=arm_tag, pre_grasp_dis=0.05, grasp_dis=-0.01,gripper_pos=-0.1))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
 

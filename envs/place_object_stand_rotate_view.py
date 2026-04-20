@@ -90,12 +90,12 @@ class place_object_stand_rotate_view(place_object_stand):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         object_list = [
-            "047_mouse",
-            "048_stapler",
+            # "047_mouse",
+            # "048_stapler",
             "050_bell",
             "073_rubikscube",
             "057_toycar",
-            "079_remotecontrol",
+            # "079_remotecontrol",
         ]
         self.selected_modelname = str(np.random.choice(object_list))
         available_model_ids = self._get_available_model_ids(self.selected_modelname)
@@ -109,7 +109,7 @@ class place_object_stand_rotate_view(place_object_stand):
 
         while True:
             object_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.4, 0.45],
                 thetalim=theta_obj_lim,
 
                 zlim=[0.741, 0.741],
@@ -126,7 +126,7 @@ class place_object_stand_rotate_view(place_object_stand):
 
         while True:
             displaystand_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.4, 0.45],
                 thetalim=theta_stand_lim,
 
                 zlim=[0.741, 0.741],
@@ -150,7 +150,7 @@ class place_object_stand_rotate_view(place_object_stand):
             convex=True,
             model_id=self.selected_model_id,
         )
-        self.object.set_mass(0.05)
+        self.object.set_mass(0.1)
 
         self.displaystand_id = int(np.random.choice([0, 1, 2, 3, 4]))
         self.displaystand = create_actor(
@@ -178,7 +178,7 @@ class place_object_stand_rotate_view(place_object_stand):
         arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
         self.enter_rotate_action_stage(1, focus_object_key=(object_key or "A"))
-        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
+        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1,gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1))
         self.complete_rotate_subtask(1, carried_after=["A"])

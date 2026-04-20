@@ -123,11 +123,11 @@ class put_bottles_dustbin_rotate_view(put_bottles_dustbin):
             arm_tag = ArmTag("left" if bottle.get_pose().p[0] < 0 else "right")
 
             if arm_tag == "left":
-                self.face_object_with_torso(bottle, joint_name_prefer="astribot_torso_joint_2")
+                # self.face_object_with_torso(bottle, joint_name_prefer="astribot_torso_joint_2")
                 self.move(self.grasp_actor(bottle, arm_tag=arm_tag, pre_grasp_dis=0.1))
                 self.move(self.move_by_displacement(arm_tag, z=0.1))
             else:
-                self.face_object_with_torso(bottle, joint_name_prefer="astribot_torso_joint_2")
+                # self.face_object_with_torso(bottle, joint_name_prefer="astribot_torso_joint_2")
                 right_action = self.grasp_actor(bottle, arm_tag=arm_tag, pre_grasp_dis=0.1)
                 right_action[1][0].target_pose[2] += delta_dis
                 right_action[1][1].target_pose[2] += delta_dis
@@ -151,7 +151,7 @@ class put_bottles_dustbin_rotate_view(put_bottles_dustbin):
                     )
                 )
 
-                self.face_object_with_torso(bottle, joint_name_prefer="astribot_torso_joint_2")
+                # self.face_object_with_torso(bottle, joint_name_prefer="astribot_torso_joint_2")
                 left_action = self.grasp_actor(bottle, arm_tag="left", pre_grasp_dis=0.1)
                 left_action[1][0].target_pose[2] -= delta_dis
                 left_action[1][1].target_pose[2] -= delta_dis

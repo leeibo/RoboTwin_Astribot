@@ -101,7 +101,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         tray_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
+            rlim=[0.38, 0.44],
             thetalim=[0,0],
 
             zlim=[0.741, 0.741],
@@ -125,7 +125,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
         self.tray.set_mass(0.05)
 
         hamburg_pose = rand_pose_cyl(
-            rlim=[0.35, 0.45],
+            rlim=[0.38, 0.45],
             thetalim=rotate_theta_side(self, side=1),
 
             zlim=[0.741, 0.741],
@@ -146,7 +146,7 @@ class place_burger_fries_rotate_view(place_burger_fries):
         self.hamburg.set_mass(0.05)
 
         fries_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
+            rlim=[0.38, 0.45],
             thetalim=rotate_theta_side(self, side=-1),
 
             zlim=[0.741, 0.741],
@@ -166,9 +166,9 @@ class place_burger_fries_rotate_view(place_burger_fries):
         )
         self.frenchfries.set_mass(0.05)
 
-        self.add_prohibit_area(self.tray, padding=0.1)
-        self.add_prohibit_area(self.hamburg, padding=0.05)
-        self.add_prohibit_area(self.frenchfries, padding=0.05)
+        self.add_prohibit_area(self.tray, padding=0.12)
+        self.add_prohibit_area(self.hamburg, padding=0.08)
+        self.add_prohibit_area(self.frenchfries, padding=0.08)
         self._configure_rotate_subtask_plan()
 
     def play_once(self):

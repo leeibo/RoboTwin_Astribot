@@ -110,9 +110,9 @@ class pick_diverse_bottles_rotate_view(pick_diverse_bottles):
         bottle1_arm_tag = ArmTag("left")
         bottle2_arm_tag = ArmTag("right")
 
-        self.face_object_with_torso(self.bottle1, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.bottle1, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.bottle1, arm_tag=bottle1_arm_tag, pre_grasp_dis=0.08))
-        self.face_object_with_torso(self.bottle2, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.bottle2, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.bottle2, arm_tag=bottle2_arm_tag, pre_grasp_dis=0.08))
 
         self.move(

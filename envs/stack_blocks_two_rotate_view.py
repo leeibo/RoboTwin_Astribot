@@ -144,7 +144,7 @@ class stack_blocks_two_rotate_view(stack_blocks_two):
     def pick_and_place_block(self, block: Actor):
         arm_tag = self._get_block_arm_tag(block)
 
-        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
             self.move(

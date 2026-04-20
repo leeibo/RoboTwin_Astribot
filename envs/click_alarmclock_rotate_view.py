@@ -64,22 +64,23 @@ class click_alarmclock_rotate_view(click_alarmclock):
 
         while True:
             rand_pos = rand_pose_cyl(
-                rlim=[0.44, 0.5],
+                rlim=[0.4, 0.4],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
-                qpos=[0.5, 0.5, 0.5, 0.5],
+                # qpos=[0.5, 0.5, 0.5, 0.5],
+                qpos=[0.707, 0.707, 0, 0],
                 rotate_rand=True,
-                rotate_lim=[0, 3.14, 0],
+                rotate_lim=[0, 0, 0],
             )
             cyl = world_to_robot(rand_pos.p.tolist(), self.robot_root_xy, self.robot_yaw)
-            if abs(cyl[1]) < 0.2:
+            if abs(cyl[1]) < 0.28 or abs(cyl[1]) > 0.9:
                 continue
             break
 
-        self.alarmclock_id = int(np.random.choice([1, 3], 1)[0])
+        self.alarmclock_id = int(np.random.choice([1], 1)[0])
         self.alarm = create_actor(
             scene=self,
             pose=rand_pos,
@@ -88,7 +89,7 @@ class click_alarmclock_rotate_view(click_alarmclock):
             model_id=self.alarmclock_id,
             is_static=True,
         )
-        self.add_prohibit_area(self.alarm, padding=0.05)
+        self.add_prohibit_area(self.alarm, padding=0.08)
         self.check_arm_function = self.is_left_gripper_close if self.alarm.get_pose().p[0] < 0 else self.is_right_gripper_close
         self._configure_rotate_subtask_plan()
 
@@ -100,24 +101,26 @@ class click_alarmclock_rotate_view(click_alarmclock):
             joint_name_prefer="astribot_torso_joint_2",
         )
 
+
         alarm_cyl = world_to_robot(self.alarm.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
         arm_tag = ArmTag("left" if alarm_cyl[1] >= 0 else "right")
 
+
         self.enter_rotate_action_stage(1, focus_object_key=(alarm_key or "A"))
-        self.move(
-            (
-                ArmTag(arm_tag),
-                [
-                    Action(
-                        arm_tag,
-                        "move",
-                        self.get_grasp_pose(self.alarm, pre_dis=0.1, contact_point_id=0, arm_tag=arm_tag)[:3]
-                        + [0.5, -0.5, 0.5, 0.5],
-                    ),
-                    Action(arm_tag, "close", target_gripper_pos=-0.1),
-                ],
-            )
-        )
+        self.move((
+            ArmTag(arm_tag),
+            [
+                Action(
+                    arm_tag,
+                    "move",
+                    self.get_grasp_pose(self.alarm, pre_dis=0.07, contact_point_id=0, arm_tag=arm_tag)[:3] +
+                    [0.5, -0.5, 0.5, 0.5],
+                ),
+                Action(arm_tag, "close", target_gripper_pos=0.0),
+            ],
+        ))
+    
+        # Move the gripper downward to press the top button of the alarm clock
 
         self.move(self.move_by_displacement(arm_tag, z=-0.065))
         self.check_success()

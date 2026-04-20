@@ -153,7 +153,7 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
     def _sample_block_pose(self, size, existing_pose_lst, avoid_xy_lst):
         for _ in range(120):
             pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.4, 0.45],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741 + size, 0.741 + size],
@@ -173,7 +173,7 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
             return pose
         fallback_theta = float(np.clip(-0.35 * rotate_theta_half(self), -rotate_theta_half(self), rotate_theta_half(self)))
         return rand_pose_cyl(
-            rlim=[0.5, 0.5],
+            rlim=[0.45, 0.45],
             thetalim=[fallback_theta, fallback_theta],
             zlim=[0.741 + size, 0.741 + size],
             robot_root_xy=self.robot_root_xy,
@@ -265,7 +265,7 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
         self.enter_rotate_action_stage(1, focus_object_key=(block2_key or "B"))
         self.move(self.grasp_actor(self.block2, arm_tag=arm_tag2, pre_grasp_dis=0.09))
         self._set_carried_object_keys(["B"])
-        self.move(self.move_by_displacement(arm_tag=arm_tag2, z=0.12))
+        self.move(self.move_by_displacement(arm_tag=arm_tag2, z=0.1))
         self.complete_rotate_subtask(1, carried_after=["B"])
 
         block1_key = self.search_and_focus_rotate_subtask(
@@ -303,7 +303,7 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
             self.move(self.back_to_origin(arm_tag=arm_tag3.opposite))
         self.move(self.grasp_actor(self.block3, arm_tag=arm_tag3, pre_grasp_dis=0.09))
         self._set_carried_object_keys(["C"])
-        self.move(self.move_by_displacement(arm_tag=arm_tag3, z=0.12))
+        self.move(self.move_by_displacement(arm_tag=arm_tag3, z=0.1))
         self.complete_rotate_subtask(3, carried_after=["C"])
 
         block2_anchor_key = self.search_and_focus_rotate_subtask(
@@ -347,9 +347,9 @@ class blocks_ranking_size_rotate_view(blocks_ranking_size):
 
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
-        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09))
-        self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.12))
+        self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1))
 
         self.face_world_point_with_torso(
             target_pose[:3],

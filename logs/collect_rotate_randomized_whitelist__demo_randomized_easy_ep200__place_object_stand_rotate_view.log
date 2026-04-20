@@ -1,0 +1,7 @@
+[2026-04-20 17:19:39] START collect place_object_stand_rotate_view demo_randomized_easy_ep200 (inline_annotated_video=False, inline_instructions=False)
+/home/admin1/yibo/conda/envs/robotwin/lib/python3.10/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.0.1)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+/home/admin1/.config/matplotlib is not a writable directory
+Matplotlib created a temporary cache directory at /tmp/matplotlib-eoc7kk0d because there was an issue with the default path (/home/admin1/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+[31mRender Error[0m
+[2026-04-20 17:19:42] END collect place_object_stand_rotate_view exit=0

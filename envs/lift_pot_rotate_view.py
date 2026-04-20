@@ -70,7 +70,7 @@ class lift_pot_rotate_view(lift_pot):
 
         left_arm_tag = ArmTag("left")
         right_arm_tag = ArmTag("right")
-        self.face_object_with_torso(self.pot, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.pot, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.close_gripper(left_arm_tag, pos=0.5),
             self.close_gripper(right_arm_tag, pos=0.5),

@@ -13,7 +13,7 @@
 - open_laptop_rotate_view
 - place_a2b_left_rotate_view
 - place_a2b_right_rotate_view
-- place_burger_fries_rotate_view
+# - place_burger_fries_rotate_view
 - place_cans_plasticbox_rotate_view
 - place_container_plate_rotate_view
 - place_empty_cup_rotate_view

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RoboTwin VQA Viewer</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-card reveal">
+          <p class="eyebrow">RoboTwin</p>
+          <h1>VQA Viewer</h1>
+          <p class="brand-copy">
+            面向本地数据集的浏览器。按任务、episode、类型和阶段快速定位样本，查看图像、视频、解析字段与原始
+            JSON。
+          </p>
+          <div class="brand-actions">
+            <button id="refreshIndexButton" class="ghost-button" type="button">刷新索引</button>
+            <span id="serverStatus" class="status-pill">Connecting…</span>
+          </div>
+        </div>
+
+        <section class="panel reveal">
+          <div class="panel-head">
+            <h2>全局统计</h2>
+          </div>
+          <div id="globalStats" class="stats-grid"></div>
+        </section>
+
+        <section class="panel reveal">
+          <div class="panel-head">
+            <h2>任务筛选</h2>
+          </div>
+          <label class="field">
+            <span>任务搜索</span>
+            <input id="taskSearchInput" type="search" placeholder="按任务名或存储目录过滤" />
+          </label>
+          <label class="field">
+            <span>存储目录</span>
+            <select id="storageSelect"></select>
+          </label>
+        </section>
+
+        <section class="panel task-panel reveal">
+          <div class="panel-head">
+            <h2>任务列表</h2>
+            <span id="taskCountBadge" class="count-badge">0</span>
+          </div>
+          <div id="taskList" class="task-list"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar reveal">
+          <div>
+            <p class="eyebrow">Current Dataset</p>
+            <h2 id="selectionTitle">Loading…</h2>
+            <p id="selectionSubtitle" class="muted"></p>
+          </div>
+          <div id="taskTypeTabs" class="type-tabs"></div>
+        </header>
+
+        <section class="toolbar reveal">
+          <div class="toolbar-grid">
+            <label class="field">
+              <span>样本搜索</span>
+              <input id="sampleSearchInput" type="search" placeholder="搜索问题、think、task type" />
+            </label>
+            <label class="field">
+              <span>Episode</span>
+              <select id="episodeFilter"></select>
+            </label>
+            <label class="field">
+              <span>Stage</span>
+              <select id="stageFilter"></select>
+            </label>
+            <label class="field">
+              <span>Subtask</span>
+              <select id="subtaskFilter"></select>
+            </label>
+            <label class="checkbox-field">
+              <input id="historyOnlyCheckbox" type="checkbox" />
+              <span>只看 history evidence</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="board reveal">
+          <div class="sample-column panel">
+            <div class="panel-head sticky-head">
+              <div>
+                <h2>样本列表</h2>
+                <p id="sampleSummary" class="muted small"></p>
+              </div>
+              <div class="nav-buttons">
+                <button id="prevSampleButton" class="ghost-button" type="button">上一条</button>
+                <button id="nextSampleButton" class="ghost-button" type="button">下一条</button>
+              </div>
+            </div>
+            <div id="sampleList" class="sample-list"></div>
+          </div>
+
+          <div class="detail-column">
+            <section class="detail-hero panel">
+              <div class="panel-head">
+                <div>
+                  <h2 id="detailTitle">选择一个样本</h2>
+                  <p id="detailMetaLine" class="muted"></p>
+                </div>
+                <div class="detail-actions">
+                  <button id="copySampleJsonButton" class="ghost-button" type="button">复制 JSON</button>
+                  <button id="copyPromptButton" class="ghost-button" type="button">复制 Prompt</button>
+                </div>
+              </div>
+              <div id="detailStatChips" class="chip-row"></div>
+            </section>
+
+            <section class="detail-grid">
+              <article class="panel media-panel">
+                <div class="panel-head">
+                  <h2>图片序列</h2>
+                  <p id="imagePanelHint" class="muted small"></p>
+                </div>
+                <div id="imageStage" class="image-stage empty-state">选择样本后预览图片</div>
+                <div id="thumbnailRail" class="thumbnail-rail"></div>
+              </article>
+
+              <article class="panel response-panel">
+                <div class="panel-head">
+                  <h2>解析结果</h2>
+                </div>
+                <div id="parsedResponse" class="parsed-response empty-state">暂无内容</div>
+              </article>
+
+              <article class="panel video-panel">
+                <div class="panel-head">
+                  <h2>视频联动</h2>
+                </div>
+                <div id="videoGrid" class="video-grid empty-state">当前样本暂无视频可预览</div>
+              </article>
+
+              <article class="panel prompt-panel">
+                <div class="panel-head">
+                  <h2>Prompt / Completion</h2>
+                </div>
+                <div class="message-stack">
+                  <div class="message-card">
+                    <div class="message-role">User</div>
+                    <pre id="userMessage" class="message-body"></pre>
+                  </div>
+                  <div class="message-card">
+                    <div class="message-role">Assistant</div>
+                    <pre id="assistantMessage" class="message-body"></pre>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel metadata-panel">
+                <div class="panel-head">
+                  <h2>Metadata / Raw JSON</h2>
+                </div>
+                <div id="metadataGrid" class="metadata-grid"></div>
+                <details class="raw-json">
+                  <summary>展开原始样本 JSON</summary>
+                  <pre id="rawSampleJson" class="message-body"></pre>
+                </details>
+              </article>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="lightbox" class="lightbox hidden" aria-hidden="true">
+      <button id="lightboxClose" class="lightbox-close" type="button">×</button>
+      <img id="lightboxImage" alt="Large sample view" />
+      <div id="lightboxCaption" class="lightbox-caption"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+  </html>

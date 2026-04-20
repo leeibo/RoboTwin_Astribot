@@ -13,6 +13,7 @@ from .models import CompressionEvent, EpisodeContext, EpisodeSnapshot, MemorySlo
 TARGET_THETA_KEY_DECIMALS = 6
 DEFAULT_MEMORY_FOV_HALF_DEG = 35.0
 DEFAULT_COVERAGE_STEP_DEG = 2.0
+ZERO_ROTATE_EPS_DEG = 1e-3
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -31,12 +32,6 @@ def _wrap_to_180(angle_deg: float) -> float:
     while angle_deg > 180.0:
         angle_deg -= 360.0
     return angle_deg
-
-
-def _normalize_uv(uv: Any) -> list[float] | None:
-    if not isinstance(uv, (list, tuple)) or len(uv) < 2:
-        return None
-    return [float(uv[0]), float(uv[1])]
 
 
 def _annotation_target_keys(annotation: dict[str, Any]) -> list[str]:
@@ -194,12 +189,15 @@ def _build_memory_slots(
             for chunk_start in range(seg_start, seg_end, chunk_size):
                 chunk_end = min(chunk_start + chunk_size, seg_end)
                 chunk_annotations = annotations[chunk_start:chunk_end]
-                current_annotation = dict(chunk_annotations[0])
+                # Action-stage VQA uses the observation at time t to predict the
+                # future chunk actions [t, t + H), so the slot should anchor on
+                # the first frame of the chunk.
+                observation_annotation = dict(chunk_annotations[0])
                 chunk_frame_indices = [int(item.get("frame_idx", 0)) for item in chunk_annotations]
                 slots.append(
                     _make_memory_slot(
                         slot_idx=slot_idx,
-                        annotation=current_annotation,
+                        annotation=observation_annotation,
                         roles=["stage3_chunk"],
                         action_chunk_frame_indices=chunk_frame_indices,
                         action_chunk_actual_size=len(chunk_frame_indices),
@@ -209,50 +207,74 @@ def _build_memory_slots(
                 slot_idx += 1
             continue
 
-        current_annotation = dict(segment[0])
-        roles = [f"stage{int(stage)}_segment"]
+        first_annotation = dict(segment[0])
+        last_annotation = dict(segment[-1])
         slots.append(
             _make_memory_slot(
                 slot_idx=slot_idx,
-                annotation=current_annotation,
-                roles=roles,
+                annotation=first_annotation,
+                roles=[f"stage{int(stage)}_start"],
             )
         )
         slot_idx += 1
+        if int(last_annotation.get("frame_idx", -1)) != int(first_annotation.get("frame_idx", -1)):
+            slots.append(
+                _make_memory_slot(
+                    slot_idx=slot_idx,
+                    annotation=last_annotation,
+                    roles=[f"stage{int(stage)}_end"],
+                )
+            )
+            slot_idx += 1
     return slots
 
 
-def _slot_target_uv(slot: MemorySlot) -> list[float] | None:
-    uv = slot.target_uv_norm()
-    if uv is None:
+def _valid_uv(uv: list[float] | None) -> list[float] | None:
+    if not isinstance(uv, (list, tuple)) or len(uv) < 2:
         return None
     if float(uv[0]) < 0.0 or float(uv[1]) < 0.0:
         return None
-    return uv
+    return [float(uv[0]), float(uv[1])]
+
+
+def _slot_target_uv(slot: MemorySlot, object_key: str | None = None) -> list[float] | None:
+    uv = slot.uv_for_object_key(object_key)
+    if uv is not None:
+        return _valid_uv(uv)
+    if object_key is None:
+        return _valid_uv(slot.target_uv_norm())
+    return None
 
 
 def _choose_evidence_slot(current_slot: MemorySlot, prompt_slots: list[MemorySlot]) -> tuple[MemorySlot | None, list[float] | None]:
-    current_uv = _slot_target_uv(current_slot)
+    current_target_key = current_slot.target_key()
+    current_uv = _slot_target_uv(current_slot, current_target_key)
     if current_uv is not None:
         return current_slot, current_uv
 
-    current_target_key = current_slot.target_key()
     current_target_keys = set(current_slot.target_keys())
     for slot in reversed(prompt_slots):
-        slot_uv = _slot_target_uv(slot)
-        if slot_uv is None:
-            continue
+        slot_uv = _slot_target_uv(slot, current_target_key)
+        if slot_uv is not None:
+            return slot, slot_uv
         slot_target_keys = set(slot.target_keys())
-        if current_target_key is not None and current_target_key in slot_target_keys:
-            return slot, slot_uv
-        if current_target_keys and slot_target_keys & current_target_keys:
-            return slot, slot_uv
+        for candidate_key in sorted(current_target_keys & slot_target_keys):
+            candidate_uv = _slot_target_uv(slot, candidate_key)
+            if candidate_uv is not None:
+                return slot, candidate_uv
     return None, None
 
 
 def _make_snapshot(current_slot: MemorySlot, prompt_slots: list[MemorySlot]) -> EpisodeSnapshot:
     prompt_frame_indices = [int(slot.frame_idx) for slot in prompt_slots] + [int(current_slot.frame_idx)]
-    prompt_planned_actions = [(int(round(float(slot.planned_delta_deg))), 0) for slot in prompt_slots]
+    prompt_sequence = list(prompt_slots) + [current_slot]
+    prompt_planned_actions = [
+        (
+            int(round(_wrap_to_180(float(next_slot.current_heading_deg) - float(prev_slot.current_heading_deg)))),
+            0,
+        )
+        for prev_slot, next_slot in zip(prompt_sequence[:-1], prompt_sequence[1:])
+    ]
     evidence_slot, evidence_uv = _choose_evidence_slot(current_slot, prompt_slots)
     evidence_prompt_index = None
     evidence_from_history = False
@@ -260,6 +282,7 @@ def _make_snapshot(current_slot: MemorySlot, prompt_slots: list[MemorySlot]) -> 
         for idx, frame_idx in enumerate(prompt_frame_indices, start=1):
             if int(frame_idx) == int(evidence_slot.frame_idx):
                 evidence_prompt_index = int(idx)
+                break
         evidence_from_history = int(evidence_slot.frame_idx) != int(current_slot.frame_idx)
 
     return EpisodeSnapshot(
@@ -288,28 +311,77 @@ def _slot_coverage_indices(
     return {int(idx) for idx, diff in enumerate(diffs.tolist()) if float(diff) <= float(half_fov_deg) + 1e-6}
 
 
-def _compress_memory_slots(
+def _is_zero_rotate_slot(slot: MemorySlot) -> bool:
+    return bool("stage3_chunk" in slot.roles or abs(float(slot.planned_delta_deg)) <= ZERO_ROTATE_EPS_DEG)
+
+
+def _merge_rotate_zero_blocks(slots: list[MemorySlot]) -> list[MemorySlot]:
+    if len(slots) <= 1:
+        return list(slots)
+    merged: list[MemorySlot] = []
+    zero_block_last: MemorySlot | None = None
+    for slot in slots:
+        if _is_zero_rotate_slot(slot):
+            zero_block_last = slot
+            continue
+        if zero_block_last is not None:
+            merged.append(zero_block_last)
+            zero_block_last = None
+        merged.append(slot)
+    if zero_block_last is not None:
+        merged.append(zero_block_last)
+    return merged
+
+
+def _is_slot_redundant(
+    slots: list[MemorySlot],
+    candidate_idx: int,
+    grid: np.ndarray,
+    half_fov_deg: float = DEFAULT_MEMORY_FOV_HALF_DEG,
+) -> bool:
+    if candidate_idx < 0 or candidate_idx >= len(slots):
+        return False
+    candidate_coverage = _slot_coverage_indices(slots[candidate_idx], grid=grid, half_fov_deg=half_fov_deg)
+    if not candidate_coverage:
+        return True
+    other_coverage: set[int] = set()
+    for idx, slot in enumerate(slots):
+        if idx == candidate_idx:
+            continue
+        other_coverage.update(_slot_coverage_indices(slot, grid=grid, half_fov_deg=half_fov_deg))
+    return bool(candidate_coverage.issubset(other_coverage))
+
+
+def compress_memory_slots(
     slots: list[MemorySlot],
     half_fov_deg: float = DEFAULT_MEMORY_FOV_HALF_DEG,
 ) -> list[MemorySlot]:
     if len(slots) <= 1:
         return list(slots)
 
+    reduced_slots = _merge_rotate_zero_blocks(list(slots))
     grid = _coverage_grid()
-    covered: set[int] = set()
-    kept_reversed: list[MemorySlot] = []
-    for slot in reversed(slots):
-        coverage = _slot_coverage_indices(slot, grid=grid, half_fov_deg=half_fov_deg)
-        if coverage - covered:
-            kept_reversed.append(slot)
-            covered.update(coverage)
-
-    if not kept_reversed:
-        kept_reversed.append(slots[-1])
-
-    kept = list(reversed(kept_reversed))
+    kept: list[MemorySlot] = []
+    for slot in reduced_slots:
+        kept.append(slot)
+        while len(kept) > 1:
+            removed = False
+            for idx in range(max(len(kept) - 1, 0)):
+                if _is_slot_redundant(kept, candidate_idx=idx, grid=grid, half_fov_deg=half_fov_deg):
+                    del kept[idx]
+                    removed = True
+                    break
+            if not removed:
+                break
     kept.sort(key=lambda slot: (int(slot.frame_idx), int(slot.slot_idx)))
     return kept
+
+
+def _compress_memory_slots(
+    slots: list[MemorySlot],
+    half_fov_deg: float = DEFAULT_MEMORY_FOV_HALF_DEG,
+) -> list[MemorySlot]:
+    return compress_memory_slots(slots=slots, half_fov_deg=half_fov_deg)
 
 
 def _apply_history_compression(
@@ -322,15 +394,14 @@ def _apply_history_compression(
     if len(before_slots) <= 1:
         return before_slots
     after_slots = _compress_memory_slots(before_slots)
-    if len(after_slots) < len(before_slots):
-        compression_events.append(
-            CompressionEvent(
-                trigger=str(trigger),
-                trigger_frame_idx=int(trigger_frame_idx),
-                before_slots=list(before_slots),
-                after_slots=list(after_slots),
-            )
+    compression_events.append(
+        CompressionEvent(
+            trigger=str(trigger),
+            trigger_frame_idx=int(trigger_frame_idx),
+            before_slots=list(before_slots),
+            after_slots=list(after_slots),
         )
+    )
     return list(after_slots)
 
 
@@ -356,6 +427,7 @@ def build_episode_context(
     )
 
     history_slots: list[MemorySlot] = []
+    raw_recent_slots: list[MemorySlot] = []
     history_limit = max(int(max_context_frames) - 1, 0)
 
     for slot in memory_slots:
@@ -367,10 +439,21 @@ def build_episode_context(
                 trigger_frame_idx=int(slot.frame_idx),
             )
 
-        prompt_history = list(history_slots[-history_limit:]) if history_limit > 0 else []
+        if "stage3_chunk" in slot.roles:
+            # Action-stage VQA predicts the next 10 actions from the current
+            # observation plus recent memory, so stage3 chunks should remain in
+            # the prompt history instead of being folded away by compression.
+            prompt_history = list(raw_recent_slots[-history_limit:]) if history_limit > 0 else []
+        else:
+            prompt_candidates = list(history_slots[-history_limit:]) if history_limit > 0 else []
+            prompt_with_current = _compress_memory_slots(prompt_candidates + [slot])
+            prompt_history = [item for item in prompt_with_current if int(item.slot_idx) != int(slot.slot_idx)]
         context.snapshots.append(_make_snapshot(current_slot=slot, prompt_slots=prompt_history))
 
         history_slots.append(slot)
+        raw_recent_slots.append(slot)
+        if history_limit > 0 and len(raw_recent_slots) > history_limit:
+            raw_recent_slots = raw_recent_slots[-history_limit:]
         if int(max_context_frames) > 0 and len(history_slots) >= int(max_context_frames):
             history_slots = _apply_history_compression(
                 history_slots=history_slots,

@@ -109,7 +109,7 @@ class adjust_bottle_rotate_view(adjust_bottle):
         arm_tag = ArmTag("right" if self.qpose_tag == 1 else "left")
         target_pose = self.right_target_pose if self.qpose_tag == 1 else self.left_target_pose
 
-        self.face_object_with_torso(self.bottle, joint_name_prefer="astribot_torso_joint_2")
+        # # self.face_object_with_torso(self.bottle, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.bottle, arm_tag=arm_tag, pre_grasp_dis=0.1))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
 

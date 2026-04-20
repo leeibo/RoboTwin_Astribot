@@ -124,10 +124,10 @@ def test_object_in_camera_fov_uses_object_center():
 def test_object_in_camera_fov_aabb_detects_partial_visibility_when_center_is_outside():
     camera_pose = DummyPose([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])
     obj = DummyAABBObject(
-        center=[1.0, 0.9, 0.0],
+        center=[1.0, 0.78, 0.0],
         aabb=[
-            [0.95, 0.65, -0.05],
-            [1.05, 1.15, 0.05],
+            [0.5, 0.2, -0.05],
+            [1.4, 0.85, 0.05],
         ],
     )
 
@@ -154,17 +154,41 @@ def test_object_in_camera_fov_aabb_detects_partial_visibility_when_center_is_out
     )
     assert inside is True
     assert debug["mode"] == "aabb"
-    assert np.allclose(debug["world_point"], np.array([1.0, 0.9, 0.0]))
+    assert np.allclose(debug["world_point"], np.array([0.95, 0.525, 0.0]))
     assert debug["projected_bbox"]["u_min"] < debug["visible_uv_bounds"]["u_max"]
+    assert debug["visible_ratio"] >= 0.4
 
 
-def test_project_object_to_image_uv_aabb_returns_in_frame_representative_point():
+def test_object_in_camera_fov_aabb_rejects_low_visible_ratio():
     camera_pose = DummyPose([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])
     obj = DummyAABBObject(
         center=[1.0, 0.9, 0.0],
         aabb=[
             [0.95, 0.65, -0.05],
             [1.05, 1.15, 0.05],
+        ],
+    )
+    inside, debug = camera_visibility.is_object_in_camera_fov(
+        obj=obj,
+        camera_pose=camera_pose,
+        image_w=640,
+        image_h=480,
+        fovy_rad=np.deg2rad(60.0),
+        mode="aabb",
+        ret_debug=True,
+    )
+    assert inside is False
+    assert debug["intersects_view"] is True
+    assert debug["visible_ratio"] < 0.4
+
+
+def test_project_object_to_image_uv_aabb_returns_in_frame_representative_point():
+    camera_pose = DummyPose([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])
+    obj = DummyAABBObject(
+        center=[1.0, 0.78, 0.0],
+        aabb=[
+            [0.5, 0.2, -0.05],
+            [1.4, 0.85, 0.05],
         ],
     )
     (u_norm, v_norm), debug = camera_visibility.project_object_to_image_uv(
@@ -179,6 +203,7 @@ def test_project_object_to_image_uv_aabb_returns_in_frame_representative_point()
     assert debug["inside"] is True
     assert 0.0 <= u_norm <= 1.0
     assert 0.0 <= v_norm <= 1.0
+    assert debug["visible_ratio"] >= 0.4
 
 
 def test_project_world_point_to_image_uv_center_hit():

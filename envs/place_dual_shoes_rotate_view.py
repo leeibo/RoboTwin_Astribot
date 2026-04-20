@@ -107,7 +107,7 @@ class place_dual_shoes_rotate_view(place_dual_shoes):
         left_target = self.shoe_box.get_functional_point(0)
         right_target = self.shoe_box.get_functional_point(1)
 
-        self.face_object_with_torso(self.left_shoe, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.left_shoe, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.left_shoe, arm_tag=left_arm_tag, pre_grasp_dis=0.1,gripper_pos=0.3,grasp_dis=-0.02))
         self.move(self.move_by_displacement(left_arm_tag, z=0.15))
         self.face_world_point_with_torso(left_target[:3], joint_name_prefer="astribot_torso_joint_2")
@@ -124,7 +124,7 @@ class place_dual_shoes_rotate_view(place_dual_shoes):
         )
         self.move(self.back_to_origin(left_arm_tag))
 
-        self.face_object_with_torso(self.right_shoe, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.right_shoe, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.right_shoe, arm_tag=right_arm_tag, pre_grasp_dis=0.1))
         self.move(self.move_by_displacement(right_arm_tag, z=0.15))
         self.face_world_point_with_torso(right_target[:3], joint_name_prefer="astribot_torso_joint_2")

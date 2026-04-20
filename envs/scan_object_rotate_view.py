@@ -120,10 +120,10 @@ class scan_object_rotate_view(scan_object):
         scanner_arm_tag = ArmTag("left" if self.scanner.get_pose().p[0] < 0 else "right")
         object_arm_tag = scanner_arm_tag.opposite
 
-        self.face_object_with_torso(self.scanner, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.scanner, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.scanner, arm_tag=scanner_arm_tag, pre_grasp_dis=0.08))
 
-        self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.object, arm_tag=object_arm_tag, pre_grasp_dis=0.08))
 
         self.move(

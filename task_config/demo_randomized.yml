@@ -1,25 +1,35 @@
 # if you want to modify the config, please check the following tutorial first:
 # https://robotwin-platform.github.io/doc/usage/configurations.html
 render_freq: 0
+table_shape: fan
+fan_center_on_robot: true
+fan_outer_radius: 0.9
+fan_inner_radius: 0.3
 fan_angle_deg: 200
+fan_center_deg: 90
 rotate_object_margin_deg: 10
 rotate_theta_reference_fan_angle_deg: 220
 rotate_theta_shared_ratio: 1.0
+rotate_scan_aabb_visible_ratio_threshold: 0.4
+rotate_clutter_min_radius: 0.55
+rotate_cluttered_numbers: 3
+rotate_clutter_candidate_count: 12
+rotate_clutter_radial_bias_power: 0.45
 episode_num: 50
 use_seed: false
 save_freq: 15
-embodiment: [aloha-agilex]
+embodiment: [astribot_texture]
 language_num: 100
 domain_randomization:
   random_background: true
   cluttered_table: true
-  clean_background_rate: 0.02
+  clean_background_rate: 0.1
   random_head_camera_dis: 0
-  random_table_height: 0.03
+  random_table_height: 0.01
   random_light: true
   crazy_random_light_rate: 0.02
 camera:
-  head_camera_type: D435
+  head_camera_type: Large
   wrist_camera_type: D435
   collect_head_camera: true
   collect_wrist_camera: true

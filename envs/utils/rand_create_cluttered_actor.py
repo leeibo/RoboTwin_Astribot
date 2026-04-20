@@ -9,28 +9,43 @@ import json
 from pathlib import Path
 
 
+def _objaverse_model_dir(base_dir: Path, model_name: str, model_id: str) -> Path:
+    return Path(base_dir) / str(model_name) / str(model_id)
+
+
+def _objaverse_model_exists(base_dir: Path, model_name: str, model_id: str) -> bool:
+    return (_objaverse_model_dir(base_dir, model_name, model_id) / "model.urdf").exists()
+
+
 def get_all_cluttered_objects():
     cluttered_objects_info = {}
     cluttered_objects_name = []
 
     # load from cluttered_objects
-    cluttered_objects_config = json.load(open(Path("./assets/objects/objaverse/list.json"), "r", encoding="utf-8"))
-    cluttered_objects_name += cluttered_objects_config["item_names"]
+    objaverse_root = Path("./assets/objects/objaverse")
+    cluttered_objects_config = json.load(open(objaverse_root / "list.json", "r", encoding="utf-8"))
     for model_name, model_ids in cluttered_objects_config["list_of_items"].items():
-        cluttered_objects_info[model_name] = {
-            "ids": model_ids,
-            "type": "urdf",
-            "root": f"objects/objaverse/{model_name}",
-        }
         params = {}
+        valid_model_ids = []
         for model_id in model_ids:
+            if not _objaverse_model_exists(objaverse_root, model_name, model_id):
+                continue
             model_full_name = f"{model_name}_{model_id}"
             params[model_id] = {
                 "z_max": cluttered_objects_config["z_max"][model_full_name],
                 "radius": cluttered_objects_config["radius"][model_full_name],
                 "z_offset": cluttered_objects_config["z_offset"][model_full_name],
             }
-        cluttered_objects_info[model_name]["params"] = params
+            valid_model_ids.append(model_id)
+        if len(valid_model_ids) == 0:
+            continue
+        cluttered_objects_name.append(model_name)
+        cluttered_objects_info[model_name] = {
+            "ids": valid_model_ids,
+            "type": "urdf",
+            "root": f"objects/objaverse/{model_name}",
+            "params": params,
+        }
 
     # load from objects
     objects_dir = Path("./assets/objects")
@@ -122,6 +137,95 @@ def check_overlap(radius, x, y, area):
     return dx * dx + dy * dy <= radius * radius
 
 
+def _wrap_to_pi(theta):
+    theta = float(theta)
+    while theta <= -np.pi:
+        theta += 2.0 * np.pi
+    while theta > np.pi:
+        theta -= 2.0 * np.pi
+    return theta
+
+
+def _point_in_fan_region(x, y, fan_region):
+    if fan_region is None:
+        return False
+    center_xy = np.array(fan_region["center_xy"], dtype=np.float64).reshape(2)
+    dx = float(x) - float(center_xy[0])
+    dy = float(y) - float(center_xy[1])
+    radius = float(np.hypot(dx, dy))
+    theta = float(np.arctan2(dy, dx))
+    center_theta = float(fan_region["center_theta_rad"])
+    half_angle = float(fan_region["angle_rad"]) * 0.5
+    theta_err = abs(_wrap_to_pi(theta - center_theta))
+    return bool(radius >= float(fan_region["inner_radius"]) and radius <= float(fan_region["outer_radius"]) and theta_err <= half_angle + 1e-6)
+
+
+def _sample_fan_xy(fan_region, point_radius, prefer_back=True):
+    center_xy = np.array(fan_region["center_xy"], dtype=np.float64).reshape(2)
+    radius_floor = float(fan_region.get("radius_floor", 0.0))
+    inner_radius = max(float(fan_region["inner_radius"]), radius_floor) + float(point_radius)
+    outer_radius = float(fan_region["outer_radius"]) - float(point_radius)
+    if outer_radius <= inner_radius:
+        return None
+
+    theta_min = float(fan_region["center_theta_rad"]) - 0.5 * float(fan_region["angle_rad"])
+    theta_max = float(fan_region["center_theta_rad"]) + 0.5 * float(fan_region["angle_rad"])
+    candidate_count = int(fan_region.get("candidate_count", 6 if prefer_back else 1))
+    radial_bias_power = float(fan_region.get("radial_bias_power", 0.35 if prefer_back else 1.0))
+    candidates = []
+    for _ in range(max(candidate_count, 1)):
+        theta = float(np.random.uniform(theta_min, theta_max))
+        u = float(np.random.uniform(0.0, 1.0))
+        if prefer_back:
+            u = u ** radial_bias_power
+        radius_sq = inner_radius * inner_radius + (outer_radius * outer_radius - inner_radius * inner_radius) * u
+        radius = float(np.sqrt(max(radius_sq, 0.0)))
+        x = float(center_xy[0] + radius * np.cos(theta))
+        y = float(center_xy[1] + radius * np.sin(theta))
+        candidates.append((radius, x, y))
+    candidates.sort(key=lambda item: item[0], reverse=bool(prefer_back))
+    for _, x, y in candidates:
+        if _point_in_fan_region(x=x, y=y, fan_region={
+            "center_xy": center_xy,
+            "inner_radius": max(float(fan_region["inner_radius"]), radius_floor) + float(point_radius),
+            "outer_radius": float(fan_region["outer_radius"]) - float(point_radius),
+            "center_theta_rad": float(fan_region["center_theta_rad"]),
+            "angle_rad": float(fan_region["angle_rad"]),
+        }):
+            return x, y
+    return None
+
+
+def _is_valid_cluttered_xy(x, y, new_obj_radius, size_dict, prohibited_area, xlim, ylim, fan_region, z_max):
+    is_overlap = False
+    for area in prohibited_area:
+        if check_overlap(new_obj_radius, x, y, area):
+            is_overlap = True
+            break
+    if is_overlap:
+        return False
+
+    distances = np.sqrt((np.array([sub_list[0] for sub_list in size_dict]) - x)**2 +
+                        (np.array([sub_list[1] for sub_list in size_dict]) - y)**2)
+    max_distances = np.array([sub_list[3] + new_obj_radius + 0.005 for sub_list in size_dict])
+
+    if y - new_obj_radius < 0 and z_max > 0.05:
+        return False
+    if fan_region is None:
+        if (x - new_obj_radius < -0.6 or x + new_obj_radius > 0.6 or y - new_obj_radius < -0.34
+                or y + new_obj_radius > 0.34):
+            return False
+        if not np.all(distances > max_distances) or not (y + new_obj_radius < ylim[1]):
+            return False
+        return True
+
+    if not _point_in_fan_region(x=x, y=y, fan_region=fan_region):
+        return False
+    if not np.all(distances > max_distances):
+        return False
+    return True
+
+
 def rand_pose_cluttered(
     xlim: np.ndarray,
     ylim: np.ndarray,
@@ -136,6 +240,8 @@ def rand_pose_cluttered(
     z_max=0,
     prohibited_area=None,
     obj_margin=0.005,
+    fan_region=None,
+    prefer_back=True,
 ) -> sapien.Pose:
     if len(xlim) < 2 or xlim[1] < xlim[0]:
         xlim = np.array([xlim[0], xlim[0]])
@@ -149,27 +255,26 @@ def rand_pose_cluttered(
         times += 1
         if times > 100:
             return False, None
-        x = np.random.uniform(xlim[0], xlim[1])
-        y = np.random.uniform(ylim[0], ylim[1])
         new_obj_radius = obj_radius + obj_margin
-        is_overlap = False
-        for area in prohibited_area:
-            if check_overlap(new_obj_radius, x, y, area):
-                is_overlap = True
-                break
-        if is_overlap:
-            continue
-        distances = np.sqrt((np.array([sub_list[0] for sub_list in size_dict]) - x)**2 +
-                            (np.array([sub_list[1] for sub_list in size_dict]) - y)**2)
-        max_distances = np.array([sub_list[3] + new_obj_radius + obj_margin for sub_list in size_dict])
-
-        if y - new_obj_radius < 0:
-            if z_max > 0.05:
+        if fan_region is None:
+            x = np.random.uniform(xlim[0], xlim[1])
+            y = np.random.uniform(ylim[0], ylim[1])
+        else:
+            sampled_xy = _sample_fan_xy(fan_region=fan_region, point_radius=new_obj_radius, prefer_back=prefer_back)
+            if sampled_xy is None:
                 continue
-        if (x - new_obj_radius < -0.6 or x + new_obj_radius > 0.6 or y - new_obj_radius < -0.34
-                or y + new_obj_radius > 0.34):
-            continue
-        if np.all(distances > max_distances) and y + new_obj_radius < ylim[1]:
+            x, y = sampled_xy
+        if _is_valid_cluttered_xy(
+            x=x,
+            y=y,
+            new_obj_radius=new_obj_radius,
+            size_dict=size_dict,
+            prohibited_area=prohibited_area,
+            xlim=xlim,
+            ylim=ylim,
+            fan_region=fan_region,
+            z_max=z_max,
+        ):
             break
 
     z = np.random.uniform(zlim[0], zlim[1])
@@ -207,6 +312,8 @@ def rand_create_cluttered_actor(
     z_max=0,
     fix_root_link=True,
     prohibited_area=None,
+    fan_region=None,
+    prefer_back=True,
 ) -> tuple[bool, Actor | None]:
 
     if qpos is None:
@@ -229,6 +336,8 @@ def rand_create_cluttered_actor(
         z_offset=z_offset,
         z_max=z_max,
         prohibited_area=prohibited_area,
+        fan_region=fan_region,
+        prefer_back=prefer_back,
     )
 
     if not success:

@@ -93,6 +93,13 @@ def clear_collection_failure_report(save_path):
         os.remove(report_path)
 
 
+def _env_flag(name, default=False):
+    raw = os.environ.get(name, None)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def make_json_safe(value):
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
@@ -225,6 +232,8 @@ def run(TASK_ENV, args):
     epid, suc_num, fail_num, seed_list = 0, 0, 0, []
     last_failure = None
     max_seed_tries = args.get("max_seed_tries", DEFAULT_MAX_SEED_TRIES)
+    skip_annotated_video = _env_flag("ROBOTWIN_SKIP_ANNOTATED_VIDEO", default=False)
+    skip_episode_instructions = _env_flag("ROBOTWIN_SKIP_INSTRUCTIONS", default=False)
 
     print(f"Task Name: \033[34m{args['task_name']}\033[0m")
 
@@ -394,7 +403,7 @@ def run(TASK_ENV, args):
             subtask_metadata_path = TASK_ENV.save_rotate_subtask_metadata(episode_idx)
             if subtask_metadata_path is not None:
                 info_db[f"episode_{episode_idx}"]["subtask_metadata_path"] = subtask_metadata_path
-            annotated_video_path = TASK_ENV.get_rotate_annotated_video_path(episode_idx)
+            annotated_video_path = (None if skip_annotated_video else TASK_ENV.get_rotate_annotated_video_path(episode_idx))
             if annotated_video_path is not None and len(getattr(TASK_ENV, "saved_frame_annotations", [])) > 0:
                 info_db[f"episode_{episode_idx}"]["annotated_video_path"] = annotated_video_path
 
@@ -406,11 +415,12 @@ def run(TASK_ENV, args):
             TASK_ENV.remove_data_cache()
             assert TASK_ENV.check_success(), "Collect Error"
 
-        command = (
-            "cd description && bash gen_episode_instructions.sh "
-            f"{args['task_name']} {args['storage_setting']} {args['language_num']} {args['task_config']}"
-        )
-        os.system(command)
+        if not skip_episode_instructions:
+            command = (
+                "cd description && bash gen_episode_instructions.sh "
+                f"{args['task_name']} {args['storage_setting']} {args['language_num']} {args['task_config']}"
+            )
+            os.system(command)
 
     clear_collection_failure_report(args["save_path"])
     return 0

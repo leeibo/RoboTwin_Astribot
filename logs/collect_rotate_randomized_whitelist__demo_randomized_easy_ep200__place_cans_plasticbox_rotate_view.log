@@ -1,0 +1,197 @@
+[2026-04-20 22:18:35] START collect place_cans_plasticbox_rotate_view demo_randomized_easy_ep200 (inline_annotated_video=False, inline_instructions=False)
+/home/admin1/yibo/conda/envs/robotwin/lib/python3.10/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.0.1)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+[32mRender Well[0m
+missing pytorch3d
+============= Config =============
+
+[95mMessy Table:[0m True
+[95mRandom Background:[0m True
+ - Clean Background Rate: 0.2
+[95mRandom Light:[0m True
+ - Crazy Random Light Rate: 0.02
+[95mRandom Table Height:[0m 0.0
+[95mRandom Head Camera Distance:[0m 0
+[94mHead Camera Config:[0m Large, True
+[94mWrist Camera Config:[0m D435, True
+[94mEmbodiment Config:[0m astribot_texture
+[94mDifficulty Tag:[0m easy_fan150
+[94mData Setting:[0m demo_randomized_easy_ep200__easy_fan150
+[94mMax Seed Tries:[0m 1000
+
+==================================
+Task Name: [34mplace_cans_plasticbox_rotate_view[0m
+[93m[Start Seed and Pre Motion Data Collection][0m
+Warp DeprecationWarning: The namespace `warp.torch` will soon be removed from the public API. It can still be accessed from `warp._src.torch` but might be changed or removed without notice.
+Warp DeprecationWarning: The symbol `warp.torch.device_from_torch` will soon be removed from the public API. Use `warp.device_from_torch` instead.
+simulate data episode 0 fail! (seed = 0)
+simulate data episode 0 success! (seed = 1)
+simulate data episode 1 fail! (seed = 2)
+simulate data episode 1 fail! (seed = 3)
+simulate data episode 1 fail! (seed = 4)
+simulate data episode 1 fail! (seed = 5)
+simulate data episode 1 fail! (seed = 6)
+simulate data episode 1 fail! (seed = 7)
+ -------------
+simulate data episode 1 fail! (seed = 8)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 1 success! (seed = 9)
+simulate data episode 2 fail! (seed = 10)
+ -------------
+simulate data episode 2 fail! (seed = 11)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 2 fail! (seed = 12)
+simulate data episode 2 fail! (seed = 13)
+simulate data episode 2 fail! (seed = 14)
+ -------------
+simulate data episode 2 fail! (seed = 15)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 185, in play_once
+    self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 2 fail! (seed = 16)
+simulate data episode 2 fail! (seed = 17)
+simulate data episode 2 fail! (seed = 18)
+simulate data episode 2 success! (seed = 19)
+ -------------
+simulate data episode 3 fail! (seed = 20)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 3 fail! (seed = 21)
+simulate data episode 3 success! (seed = 22)
+simulate data episode 4 fail! (seed = 23)
+simulate data episode 4 fail! (seed = 24)
+simulate data episode 4 fail! (seed = 25)
+ -------------
+simulate data episode 4 fail! (seed = 26)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 185, in play_once
+    self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 4 success! (seed = 27)
+simulate data episode 5 fail! (seed = 28)
+simulate data episode 5 fail! (seed = 29)
+simulate data episode 5 fail! (seed = 30)
+simulate data episode 5 fail! (seed = 31)
+simulate data episode 5 success! (seed = 32)
+simulate data episode 6 fail! (seed = 33)
+simulate data episode 6 fail! (seed = 34)
+simulate data episode 6 fail! (seed = 35)
+simulate data episode 6 fail! (seed = 36)
+ -------------
+simulate data episode 6 fail! (seed = 37)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 6 fail! (seed = 38)
+simulate data episode 6 fail! (seed = 39)
+simulate data episode 6 fail! (seed = 40)
+simulate data episode 6 fail! (seed = 41)
+simulate data episode 6 fail! (seed = 42)
+simulate data episode 6 fail! (seed = 43)
+simulate data episode 6 fail! (seed = 44)
+simulate data episode 6 fail! (seed = 45)
+ -------------
+simulate data episode 6 fail! (seed = 46)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 6 fail! (seed = 47)
+ -------------
+simulate data episode 6 fail! (seed = 48)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+simulate data episode 6 fail! (seed = 49)
+simulate data episode 6 fail! (seed = 50)
+simulate data episode 6 fail! (seed = 51)
+simulate data episode 6 fail! (seed = 52)
+simulate data episode 6 fail! (seed = 53)
+ -------------
+simulate data episode 6 fail! (seed = 54)
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 284, in run
+    TASK_ENV.play_once()
+  File "/home/admin1/Desktop/RoboTwin/./envs/place_cans_plasticbox_rotate_view.py", line 217, in play_once
+    self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
+  File "/home/admin1/Desktop/RoboTwin/./envs/_base_task.py", line 2010, in grasp_actor
+    Action(arm_tag, "move", target_pose=pre_grasp_pose),
+  File "/home/admin1/Desktop/RoboTwin/./envs/utils/action.py", line 70, in __init__
+    assert (target_pose is not None), "target_pose cannot be None for move action."
+AssertionError: target_pose cannot be None for move action.
+ -------------
+Traceback (most recent call last):
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 213, in main
+    return run(task, args)
+  File "/home/admin1/Desktop/RoboTwin/script/collect_data.py", line 331, in run
+    with open(os.path.join(args["save_path"], "seed.txt"), "w") as file:
+FileNotFoundError: [Errno 2] No such file or directory: './data/place_cans_plasticbox_rotate_view/demo_randomized_easy_ep200__easy_fan150/seed.txt'
+[Error] collection failure report written to: ./data/place_cans_plasticbox_rotate_view/demo_randomized_easy_ep200__easy_fan150/collection_failure.json
+[2026-04-20 22:27:51] END collect place_cans_plasticbox_rotate_view exit=1

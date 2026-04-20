@@ -91,7 +91,7 @@ class hanging_mug_rotate_view(hanging_mug):
         grasp_arm_tag = ArmTag("left")
         hang_arm_tag = ArmTag("right")
 
-        self.face_object_with_torso(self.mug, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.mug, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.mug, arm_tag=grasp_arm_tag, pre_grasp_dis=0.1,grasp_dis=-0.02,gripper_pos=-0.1))
         self.move(self.move_by_displacement(arm_tag=grasp_arm_tag, z=0.08))
 
@@ -108,7 +108,7 @@ class hanging_mug_rotate_view(hanging_mug):
         )
         self.move(self.move_by_displacement(arm_tag=grasp_arm_tag, z=0.1))
 
-        self.face_object_with_torso(self.mug, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.mug, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.back_to_origin(grasp_arm_tag),
             self.grasp_actor(self.mug, arm_tag=hang_arm_tag, pre_grasp_dis=0.05),

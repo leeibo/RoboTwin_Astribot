@@ -133,10 +133,10 @@ class put_object_cabinet_rotate_view(put_object_cabinet):
         self.arm_tag = arm_tag
         self.origin_z = self.object.get_pose().p[2]
 
-        self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.object, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
 
-        self.face_object_with_torso(self.cabinet, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.cabinet, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.cabinet, arm_tag=arm_tag.opposite, pre_grasp_dis=0.05))
 
         for _ in range(4):

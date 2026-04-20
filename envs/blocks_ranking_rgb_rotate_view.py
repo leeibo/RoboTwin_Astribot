@@ -342,7 +342,7 @@ class blocks_ranking_rgb_rotate_view(blocks_ranking_rgb):
 
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
-        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
+        # # self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
 
         self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09, grasp_dis=0.01))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))

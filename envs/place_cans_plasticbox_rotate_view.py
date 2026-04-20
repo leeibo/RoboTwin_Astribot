@@ -101,7 +101,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         box_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
+            rlim=[0.4, 0.4],
             thetalim=rotate_theta_center(self),
 
             zlim=[0.741, 0.741],
@@ -123,7 +123,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         self.plasticbox.set_mass(0.05)
 
         obj1_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
+            rlim=[0.4, 0.4],
             thetalim=rotate_theta_side(self, side=1),
 
             zlim=[0.741, 0.741],
@@ -141,10 +141,10 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
             convex=True,
             model_id=self.object1_id,
         )
-        self.object1.set_mass(0.05)
+        self.object1.set_mass(0.2)
 
         obj2_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
+            rlim=[0.45, 0.45],
             thetalim=rotate_theta_side(self, side=-1),
 
             zlim=[0.741, 0.741],
@@ -162,11 +162,11 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
             convex=True,
             model_id=self.object2_id,
         )
-        self.object2.set_mass(0.05)
+        self.object2.set_mass(0.2)
 
-        self.add_prohibit_area(self.plasticbox, padding=0.1)
-        self.add_prohibit_area(self.object1, padding=0.05)
-        self.add_prohibit_area(self.object2, padding=0.05)
+        self.add_prohibit_area(self.plasticbox, padding=0.12)
+        self.add_prohibit_area(self.object1, padding=0.08)
+        self.add_prohibit_area(self.object2, padding=0.08)
         self._configure_rotate_subtask_plan()
 
     def play_once(self):
@@ -182,9 +182,9 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         t1 = self.plasticbox.get_functional_point(1)
         t0 = self.plasticbox.get_functional_point(0)
         self.enter_rotate_action_stage(1, focus_object_key=(object1_key or "A"))
-        self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.07))
+        self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
-        self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.1))
+        self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.11))
         self.complete_rotate_subtask(1, carried_after=["A"])
 
         box_key = self.search_and_focus_rotate_subtask(
@@ -214,9 +214,9 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
             joint_name_prefer="astribot_torso_joint_2",
         )
         self.enter_rotate_action_stage(3, focus_object_key=(object2_key or "C"))
-        self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07))
+        self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
         self._set_carried_object_keys(["C"])
-        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.1))
+        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.11))
         self.complete_rotate_subtask(3, carried_after=["C"])
 
         box_key = self.search_and_focus_rotate_subtask(

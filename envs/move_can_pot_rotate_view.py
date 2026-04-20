@@ -117,7 +117,7 @@ class move_can_pot_rotate_view(move_can_pot):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
         arm_tag = self.arm_tag
-        self.face_object_with_torso(self.can, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.can, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.can, arm_tag=arm_tag, pre_grasp_dis=0.12,gripper_pos=0.3))
         self.move(self.move_by_displacement(arm_tag, y=-0.1, z=0.1))
 

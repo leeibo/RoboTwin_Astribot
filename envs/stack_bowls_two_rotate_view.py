@@ -96,7 +96,7 @@ class stack_bowls_two_rotate_view(stack_bowls_two):
         actor_pose = actor.get_pose().p
         arm_tag = ArmTag("left" if actor_pose[0] < 0 else "right")
 
-        self.face_object_with_torso(actor, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(actor, joint_name_prefer="astribot_torso_joint_2")
         if self.las_arm is None or arm_tag == self.las_arm:
             self.move(
                 self.grasp_actor(

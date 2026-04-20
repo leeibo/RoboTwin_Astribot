@@ -105,7 +105,7 @@ class turn_switch_rotate_view(turn_switch):
 
         self.enter_rotate_action_stage(1, focus_object_key=(focus_key or "A"))
         self.move(self.close_gripper(arm_tag=arm_tag, pos=-0.1))
-        self.face_object_with_torso(self.switch, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.switch, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.switch, arm_tag=arm_tag, pre_grasp_dis=0.04))
         self.complete_rotate_subtask(1, carried_after=[])
 

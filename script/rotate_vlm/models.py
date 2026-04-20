@@ -46,6 +46,38 @@ class MemorySlot:
             return None
         return [float(val[0]), float(val[1])]
 
+    def visible_object_uv_map(self) -> dict[str, list[float]]:
+        raw = self.current_annotation.get("visible_object_uv_map", {}) or {}
+        result: dict[str, list[float]] = {}
+        if not isinstance(raw, dict):
+            return result
+        for key, value in raw.items():
+            if not isinstance(value, (list, tuple)) or len(value) < 2:
+                continue
+            result[str(key)] = [float(value[0]), float(value[1])]
+        return result
+
+    def discovered_last_uv_map(self) -> dict[str, list[float]]:
+        raw = self.current_annotation.get("discovered_last_uv_map", {}) or {}
+        result: dict[str, list[float]] = {}
+        if not isinstance(raw, dict):
+            return result
+        for key, value in raw.items():
+            if not isinstance(value, (list, tuple)) or len(value) < 2:
+                continue
+            result[str(key)] = [float(value[0]), float(value[1])]
+        return result
+
+    def uv_for_object_key(self, object_key: str | None) -> list[float] | None:
+        if object_key is None:
+            return self.target_uv_norm()
+        visible_map = self.visible_object_uv_map()
+        if str(object_key) in visible_map:
+            return list(visible_map[str(object_key)])
+        if self.target_key() == str(object_key):
+            return self.target_uv_norm()
+        return None
+
     def visible_keys(self) -> list[str]:
         return [str(key) for key in self.current_annotation.get("visible_object_keys", []) or []]
 
@@ -56,10 +88,10 @@ class MemorySlot:
         return [str(key) for key in self.current_annotation.get("carried_object_keys", []) or []]
 
     def has_target_evidence(self) -> bool:
-        uv = self.target_uv_norm()
+        target_key = self.target_key()
+        uv = self.uv_for_object_key(target_key)
         if uv is not None and float(uv[0]) >= 0.0 and float(uv[1]) >= 0.0:
             return True
-        target_key = self.target_key()
         return bool(target_key is not None and target_key in set(self.visible_keys()))
 
 

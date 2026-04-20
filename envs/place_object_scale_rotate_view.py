@@ -91,7 +91,14 @@ class place_object_scale_rotate_view(place_object_scale):
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
-        object_list = ["047_mouse", "048_stapler", "050_bell"]
+        object_list = [
+            # "047_mouse",
+            # "048_stapler",
+            "050_bell",
+            "073_rubikscube",
+            "057_toycar",
+            # "079_remotecontrol",
+        ]
         self.selected_modelname = str(np.random.choice(object_list))
         available_model_ids = self._get_available_model_ids(self.selected_modelname)
         if not available_model_ids:
@@ -173,9 +180,9 @@ class place_object_scale_rotate_view(place_object_scale):
         self.arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
         self.enter_rotate_action_stage(1, focus_object_key=(object_key or "B"))
-        self.move(self.grasp_actor(self.object, arm_tag=self.arm_tag))
+        self.move(self.grasp_actor(self.object, arm_tag=self.arm_tag, pre_grasp_dis=0.1, gripper_pos=0.2))
         self._set_carried_object_keys(["B"])
-        self.move(self.move_by_displacement(arm_tag=self.arm_tag, z=0.15))
+        self.move(self.move_by_displacement(arm_tag=self.arm_tag, z=0.1))
         self.complete_rotate_subtask(1, carried_after=["B"])
 
         scale_key = self.search_and_focus_rotate_subtask(

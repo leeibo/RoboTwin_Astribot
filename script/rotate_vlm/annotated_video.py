@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -63,8 +65,9 @@ def export_annotated_video(
         raise ValueError("annotated video export requires decoded frames")
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    temp_output = output.with_suffix(".tmp.mp4")
     writer = cv2.VideoWriter(
-        str(output),
+        str(temp_output),
         cv2.VideoWriter_fourcc(*"mp4v"),
         10.0,
         (int(frames[0].shape[1]), int(frames[0].shape[0])),
@@ -76,6 +79,37 @@ def export_annotated_video(
             writer.write(annotated)
     finally:
         writer.release()
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        temp_output.replace(output)
+        return str(output)
+
+    cmd = [
+        ffmpeg_path,
+        "-y",
+        "-i",
+        str(temp_output),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output),
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        temp_output.replace(output)
+        return str(output)
+
+    if temp_output.exists():
+        temp_output.unlink()
     return str(output)
 
 

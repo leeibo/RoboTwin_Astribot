@@ -166,7 +166,7 @@ class dump_bin_bigbin_rotate_view(dump_bin_bigbin):
         place_deskbin_arm_tag = ArmTag("left")
 
         if grasp_deskbin_arm_tag == "right":
-            self.face_object_with_torso(self.deskbin, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.deskbin, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.grasp_actor(
                     self.deskbin,
@@ -188,7 +188,7 @@ class dump_bin_bigbin_rotate_view(dump_bin_bigbin):
                 )
             )
             self.move(self.move_by_displacement(grasp_deskbin_arm_tag, z=0.1, move_axis="arm"))
-            self.face_object_with_torso(self.deskbin, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.deskbin, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.back_to_origin(grasp_deskbin_arm_tag),
                 self.grasp_actor(
@@ -199,7 +199,7 @@ class dump_bin_bigbin_rotate_view(dump_bin_bigbin):
                 ),
             )
         else:
-            self.face_object_with_torso(self.deskbin, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.deskbin, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.grasp_actor(
                     self.deskbin,

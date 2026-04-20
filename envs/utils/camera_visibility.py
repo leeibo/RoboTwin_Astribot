@@ -139,6 +139,32 @@ def _get_visible_uv_bounds(image_w, image_h, fovy_rad, horizontal_margin_rad=0.0
     }
 
 
+def _bbox_visible_ratio(projected_bbox, visible_uv_bounds):
+    if projected_bbox is None or visible_uv_bounds is None:
+        return 0.0
+    try:
+        u_min = float(projected_bbox["u_min"])
+        u_max = float(projected_bbox["u_max"])
+        v_min = float(projected_bbox["v_min"])
+        v_max = float(projected_bbox["v_max"])
+        vis_u_min = float(visible_uv_bounds["u_min"])
+        vis_u_max = float(visible_uv_bounds["u_max"])
+        vis_v_min = float(visible_uv_bounds["v_min"])
+        vis_v_max = float(visible_uv_bounds["v_max"])
+    except Exception:
+        return 0.0
+
+    total_w = max(u_max - u_min, 0.0)
+    total_h = max(v_max - v_min, 0.0)
+    total_area = total_w * total_h
+    if total_area <= 1e-12:
+        return 0.0
+
+    overlap_w = max(min(u_max, vis_u_max) - max(u_min, vis_u_min), 0.0)
+    overlap_h = max(min(v_max, vis_v_max) - max(v_min, vis_v_min), 0.0)
+    return float((overlap_w * overlap_h) / total_area)
+
+
 def get_camera_fov_xy(image_w, image_h, fovy_rad):
     width = int(image_w)
     height = int(image_h)
@@ -328,6 +354,7 @@ def project_object_to_image_uv(
     far=None,
     horizontal_margin_rad=0.0,
     vertical_margin_rad=0.0,
+    aabb_min_visible_ratio=0.4,
     ret_debug=False,
 ):
     mode = str(mode).lower()
@@ -431,6 +458,9 @@ def project_object_to_image_uv(
             "aabb": aabb.tolist(),
             "projected_bbox": None,
             "valid_projected_points": 0,
+            "visible_ratio": 0.0,
+            "intersects_view": False,
+            "aabb_min_visible_ratio": float(max(aabb_min_visible_ratio, 0.0)),
         }
 
     projected_uvs = np.array(projected_uvs, dtype=np.float64)
@@ -439,14 +469,22 @@ def project_object_to_image_uv(
     v_min = float(np.min(projected_uvs[:, 1]))
     v_max = float(np.max(projected_uvs[:, 1]))
 
-    inside = bool(
+    projected_bbox = {
+        "u_min": u_min,
+        "u_max": u_max,
+        "v_min": v_min,
+        "v_max": v_max,
+    }
+    intersects_view = bool(
         u_max >= uv_bounds["u_min"]
         and u_min <= uv_bounds["u_max"]
         and v_max >= uv_bounds["v_min"]
         and v_min <= uv_bounds["v_max"]
     )
+    visible_ratio = _bbox_visible_ratio(projected_bbox=projected_bbox, visible_uv_bounds=uv_bounds)
+    inside = bool(intersects_view and visible_ratio >= float(max(aabb_min_visible_ratio, 0.0)))
 
-    if inside:
+    if intersects_view:
         clipped_u_min = max(u_min, uv_bounds["u_min"])
         clipped_u_max = min(u_max, uv_bounds["u_max"])
         clipped_v_min = max(v_min, uv_bounds["v_min"])
@@ -464,16 +502,14 @@ def project_object_to_image_uv(
         "mode": mode,
         "world_point": world_point,
         "aabb": aabb.tolist(),
-        "projected_bbox": {
-            "u_min": u_min,
-            "u_max": u_max,
-            "v_min": v_min,
-            "v_max": v_max,
-        },
+        "projected_bbox": projected_bbox,
         "visible_uv_bounds": uv_bounds,
         "valid_projected_points": int(projected_uvs.shape[0]),
         "sample_world_points": [point.tolist() for point in valid_world_points],
         "sample_camera_points": [point.tolist() for point in valid_camera_points],
+        "visible_ratio": float(visible_ratio),
+        "intersects_view": bool(intersects_view),
+        "aabb_min_visible_ratio": float(max(aabb_min_visible_ratio, 0.0)),
         "u_norm": float(u_norm) if np.isfinite(u_norm) else np.nan,
         "v_norm": float(v_norm) if np.isfinite(v_norm) else np.nan,
         "pixel_x": None if not np.isfinite(u_norm) else float(u_norm * (int(image_w) - 1)),
@@ -493,6 +529,7 @@ def is_object_in_camera_fov(
     far=None,
     horizontal_margin_rad=0.0,
     vertical_margin_rad=0.0,
+    aabb_min_visible_ratio=0.4,
     ret_debug=False,
 ):
     """
@@ -509,6 +546,7 @@ def is_object_in_camera_fov(
         far=far,
         horizontal_margin_rad=horizontal_margin_rad,
         vertical_margin_rad=vertical_margin_rad,
+        aabb_min_visible_ratio=aabb_min_visible_ratio,
         ret_debug=True,
     )
 

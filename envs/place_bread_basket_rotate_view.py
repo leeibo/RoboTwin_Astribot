@@ -98,7 +98,7 @@ class place_bread_basket_rotate_view(place_bread_basket):
             arm_info.append(str(arm_tag))
             if last_arm_tag is not None and last_arm_tag != arm_tag:
                 self.move(self.open_gripper(arm_tag=last_arm_tag))
-            self.face_object_with_torso(bread, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(bread, joint_name_prefer="astribot_torso_joint_2")
             self.move(self.grasp_actor(bread, arm_tag=arm_tag, pre_grasp_dis=0.12))
             self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
 

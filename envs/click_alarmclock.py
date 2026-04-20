@@ -3,6 +3,9 @@ from ._base_task import Base_Task
 from .utils import *
 import sapien
 import math
+import numpy as np
+import transforms3d as t3d
+from ._GLOBAL_CONFIGS import GRASP_DIRECTION_DIC
 
 
 class click_alarmclock(Base_Task):
@@ -42,6 +45,9 @@ class click_alarmclock(Base_Task):
     def play_once(self):
         # Determine which arm to use based on alarm clock's position (right if positive x, left otherwise)
         arm_tag = ArmTag("right" if self.alarm.get_pose().p[0] > 0 else "left")
+        press_pose = self._resolve_alarm_press_pose(arm_tag=arm_tag, pre_dis=0.1)
+        if press_pose is None:
+            raise RuntimeError("failed to resolve a valid alarm-clock press pose")
     
         # Move the gripper above the top center of the alarm clock and close the gripper to simulate a click
         # Note: although the code structure resembles a grasp, it is used here to simulate a touch/click action
@@ -52,8 +58,7 @@ class click_alarmclock(Base_Task):
                 Action(
                     arm_tag,
                     "move",
-                    self.get_grasp_pose(self.alarm, pre_dis=0.1, contact_point_id=0, arm_tag=arm_tag)[:3] +
-                    [0.5, -0.5, 0.5, 0.5],
+                    press_pose,
                 ),
                 Action(arm_tag, "close", target_gripper_pos=0.0),
             ],
@@ -75,6 +80,29 @@ class click_alarmclock(Base_Task):
             "{a}": str(arm_tag),
         }
         return self.info
+
+    def _resolve_alarm_press_pose(self, arm_tag: ArmTag, pre_dis: float = 0.1):
+        contact_point = self.alarm.get_contact_point(0, "list")
+        if contact_point is None:
+            return None
+
+        top_down_key = "top_down_little_right" if str(arm_tag) == "left" else "top_down_little_left"
+        quat_candidates = [
+            GRASP_DIRECTION_DIC[top_down_key],
+            GRASP_DIRECTION_DIC["top_down"],
+            [0.5, -0.5, 0.5, 0.5],
+        ]
+
+        for quat in quat_candidates:
+            pose = np.array(list(contact_point[:3]) + list(quat), dtype=np.float64)
+            direction_mat = t3d.quaternions.quat2mat(np.array(quat, dtype=np.float64))
+            pose[:3] += [pre_dis, 0, 0] @ np.linalg.inv(direction_mat)
+            planned_pose = self.choose_best_pose(pose.tolist(), contact_point, arm_tag)
+            if planned_pose is not None and len(planned_pose) == 7 and float(planned_pose[0]) != -1:
+                return planned_pose
+        fallback_pose = np.array(list(self.alarm.get_pose().p) + list(quat_candidates[0]), dtype=np.float64)
+        fallback_pose[2] += 0.13
+        return fallback_pose.tolist()
 
 
     def check_success(self):

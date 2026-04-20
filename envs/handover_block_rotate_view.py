@@ -96,7 +96,7 @@ class handover_block_rotate_view(handover_block):
         grasp_arm_tag = ArmTag("left" if box_cyl[1] >= 0 else "right")
         place_arm_tag = grasp_arm_tag.opposite
 
-        self.face_object_with_torso(self.box, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.box, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(
                 self.box,
@@ -122,7 +122,7 @@ class handover_block_rotate_view(handover_block):
             )
         )
 
-        self.face_object_with_torso(self.box, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.box, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(
                 self.box,

@@ -75,7 +75,7 @@ class move_playingcard_away_rotate_view(move_playingcard_away):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
         arm_tag = ArmTag("right" if self.playingcards.get_pose().p[0] > 0 else "left")
-        self.face_object_with_torso(self.playingcards, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.playingcards, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.playingcards, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.02,gripper_pos=0.3))
         self.move(self.move_by_displacement(arm_tag, x=0.3 if arm_tag == "right" else -0.3))
         self.move(self.open_gripper(arm_tag))

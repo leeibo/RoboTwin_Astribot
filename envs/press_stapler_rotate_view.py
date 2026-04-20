@@ -100,7 +100,7 @@ class press_stapler_rotate_view(press_stapler):
         )
         self.move(self.close_gripper(arm_tag=arm_tag))
 
-        self.face_object_with_torso(self.stapler, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.stapler, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.02, grasp_dis=0.02, contact_point_id=2)
         )

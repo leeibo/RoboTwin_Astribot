@@ -115,7 +115,7 @@ class place_phone_stand_rotate_view(place_phone_stand):
 
         arm_tag = ArmTag("left" if self.phone.get_pose().p[0] < 0 else "right")
 
-        self.face_object_with_torso(self.phone, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.phone, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.phone, arm_tag=arm_tag, pre_grasp_dis=0.08,grasp_dis=0.01))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.15))
 

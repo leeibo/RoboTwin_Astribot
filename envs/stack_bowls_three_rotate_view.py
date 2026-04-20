@@ -50,7 +50,7 @@ class stack_bowls_three_rotate_view(stack_bowls_three):
         )
         while len(bowl_pose_lst) < 3:
             bowl_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.45, 0.5],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -97,7 +97,7 @@ class stack_bowls_three_rotate_view(stack_bowls_three):
         actor_pose = actor.get_pose().p
         arm_tag = ArmTag("left" if actor_pose[0] < 0 else "right")
 
-        self.face_object_with_torso(actor, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(actor, joint_name_prefer="astribot_torso_joint_2")
         if self.las_arm is None or arm_tag == self.las_arm:
             self.move(
                 self.grasp_actor(

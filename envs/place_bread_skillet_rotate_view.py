@@ -93,9 +93,9 @@ class place_bread_skillet_rotate_view(place_bread_skillet):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
         arm_tag = ArmTag("right" if self.skillet.get_pose().p[0] > 0 else "left")
-        self.face_object_with_torso(self.skillet, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.skillet, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.skillet, arm_tag=arm_tag, pre_grasp_dis=0.07, gripper_pos=0))
-        self.face_object_with_torso(self.bread, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.bread, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.bread, arm_tag=arm_tag.opposite, pre_grasp_dis=0.07, gripper_pos=0))
 
         self.move(

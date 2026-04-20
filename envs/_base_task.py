@@ -116,6 +116,7 @@ class Base_Task(gym.Env):
         self.cluttered_objs = list()
         self.prohibited_area = list()  # [x_min, y_min, x_max, y_max]
         self.record_cluttered_objects = list()  # record cluttered objects info
+        self.rotate_cluttered_numbers = int(kwags.get("rotate_cluttered_numbers", kwags.get("cluttered_numbers", 10)))
 
         self.eval_success = False
         self.table_z_bias = (np.random.uniform(low=-self.random_table_height, high=0) + table_height_bias)  # TODO
@@ -171,7 +172,7 @@ class Base_Task(gym.Env):
         self.load_actors()
 
         if self.cluttered_table:
-            self.get_cluttered_table()
+            self.get_cluttered_table(cluttered_numbers=self.rotate_cluttered_numbers)
 
         is_stable, unstable_list = self.check_stable()
         if not is_stable:
@@ -783,6 +784,19 @@ class Base_Task(gym.Env):
                 continue
             task_objects_list.append(actor_name)
         self.obj_names, self.cluttered_item_info = get_available_cluttered_objects(task_objects_list)
+        fan_region = None
+        if str(getattr(self, "rotate_table_shape", "rect")).lower() in {"fan", "sector", "arc"}:
+            fan_center_xy = np.array(getattr(self, "rotate_table_center_xy", [0.0, 0.0]), dtype=np.float64).reshape(2)
+            fan_region = {
+                "center_xy": fan_center_xy.tolist(),
+                "inner_radius": float(getattr(self, "rotate_fan_inner_radius", 0.3) or 0.3),
+                "outer_radius": float(getattr(self, "rotate_fan_outer_radius", 0.9) or 0.9),
+                "center_theta_rad": float(np.deg2rad(float(getattr(self, "rotate_fan_center_deg", 90.0) or 90.0))),
+                "angle_rad": float(np.deg2rad(float(getattr(self, "rotate_fan_angle_deg", 200.0) or 200.0))),
+                "radius_floor": float(max(getattr(self, "rotate_clutter_min_radius", 0.55), 0.0)),
+                "candidate_count": int(max(getattr(self, "rotate_clutter_candidate_count", 8), 1)),
+                "radial_bias_power": float(max(getattr(self, "rotate_clutter_radial_bias_power", 0.35), 1e-3)),
+            }
 
         success_count = 0
         max_try = 50
@@ -812,6 +826,8 @@ class Base_Task(gym.Env):
                 z_offset=obj_offset,
                 z_max=obj_maxz,
                 prohibited_area=self.prohibited_area,
+                fan_region=fan_region,
+                prefer_back=bool(fan_region is not None),
             )
             if not success or self.cluttered_obj is None:
                 trys += 1
@@ -1176,10 +1192,15 @@ class Base_Task(gym.Env):
     def merge_pkl_to_hdf5_video(self):
         if not self.save_data:
             return
+        skip_annotated_video = str(os.environ.get("ROBOTWIN_SKIP_ANNOTATED_VIDEO", "0")).strip().lower() in {
+            "1", "true", "yes", "on"
+        }
         cache_path = self.folder_path["cache"]
         target_file_path = f"{self.save_dir}/data/episode{self.ep_num}.hdf5"
         target_video_path = f"{self.save_dir}/video/episode{self.ep_num}.mp4"
-        target_annotated_video_path = self.get_rotate_annotated_video_path(self.ep_num)
+        target_annotated_video_path = (
+            None if skip_annotated_video else self.get_rotate_annotated_video_path(self.ep_num)
+        )
         target_video_path_map = {
             "left_camera": f"{self.save_dir}/video/episode{self.ep_num}_left_camera.mp4",
             "right_camera": f"{self.save_dir}/video/episode{self.ep_num}_right_camera.mp4",
@@ -1190,7 +1211,7 @@ class Base_Task(gym.Env):
         os.makedirs(f"{self.save_dir}/data", exist_ok=True)
         os.makedirs(f"{self.save_dir}/video", exist_ok=True)
         annotated_video_metadata = None
-        if len(self.saved_frame_annotations) > 0:
+        if (not skip_annotated_video) and len(self.saved_frame_annotations) > 0:
             rotate_metadata = self._compose_rotate_subtask_episode_metadata(self.ep_num)
             annotated_video_metadata = {
                 "task_name": rotate_metadata.get("task_name"),
@@ -2923,6 +2944,7 @@ class Base_Task(gym.Env):
                 far=camera_spec.get("far", None),
                 horizontal_margin_rad=float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0)),
                 vertical_margin_rad=float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0)),
+                aabb_min_visible_ratio=float(getattr(self, "rotate_scan_aabb_visible_ratio_threshold", 0.4)),
                 ret_debug=True,
             )
             world_point = np.array(debug.get("world_point", self._resolve_object_world_point(obj=obj)), dtype=np.float64)
@@ -2931,6 +2953,7 @@ class Base_Task(gym.Env):
                 "u_norm": float(u_norm) if np.isfinite(u_norm) else None,
                 "v_norm": float(v_norm) if np.isfinite(v_norm) else None,
                 "inside": bool(debug["inside"]),
+                "visible_ratio": float(debug.get("visible_ratio", 0.0)),
             }
         except Exception:
             return None
@@ -2975,6 +2998,7 @@ class Base_Task(gym.Env):
                 "u_norm": None if proj is None else proj["u_norm"],
                 "v_norm": None if proj is None else proj["v_norm"],
                 "world_point": None if proj is None else np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist(),
+                "visible_ratio": 0.0 if proj is None else float(proj.get("visible_ratio", 0.0)),
             }
         return results
 
@@ -3570,6 +3594,23 @@ class Base_Task(gym.Env):
             "carried_object_mask": carried_object_mask.astype(np.int8),
             "target_uv_norm": target_uv_norm.astype(np.float32),
         }
+        visible_object_uv_map = {
+            str(key): [float(info["u_norm"]), float(info["v_norm"])]
+            for key, info in visibility_map.items()
+            if bool(info.get("visible", False)) and info.get("u_norm") is not None and info.get("v_norm") is not None
+        }
+        discovered_last_uv_map = {
+            str(key): [float(state["last_uv_norm"][0]), float(state["last_uv_norm"][1])]
+            for key, state in self.discovered_objects.items()
+            if bool(state.get("discovered", False))
+            and isinstance(state.get("last_uv_norm"), (list, tuple))
+            and len(state.get("last_uv_norm")) >= 2
+        }
+        visible_object_ratio_map = {
+            str(key): float(info.get("visible_ratio", 0.0))
+            for key, info in visibility_map.items()
+            if bool(info.get("visible", False))
+        }
         self._latest_frame_annotation = {
             "subtask": int(self.current_subtask_idx),
             "stage": int(self.current_stage),
@@ -3582,6 +3623,9 @@ class Base_Task(gym.Env):
             "discovered_object_keys": [
                 key for key, state in self.discovered_objects.items() if bool(state.get("discovered", False))
             ],
+            "visible_object_uv_map": visible_object_uv_map,
+            "discovered_last_uv_map": discovered_last_uv_map,
+            "visible_object_ratio_map": visible_object_ratio_map,
             "target_uv_norm": target_uv_norm.tolist(),
             "camera_mode": int(self.current_camera_mode),
             "waist_heading_deg": (None if waist_heading_deg is None else float(waist_heading_deg)),

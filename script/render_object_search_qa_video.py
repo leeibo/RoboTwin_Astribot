@@ -27,6 +27,7 @@ _FONT_CANDIDATES = (
 class QaEntry:
     episode_idx: int
     sample_frame_idx: int
+    image_count: int
     question: str
     think: str
     info: str
@@ -153,6 +154,7 @@ def _group_object_search_entries(task_dir: Path) -> dict[int, list[QaEntry]]:
         entry = QaEntry(
             episode_idx=episode_idx,
             sample_frame_idx=sample_frame_idx,
+            image_count=int(metadata.get("prompt_image_count", len(sample.get("images", []) or []))),
             question=_user_prompt_text(user_content),
             think=_compact_spaces(_extract_tag_text(assistant_content, "think")),
             info=_compact_spaces(_extract_tag_text(assistant_content, "info")),
@@ -185,6 +187,7 @@ def _build_sections(task_name: str, episode_idx: int, frame_idx: int, total_fram
         return [
             ("Video Frame", f"{frame_idx}/{max(total_frames - 1, 0)}"),
             ("QA Step", "No object-search QA yet"),
+            ("Q Images", "-"),
             ("Q", "-"),
             ("Q think", "-"),
             ("info", "-"),
@@ -198,6 +201,7 @@ def _build_sections(task_name: str, episode_idx: int, frame_idx: int, total_fram
             f"sample_frame={entry.sample_frame_idx} subtask={int(entry.metadata.get('subtask_id', 0))} "
             f"stage={int(entry.metadata.get('stage', 0))}",
         ),
+        ("Q Images", str(int(entry.image_count))),
         ("Q", entry.question),
         ("Q think", entry.think or "-"),
         ("info", entry.info or "-"),

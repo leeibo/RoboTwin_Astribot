@@ -88,7 +88,7 @@ class place_shoe_rotate_view(place_shoe):
             half_size=(0.08, 0.08, 0.0005),
             color=(0, 0, 1),
             is_static=True,
-            name="box",
+            name="target pad",
         )
         self.target_block.config["functional_matrix"] = [[
             [0.0, -1.0, 0.0, 0.0],
@@ -106,7 +106,7 @@ class place_shoe_rotate_view(place_shoe):
         theta_lim = rotate_theta_side(self, side=side)
         while True:
             shoe_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.4, 0.45],
                 thetalim=theta_lim,
 
                 zlim=[0.741, 0.741],
@@ -131,6 +131,7 @@ class place_shoe_rotate_view(place_shoe):
             convex=True,
             model_id=self.shoe_id,
         )
+        self.shoe.set_mass(0.1)
 
         self.add_prohibit_area(self.target_block, padding=0.08)
         self.add_prohibit_area(self.shoe, padding=0.1)
@@ -148,7 +149,7 @@ class place_shoe_rotate_view(place_shoe):
         arm_tag = ArmTag("left" if shoe_pose[0] < 0 else "right")
 
         self.enter_rotate_action_stage(1, focus_object_key=(shoe_key or "A"))
-        self.move(self.grasp_actor(self.shoe, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.01))
+        self.move(self.grasp_actor(self.shoe, arm_tag=arm_tag, pre_grasp_dis=0.07, grasp_dis=-0.01, gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
         self.complete_rotate_subtask(1, carried_after=["A"])
@@ -167,7 +168,7 @@ class place_shoe_rotate_view(place_shoe):
                 arm_tag=arm_tag,
                 target_pose=target_pose,
                 functional_point_id=0,
-                pre_dis=0.12,
+                pre_dis=0.08,
                 constrain="free",  # Shoe placement needs orientation alignment on the target pad.
             )
         )

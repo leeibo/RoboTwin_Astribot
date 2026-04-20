@@ -109,14 +109,11 @@ class place_a2b_right_rotate_view(place_a2b_right):
 
         object_list = [
             "047_mouse",
-            "048_stapler",
             "050_bell",
             "057_toycar",
             "073_rubikscube",
             "075_bread",
-            "077_phone",
-            "081_playingcards",
-            "086_woodenblock",
+            # "086_woodenblock",
             "112_tea-box",
             "113_coffee-box",
             "107_soap",
@@ -126,7 +123,7 @@ class place_a2b_right_rotate_view(place_a2b_right):
         try_num, try_lim = 0, 120
         while try_num <= try_lim:
             rand_pos = rand_pose_cyl(
-                rlim=[0.44, 0.5],
+                rlim=[0.40, 0.47],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -137,7 +134,7 @@ class place_a2b_right_rotate_view(place_a2b_right):
                 rotate_lim=[0, 3.14, 0],
             )
             target_rand_pose = rand_pose_cyl(
-                rlim=[0.44, 0.5],
+                rlim=[0.40, 0.47],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -155,7 +152,7 @@ class place_a2b_right_rotate_view(place_a2b_right):
             theta_gap = float(self._wrap_to_pi(tgt_theta - obj_theta))
 
             # For right task, source starts at the left side (larger theta), then moves to target-right.
-            if distance > 0.19 and theta_gap < -0.12:
+            if distance > 0.17 :
                 break
 
         if try_num > try_lim:
@@ -191,8 +188,8 @@ class place_a2b_right_rotate_view(place_a2b_right):
 
         self.object.set_mass(0.05)
         self.target_object.set_mass(0.05)
-        self.add_prohibit_area(self.object, padding=0.05)
-        self.add_prohibit_area(self.target_object, padding=0.1)
+        self.add_prohibit_area(self.object, padding=0.08)
+        self.add_prohibit_area(self.target_object, padding=0.12)
         self._configure_rotate_subtask_plan()
 
     def play_once(self):
@@ -206,7 +203,7 @@ class place_a2b_right_rotate_view(place_a2b_right):
         object_theta = float(self._pose_to_cyl(self.object.get_pose())[1])
         arm_tag = ArmTag("left" if object_theta >= 0.0 else "right")
         self.enter_rotate_action_stage(1, focus_object_key=(source_key or "A"))
-        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
+        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.08, gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
         self.complete_rotate_subtask(1, carried_after=["A"])
@@ -217,7 +214,7 @@ class place_a2b_right_rotate_view(place_a2b_right):
             scan_z=0.88 + self.table_z_bias,
             joint_name_prefer="astribot_torso_joint_2",
         )
-        target_pose = self._side_place_pose(self.target_object.get_pose(), arc_dis=0.13, to_left=False)
+        target_pose = self._side_place_pose(self.target_object.get_pose(), arc_dis=0.1, to_left=False)
         self.enter_rotate_action_stage(2, focus_object_key=(target_key or "B"))
         self.move(self.place_actor(self.object, arm_tag=arm_tag, target_pose=target_pose, constrain="free"))
         self._set_carried_object_keys([])
@@ -243,6 +240,7 @@ class place_a2b_right_rotate_view(place_a2b_right):
         return np.all(
             distance < 0.2
             and distance > 0.08
+            and object_pose[2] > 0.7
             and theta_diff < -0.02
             and radial_diff < 0.08
             and self.robot.is_left_gripper_open()

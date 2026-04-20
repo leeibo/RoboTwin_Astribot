@@ -107,7 +107,7 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
     def _sample_block_pose(self, block_half_size, existing_pose_lst):
         for _ in range(120):
             pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.4, 0.45],
                 thetalim=rotate_theta_center(self),
                 zlim=[0.741 + block_half_size, 0.741 + block_half_size],
                 qpos=[1, 0, 0, 0],
@@ -130,7 +130,7 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
             )
         )
         return rand_pose_cyl(
-            rlim=[0.45, 0.45],
+            rlim=[0.4, 0.45],
             thetalim=[fallback_theta, fallback_theta],
             zlim=[0.741 + block_half_size, 0.741 + block_half_size],
             qpos=[1, 0, 0, 0],
@@ -146,7 +146,7 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
-        block_half_size = 0.025
+        block_half_size = 0.02
         block_pose_lst = []
         while len(block_pose_lst) < 3:
             block_pose_lst.append(self._sample_block_pose(block_half_size, block_pose_lst))
@@ -171,7 +171,7 @@ class stack_blocks_three_rotate_view(stack_blocks_three):
     def pick_and_place_block(self, block: Actor):
         arm_tag = self._get_block_arm_tag(block)
 
-        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
             self.move(

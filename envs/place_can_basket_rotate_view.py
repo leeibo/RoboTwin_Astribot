@@ -109,7 +109,7 @@ class place_can_basket_rotate_view(place_can_basket):
     def play_once(self):
         self._scan_scene_two_views(self._get_default_scan_object_list())
 
-        self.face_object_with_torso(self.can, joint_name_prefer="astribot_torso_joint_2")
+        # self.face_object_with_torso(self.can, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.can, arm_tag=self.arm_tag, pre_grasp_dis=0.12))
 
         place_pose = self.get_arm_pose(arm_tag=self.arm_tag)
@@ -144,7 +144,7 @@ class place_can_basket_rotate_view(place_can_basket):
             self.move(self.move_to_pose(arm_tag=self.arm_tag, target_pose=place_pose))
             self.move(self.move_by_displacement(arm_tag=self.arm_tag, z=-0.1))
             self.move(self.open_gripper(arm_tag=self.arm_tag))
-            self.face_object_with_torso(self.basket, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.basket, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.back_to_origin(arm_tag=self.arm_tag),
                 self.grasp_actor(self.basket, arm_tag=self.arm_tag.opposite, pre_grasp_dis=0.02),
@@ -152,7 +152,7 @@ class place_can_basket_rotate_view(place_can_basket):
         else:
             self.move(self.open_gripper(arm_tag=self.arm_tag))
             self.move(self.move_by_displacement(arm_tag=self.arm_tag, z=0.12))
-            self.face_object_with_torso(self.basket, joint_name_prefer="astribot_torso_joint_2")
+            # self.face_object_with_torso(self.basket, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.back_to_origin(arm_tag=self.arm_tag),
                 self.grasp_actor(self.basket, arm_tag=self.arm_tag.opposite, pre_grasp_dis=0.08),
