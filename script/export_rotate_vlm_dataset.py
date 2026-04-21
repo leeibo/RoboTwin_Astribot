@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +46,15 @@ def main():
         action="store_true",
         help="Append to an existing JSON file instead of overwriting it.",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help=(
+            "Number of episode workers used during export. "
+            "Defaults to ROBOTWIN_VLM_EXPORT_WORKERS or min(8, cpu_count)."
+        ),
+    )
     args = parser.parse_args()
 
     summary = export_task_vlm_dataset(
@@ -53,9 +63,11 @@ def main():
         max_context_frames=args.max_context_frames,
         action_chunk_size=args.action_chunk_size,
         task_types=args.task_types,
+        num_workers=args.num_workers,
     )
     paths_text = ", ".join(f"{task_type}={path}" for task_type, path in summary.get("samples_paths", {}).items())
-    print(f"[Rotate VLM] exported {summary['sample_count']} samples to {paths_text}")
+    worker_count = int(summary.get("worker_count", args.num_workers or min(8, int(os.cpu_count() or 1))))
+    print(f"[Rotate VLM] exported {summary['sample_count']} samples with {worker_count} workers to {paths_text}")
 
 
 if __name__ == "__main__":

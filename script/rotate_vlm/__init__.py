@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+from concurrent.futures import ProcessPoolExecutor
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,7 @@ DEFAULT_MAX_CONTEXT_FRAMES = 16
 DEFAULT_ACTION_CHUNK_SIZE = 10
 REGISTERED_TASK_TYPES = ("object_search", "angle_delta", "memory_compression_vqa")
 MAX_COMPRESSION_VARIANTS_PER_SIZE = 64
+DEFAULT_EXPORT_WORKERS = max(1, min(8, int(os.cpu_count() or 1)))
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -140,6 +143,24 @@ def _format_object_name(metadata: dict[str, Any], object_key: str | None) -> str
 def _subtask_instruction(metadata: dict[str, Any], subtask_id: int) -> str:
     instruction_map = metadata.get("subtask_instruction_map", {}) or {}
     return str(instruction_map.get(str(subtask_id), metadata.get("task_instruction", ""))).strip()
+
+
+def _task_instruction(metadata: dict[str, Any], subtask_id: int | None = None) -> str:
+    instruction = str(metadata.get("task_instruction", "")).strip()
+    if instruction:
+        return instruction
+    if subtask_id is not None:
+        return _subtask_instruction(metadata, int(subtask_id))
+    return ""
+
+
+def _task_subtask_think_clause(metadata: dict[str, Any], subtask_id: int) -> str:
+    task_instruction = _task_instruction(metadata, subtask_id)
+    subtask_instruction = _subtask_instruction(metadata, subtask_id)
+    return (
+        f'The current task is "{task_instruction}". '
+        f'Now executing subtask "{subtask_instruction}".'
+    )
 
 
 def _resolve_search_phrase(metadata: dict[str, Any], slot: MemorySlot) -> str:
@@ -317,7 +338,7 @@ def _object_search_frame_field(snapshot: EpisodeSnapshot, info_complete: bool) -
 
 
 def _build_object_search_user_prompt(metadata: dict[str, Any], snapshot: EpisodeSnapshot) -> str:
-    instruction = _subtask_instruction(metadata, snapshot.subtask_id)
+    instruction = _task_instruction(metadata, snapshot.subtask_id)
     image_tokens = "".join("<image>" for _ in snapshot.prompt_frame_indices)
     return (
         f'{image_tokens}Your task is: "{instruction}" '
@@ -330,14 +351,13 @@ def _build_object_search_user_prompt(metadata: dict[str, Any], snapshot: Episode
 
 def _render_object_search_response(metadata: dict[str, Any], snapshot: EpisodeSnapshot) -> str:
     current_slot = snapshot.current_slot
-    instruction = _subtask_instruction(metadata, current_slot.subtask_id)
+    task_clause = _task_subtask_think_clause(metadata, current_slot.subtask_id)
     phrase = _resolve_search_phrase(metadata, current_slot)
     camera_rotation = (_search_camera_delta(snapshot), 0)
     info_complete = _search_info_complete(snapshot)
     has_evidence_frame = snapshot.evidence_prompt_index is not None and snapshot.evidence_uv_norm is not None
     primary_arm = _infer_primary_arm(metadata)
     memory_summary = _object_search_memory_summary(snapshot)
-    past_actions = _format_rotation_pairs(snapshot.prompt_planned_actions)
     camera_field = _format_rotate_text(camera_rotation)
 
     if info_complete and has_evidence_frame and snapshot.evidence_from_history:
@@ -362,8 +382,7 @@ def _render_object_search_response(metadata: dict[str, Any], snapshot: EpisodeSn
     info_text = "Info sufficient." if info_complete else "Info incomplete."
     think = (
         f"{memory_summary} "
-        f"Past actions: {past_actions}. "
-        f'The current task is "{instruction}". '
+        f"{task_clause} "
         f"The target object is the {phrase}. "
         f"{evidence_text} "
         f"{info_text}"
@@ -764,10 +783,12 @@ def _compression_subset_variants(
 
 def _build_memory_compression_user_prompt(metadata: dict[str, Any], sample_slots: list[MemorySlot]) -> str:
     latest_slot = sample_slots[-1]
+    instruction = _task_instruction(metadata, latest_slot.subtask_id)
     phrase = _resolve_target_phrase(metadata, latest_slot, with_articles=True)
     image_tokens = "".join("<image>" for _ in sample_slots)
     return (
-        f'{image_tokens}Your task is: "Track only the useful memory for {phrase}." '
+        f'{image_tokens}Your task is: "{instruction}" '
+        f"Please track only the useful memory for {phrase}. "
         "The input images are ordered from earliest to latest, and the last image is the current view. "
         "Please keep the most relevant and reliable frames, and output the filtered frames. "
         "Your response should be in the format of: "
@@ -782,12 +803,13 @@ def _render_memory_compression_response(
 ) -> str:
     kept_positions = _slot_positions(sample_slots=sample_slots, kept_slots=kept_slots)
     latest_slot = sample_slots[-1]
+    task_clause = _task_subtask_think_clause(metadata, latest_slot.subtask_id)
     past_actions = _slot_sequence_view_deltas(sample_slots)
     evidence_positions = _latest_valid_evidence_positions(sample_slots)
     object_phrase = _resolve_target_phrase(metadata, latest_slot, with_articles=True)
     think = (
         f"{_format_frame_summary(len(sample_slots))} "
-        f"Past actions: {_format_rotation_pairs(past_actions)}. "
+        f"{task_clause} "
         f"{_compression_sequence_sentence(sample_slots, kept_positions, past_actions)} "
         f"Spatially, keep frames {_format_frame_field(kept_positions)} for distinct coverage. "
         f"Replacement: {_compression_replacement_summary(sample_slots, kept_slots)} "
@@ -861,12 +883,95 @@ def _collect_episode_pairs(save_dir: Path) -> list[tuple[int, Path, Path]]:
     return pairs
 
 
+def _resolve_export_workers(num_workers: int | None, episode_count: int) -> int:
+    if episode_count <= 1:
+        return 1
+    if num_workers is None:
+        raw = os.environ.get("ROBOTWIN_VLM_EXPORT_WORKERS", "").strip()
+        if raw:
+            try:
+                num_workers = int(raw)
+            except ValueError:
+                num_workers = DEFAULT_EXPORT_WORKERS
+        else:
+            num_workers = DEFAULT_EXPORT_WORKERS
+    try:
+        workers = int(num_workers)
+    except (TypeError, ValueError):
+        workers = 1
+    workers = max(1, workers)
+    return min(workers, episode_count)
+
+
+def _export_episode_payload(args: tuple[str, int, str, str, int, int, tuple[str, ...]]) -> dict[str, Any]:
+    save_dir, episode_idx, metadata_path, hdf5_path, max_context_frames, action_chunk_size, task_types = args
+    save_path = Path(save_dir)
+    metadata = _read_json(Path(metadata_path))
+    context = build_episode_context(
+        metadata=metadata,
+        hdf5_path=str(hdf5_path),
+        action_chunk_size=int(action_chunk_size),
+        max_context_frames=int(max_context_frames),
+    )
+
+    annotated_video_path = metadata.get("annotated_video_path", None) or default_annotated_video_path(str(save_path), episode_idx)
+    if not Path(annotated_video_path).exists():
+        export_annotated_video(context.frames, list(metadata.get("frame_annotations", []) or []), annotated_video_path)
+    annotated_exists = Path(annotated_video_path).exists()
+
+    samples_by_type: dict[str, list[dict[str, Any]]] = {task_type: [] for task_type in task_types}
+
+    if "object_search" in samples_by_type:
+        for snapshot in context.snapshots:
+            samples_by_type["object_search"].append(
+                _build_object_search_sample(save_path, episode_idx, metadata, context, snapshot)
+            )
+
+    if "angle_delta" in samples_by_type:
+        for previous_slot, current_slot, angle_delta_deg in _collect_angle_delta_pairs(context.memory_slots):
+            samples_by_type["angle_delta"].append(
+                _build_angle_delta_sample(
+                    save_path,
+                    episode_idx,
+                    metadata,
+                    context,
+                    previous_slot,
+                    current_slot,
+                    angle_delta_deg,
+                )
+            )
+
+    if "memory_compression_vqa" in samples_by_type:
+        for event in context.compression_events:
+            for variant_name, sample_slots, kept_slots in _compression_subset_variants(event):
+                samples_by_type["memory_compression_vqa"].append(
+                    _build_memory_compression_sample(
+                        save_dir=save_path,
+                        episode_idx=episode_idx,
+                        metadata=metadata,
+                        context=context,
+                        event=event,
+                        variant_name=variant_name,
+                        sample_slots=sample_slots,
+                        kept_slots=kept_slots,
+                    )
+                )
+
+    return {
+        "episode_idx": int(episode_idx),
+        "frame_count": int(len(context.frames)),
+        "annotated_video_exists": bool(annotated_exists),
+        "samples_by_type": samples_by_type,
+    }
+
+
 def export_task_vlm_dataset(
     save_dir: str,
     overwrite: bool = True,
     max_context_frames: int = DEFAULT_MAX_CONTEXT_FRAMES,
     action_chunk_size: int = DEFAULT_ACTION_CHUNK_SIZE,
     task_types: list[str] | None = None,
+    num_workers: int | None = None,
 ) -> dict[str, Any]:
     save_path = Path(save_dir)
     task_types = list(REGISTERED_TASK_TYPES if task_types is None else task_types)
@@ -883,60 +988,40 @@ def export_task_vlm_dataset(
     episode_count = 0
     annotated_video_count = 0
     annotated_video_frame_count = 0
+    episode_pairs = _collect_episode_pairs(save_path)
+    worker_count = _resolve_export_workers(num_workers, len(episode_pairs))
+    job_args = [
+        (
+            str(save_path),
+            int(episode_idx),
+            str(metadata_path),
+            str(hdf5_path),
+            int(max_context_frames),
+            int(action_chunk_size),
+            tuple(task_types),
+        )
+        for episode_idx, metadata_path, hdf5_path in episode_pairs
+    ]
 
     try:
-        for episode_idx, metadata_path, hdf5_path in _collect_episode_pairs(save_path):
-            metadata = _read_json(metadata_path)
-            context = build_episode_context(
-                metadata=metadata,
-                hdf5_path=str(hdf5_path),
-                action_chunk_size=int(action_chunk_size),
-                max_context_frames=int(max_context_frames),
-            )
-            episode_count += 1
-            annotated_video_frame_count += int(len(context.frames))
-
-            annotated_video_path = metadata.get("annotated_video_path", None) or default_annotated_video_path(str(save_path), episode_idx)
-            if not Path(annotated_video_path).exists():
-                export_annotated_video(context.frames, list(metadata.get("frame_annotations", []) or []), annotated_video_path)
-            if Path(annotated_video_path).exists():
-                annotated_video_count += 1
-
-            if "object_search" in writers:
-                for snapshot in context.snapshots:
-                    writers["object_search"].append(
-                        _build_object_search_sample(save_path, episode_idx, metadata, context, snapshot)
-                    )
-
-            if "angle_delta" in writers:
-                for previous_slot, current_slot, angle_delta_deg in _collect_angle_delta_pairs(context.memory_slots):
-                    writers["angle_delta"].append(
-                        _build_angle_delta_sample(
-                            save_path,
-                            episode_idx,
-                            metadata,
-                            context,
-                            previous_slot,
-                            current_slot,
-                            angle_delta_deg,
-                        )
-                    )
-
-            if "memory_compression_vqa" in writers:
-                for event in context.compression_events:
-                    for variant_name, sample_slots, kept_slots in _compression_subset_variants(event):
-                        writers["memory_compression_vqa"].append(
-                            _build_memory_compression_sample(
-                                save_dir=save_path,
-                                episode_idx=episode_idx,
-                                metadata=metadata,
-                                context=context,
-                                event=event,
-                                variant_name=variant_name,
-                                sample_slots=sample_slots,
-                                kept_slots=kept_slots,
-                            )
-                        )
+        if worker_count <= 1:
+            payload_iter = (_export_episode_payload(args) for args in job_args)
+        else:
+            executor = ProcessPoolExecutor(max_workers=int(worker_count))
+            payload_iter = executor.map(_export_episode_payload, job_args, chunksize=1)
+        try:
+            for payload in payload_iter:
+                episode_count += 1
+                annotated_video_frame_count += int(payload.get("frame_count", 0) or 0)
+                if bool(payload.get("annotated_video_exists", False)):
+                    annotated_video_count += 1
+                samples_by_type = payload.get("samples_by_type", {}) or {}
+                for task_type, writer in writers.items():
+                    for sample in samples_by_type.get(task_type, []) or []:
+                        writer.append(sample)
+        finally:
+            if worker_count > 1:
+                executor.shutdown(wait=True, cancel_futures=False)
         for task_type, writer in writers.items():
             writer.commit()
             task_type_counts[task_type] = int(writer.count)
@@ -957,6 +1042,7 @@ def export_task_vlm_dataset(
 
     return {
         "sample_count": int(total),
+        "worker_count": int(worker_count),
         "task_type_counts": task_type_counts,
         "samples_paths": samples_paths,
     }

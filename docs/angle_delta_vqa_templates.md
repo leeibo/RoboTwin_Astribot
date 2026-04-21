@@ -9,9 +9,10 @@
 这次模板按你刚刚明确的定义重写：
 
 1. 提问固定为 2 张图。
-2. 不再带 task instruction。
+2. 当前推荐模板默认不显式带 task instruction；如果后续为了统一格式显式带 instruction，Q 只能使用总任务指令。
 3. 输出格式固定为 `<think>...</think><camera>...</camera>`。
 4. 这里的 rotation 含义不是“中间过程累计规划角”，而是两张图片视角的 `rotate` 直接作差，也就是 `rotation difference`。
+5. `angle_delta` 的 assistant `<think>` 不引入 `The current task is ...` 或 `Now executing subtask ...` 这类 instruction 句，因此不参与本次 task/subtask 双句式改动。
 
 ## 2. 任务语义
 
@@ -50,6 +51,12 @@ Rotate(dx, dy)
 ```
 
 这里不再引入其它可变槽位。
+
+额外约束：
+
+1. 当前推荐版本仍然不显式带 instruction。
+2. 如果后续为了统一其它 VQA 样本而显式加入 `Your task is: ...`，这个 instruction 也只能使用总任务指令，不能使用子任务指令。
+3. assistant `<think>` 仍然只描述两张图之间的视角差值，不追加 task/subtask 句子。
 
 ## 4. 统一输出格式
 
@@ -111,7 +118,7 @@ Rotate(dx, dy)
 
 下面这些写法现在都不应该再出现：
 
-1. 在 user prompt 里加入 task instruction。
+1. 如果在 user prompt 里显式加入 task instruction，却使用子任务指令。
 
 2. 输出 `<answer>` 字段，例如：
 

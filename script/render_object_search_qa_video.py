@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -21,6 +23,7 @@ _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
 )
+DEFAULT_RENDER_WORKERS = max(1, min(8, int(os.cpu_count() or 1)))
 
 
 @dataclass
@@ -429,6 +432,32 @@ def render_episode_video(
     return output_path
 
 
+def _resolve_render_workers(num_workers: int | None, episode_count: int) -> int:
+    if episode_count <= 1:
+        return 1
+    try:
+        workers = int(num_workers) if num_workers is not None else int(DEFAULT_RENDER_WORKERS)
+    except (TypeError, ValueError):
+        workers = int(DEFAULT_RENDER_WORKERS)
+    workers = max(1, workers)
+    return min(workers, int(episode_count))
+
+
+def _render_episode_job(
+    args: tuple[str, int, list[QaEntry], str, bool, int | None],
+) -> str:
+    task_dir, episode_idx, entries, output_suffix, overwrite, panel_width = args
+    output_path = render_episode_video(
+        task_dir=Path(task_dir),
+        episode_idx=int(episode_idx),
+        entries=list(entries),
+        output_suffix=str(output_suffix),
+        overwrite=bool(overwrite),
+        panel_width=panel_width,
+    )
+    return str(output_path)
+
+
 def _discover_task_dirs(data_root: Path) -> list[Path]:
     return sorted(
         path
@@ -475,6 +504,12 @@ def main() -> None:
         default=None,
         help="Optional fixed panel width in pixels.",
     )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=DEFAULT_RENDER_WORKERS,
+        help="Episode render workers per task directory. Defaults to min(8, cpu_count).",
+    )
     args = parser.parse_args()
 
     task_dirs = [Path(args.task_dir)] if args.task_dir else _discover_task_dirs(Path(args.data_root))
@@ -488,19 +523,35 @@ def main() -> None:
         grouped_entries = _group_object_search_entries(task_dir)
         if not grouped_entries:
             continue
-        for episode_idx, entries in sorted(grouped_entries.items()):
-            if episode_filter is not None and int(episode_idx) not in episode_filter:
-                continue
-            output_path = render_episode_video(
-                task_dir=task_dir,
-                episode_idx=episode_idx,
-                entries=entries,
-                output_suffix=str(args.output_suffix),
-                overwrite=bool(args.overwrite),
-                panel_width=args.panel_width,
+        job_args = [
+            (
+                str(task_dir),
+                int(episode_idx),
+                entries,
+                str(args.output_suffix),
+                bool(args.overwrite),
+                args.panel_width,
             )
-            rendered_paths.append(output_path)
-            print(f"[object-search-qa-video] {output_path}")
+            for episode_idx, entries in sorted(grouped_entries.items())
+            if episode_filter is None or int(episode_idx) in episode_filter
+        ]
+        if not job_args:
+            continue
+
+        worker_count = _resolve_render_workers(args.num_workers, len(job_args))
+        if worker_count <= 1:
+            for job in job_args:
+                output_path = Path(_render_episode_job(job))
+                rendered_paths.append(output_path)
+                print(f"[object-search-qa-video] {output_path}")
+            continue
+
+        with ProcessPoolExecutor(max_workers=worker_count) as executor:
+            future_map = {executor.submit(_render_episode_job, job): job for job in job_args}
+            for future in as_completed(future_map):
+                output_path = Path(future.result())
+                rendered_paths.append(output_path)
+                print(f"[object-search-qa-video] {output_path}")
 
     if not rendered_paths:
         raise SystemExit("no videos rendered")

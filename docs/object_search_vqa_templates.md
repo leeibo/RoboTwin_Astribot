@@ -45,22 +45,22 @@
 当前建议所有 `search` 样本都用同一个 user prompt：
 
 ```text
-{image_tokens}Your task is: "{instruction}" The input images are ordered from earliest to latest, and the last image is the current view. Please think about the next action and output it. Your response should be in the format of: <think>...</think><info>...</info><frame>...</frame><camera>...</camera><action>...</action>.
+{image_tokens}Your task is: "{task_instruction}" The input images are ordered from earliest to latest, and the last image is the current view. Please think about the next action and output it. Your response should be in the format of: <think>...</think><info>...</info><frame>...</frame><camera>...</camera><action>...</action>.
 ```
 
 其中：
 
 1. `{image_tokens}`
    由若干个连续的 `<image>` 构成，数量等于输入图片数。
-2. `{instruction}`
-   当前子任务指令。
+2. `{task_instruction}`
+   总任务指令。
 
 ## 4. 推荐的 think 骨架
 
 推荐所有 assistant answer 都尽量复用同一个骨架：
 
 ```text
-Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. {evidence_clause} {info_clause}{carry_clause}{stage3_clause} Next: Rotate({delta}, 0).
+Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. {evidence_clause} {info_clause}{carry_clause}{stage3_clause} Next: Rotate({delta}, 0).
 ```
 
 其中每个插槽的建议写法如下。
@@ -82,40 +82,19 @@ Frames: {n} total ({n-1} history + current).
 1. `current only` 表示当前 prompt 里只有当前图，没有历史图。
 2. `{n} total ({n-1} history + current)` 表示总共有 `n` 张图，其中 `n-1` 张历史图，1 张当前图。
 
-### 4.2 `Past actions` 字段描述
+### 4.2 指令字段描述
 
-字段名仍然保留 `Past actions`，但这里的语义不再是历史规划动作，而是：
+这里把 `Q` 和 `A` 中的 instruction 语义明确拆开：
 
-1. prompt 中相邻两张图片之间的视角差值。
-2. 也就是两两图片的 `rotate` 直接作差。
-3. 这些差值只来自图片本身对应的视角变化，不应引入规划器先验。
+1. user prompt 里的 `Your task is: "{task_instruction}"` 使用总任务指令。
+2. assistant answer 的 `<think>` 里同时显式写总任务指令和当前子任务指令。
+3. 如果当前样本没有显式子任务，就令 `{subtask_instruction} = {task_instruction}`。
 
-两种写法即可：
-
-```text
-Past actions: none.
-```
+推荐写法固定为：
 
 ```text
-Past actions: [{past_action_pairs}].
+The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}".
 ```
-
-其中 `{past_action_pairs}` 例如：
-
-```text
-(30, 0), (-15, 0), (0, 0)
-```
-
-含义是：
-
-1. 第一对 `(30, 0)` 表示第 1 张图到第 2 张图的视角差值。
-2. 第二对 `(-15, 0)` 表示第 2 张图到第 3 张图的视角差值。
-3. 依此类推。
-
-额外约束：
-
-1. 不应把 `Past actions` 填成历史 `planned_delta` 或其它规划量。
-2. 如果 prompt 里只有当前图，没有历史图，就写 `Past actions: none.`。
 
 ### 4.3 证据句
 
@@ -184,17 +163,17 @@ The robot is now executing the task.
 1. 即使进入 `stage3`，也必须保留
 
 ```text
-The current task is "{instruction}".
+The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}".
 ```
 
-2. 这句话的位置固定放在 `Past actions: ...` 后面。
+2. 这句话的位置固定放在 `Frames: ...` 后面。
 
 ## 5. 各类情况的模板
 
 下面按“当前阶段 + 证据来源”穷举核心模板。为了避免重复，默认：
 
 1. `{frame_summary}` 已经按第 4.1 节替换。
-2. `{past_actions}` 已经按第 4.2 节替换。
+2. `{task_instruction}` 和 `{subtask_instruction}` 已经按第 4.2 节替换。
 3. `{carry_clause}` 默认可选，有持物时再拼接。
 4. `{action_chunk}` 只有 `stage3` 才填，其他阶段留空。
 
@@ -203,7 +182,7 @@ The current task is "{instruction}".
 这是最标准的搜索态模板。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} is not visible in the current memory. Info incomplete. Next: Rotate({delta}, 0).</think><info>0</info><frame>[]</frame><camera>Rotate({delta}, 0)</camera><action></action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} is not visible in the current memory. Info incomplete. Next: Rotate({delta}, 0).</think><info>0</info><frame>[]</frame><camera>Rotate({delta}, 0)</camera><action></action>
 ```
 
 适用条件：
@@ -217,7 +196,7 @@ The current task is "{instruction}".
 这是 `stage1` 的“当前图已经足够”的模板。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} is visible in the current view at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} is visible in the current view at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
 ```
 
 适用条件：
@@ -231,7 +210,7 @@ The current task is "{instruction}".
 这是 `stage1` 的边界情况模板。虽然在理想流程里通常会很快进入 `stage2`，但模板上应覆盖。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} was found in frame {k} at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{k}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} was found in frame {k} at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{k}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
 ```
 
 适用条件：
@@ -245,7 +224,7 @@ The current task is "{instruction}".
 这是最标准的定位态模板。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} is visible in the current view at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} is visible in the current view at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
 ```
 
 ### 5.5 Stage 2: 目标不在当前图，但在历史帧里出现过
@@ -253,7 +232,7 @@ The current task is "{instruction}".
 这是你之前特别强调的模板。这里不能再写“当前视角没看到，所以信息不足”。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} was found in frame {k} at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{k}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} was found in frame {k} at ({x}, {y}). Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[{k}]</frame><camera>Rotate({delta}, 0)</camera><action></action>
 ```
 
 额外规则：
@@ -266,7 +245,7 @@ The current task is "{instruction}".
 这是兜底模板，属于少见但必须覆盖的情况。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} has already been localized earlier. Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[]</frame><camera>Rotate({delta}, 0)</camera><action></action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} has already been localized earlier. Info sufficient. Next: Rotate({delta}, 0).</think><info>1</info><frame>[]</frame><camera>Rotate({delta}, 0)</camera><action></action>
 ```
 
 适用条件：
@@ -280,21 +259,21 @@ The current task is "{instruction}".
 动作阶段的核心模板。这里的当前图必须是 action chunk 的第一张图，也就是时刻 `t` 的观测。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} is visible in the current view at ({x}, {y}). Info sufficient. The robot is now executing the task. Next: Rotate(0, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate(0, 0)</camera><action>{action_chunk}</action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} is visible in the current view at ({x}, {y}). Info sufficient. The robot is now executing the task. Next: Rotate(0, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate(0, 0)</camera><action>{action_chunk}</action>
 ```
 
 额外规则：
 
 1. 这里的 `{action_chunk}` 代表未来 `[t, t+H)` 的动作。
 2. `frame` 引用的是当前 chunk 的首图在 prompt 中的位置。
-3. `The current task is "{instruction}".` 必须保留，并且紧跟在 `Past actions: ...` 后面。
+3. `The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}".` 必须保留，并且紧跟在 `Frames: ...` 后面。
 
 ### 5.8 Stage 3: 当前帧没看到目标，但历史帧里有证据
 
 动作阶段如果依赖历史记忆，也必须明确引用那张历史图。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} was found in frame {k} at ({x}, {y}). Info sufficient. The robot is now executing the task. Next: Rotate(0, 0).</think><info>1</info><frame>[{k}]</frame><camera>Rotate(0, 0)</camera><action>{action_chunk}</action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} was found in frame {k} at ({x}, {y}). Info sufficient. The robot is now executing the task. Next: Rotate(0, 0).</think><info>1</info><frame>[{k}]</frame><camera>Rotate(0, 0)</camera><action>{action_chunk}</action>
 ```
 
 ### 5.9 Stage 3: 没有显式 UV 证据，但动作阶段信息已经足够
@@ -302,7 +281,7 @@ The current task is "{instruction}".
 这是动作阶段的兜底模板。
 
 ```xml
-<think>Frames: {frame_summary}. Past actions: {past_actions}. The current task is "{instruction}". The target object is the {object}. The {object} has already been localized earlier. Info sufficient. The robot is now executing the task. Next: Rotate(0, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate(0, 0)</camera><action>{action_chunk}</action>
+<think>Frames: {frame_summary}. The current task is "{task_instruction}". Now executing subtask "{subtask_instruction}". The target object is the {object}. The {object} has already been localized earlier. Info sufficient. The robot is now executing the task. Next: Rotate(0, 0).</think><info>1</info><frame>[{current_index}]</frame><camera>Rotate(0, 0)</camera><action>{action_chunk}</action>
 ```
 
 说明：
@@ -330,17 +309,7 @@ The {carried_object} is currently held by the {left_or_right} hand.
 ... Info sufficient. The white mug is currently held by the right hand. Next: Rotate(0, 0).
 ```
 
-### 6.2 有历史动作时
-
-把 `Past actions: none.` 换成：
-
-```text
-Past actions: [(30, 0), (-15, 0), (0, 0)].
-```
-
-这里的每一项都表示相邻两张 prompt 图片之间的视角差值，不表示规划器输出。
-
-### 6.3 多图输入时
+### 6.2 多图输入时
 
 把 `Frames: current only.` 换成：
 
@@ -348,7 +317,7 @@ Past actions: [(30, 0), (-15, 0), (0, 0)].
 Frames: 5 total (4 history + current).
 ```
 
-### 6.4 action 的两种序列写法
+### 6.3 action 的两种序列写法
 
 如果后续继续保留 raw action：
 
@@ -392,8 +361,8 @@ The {object} is not visible in the current view, so more search is needed.
 
 1. 先固定公共骨架：
    - `frame_summary`
-   - `past_actions`
-   - `instruction`
+   - `task_instruction`
+   - `subtask_instruction`
    - `object`
 2. 再单独决定 `evidence_clause`：
    - current
