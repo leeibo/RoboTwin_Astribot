@@ -17,8 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
-from envs.utils.camera_visibility import image_u_to_yaw_error_rad  # noqa: E402
-from envs.utils.rotate_theta import DEFAULT_STAGE1_THETA_UNIT_DEG  # noqa: E402
 from script.rotate_vlm import (  # noqa: E402
     _JsonArrayWriter,
     _build_messages,
@@ -38,6 +36,7 @@ from script.rotate_vlm import (  # noqa: E402
 from script.rotate_vlm.snapshots import load_hdf5_episode_data  # noqa: E402
 
 
+DEFAULT_STAGE1_THETA_UNIT_DEG = 45.0
 TASK_TYPE_NAME = "object_search_visibility_memory_v2"
 DEFAULT_OUTPUT_DIR_NAME = "vlm_object_search_visibility_memory_v2"
 DEFAULT_MAX_CONTEXT_FRAMES = 16
@@ -53,6 +52,30 @@ DIRECT_ALIGN_BUCKET_EPS_DEG = 3.0
 DIRECT_NEAR_BUCKET_EPS_DEG = 20.0
 MAX_SEARCH_HISTORY_FRAMES = 3
 MAX_DIRECT_HISTORY_FRAMES = 4
+
+
+def _get_camera_fov_xy(image_w: int, image_h: int, fovy_rad: float) -> tuple[float, float]:
+    width = int(image_w)
+    height = int(image_h)
+    if width <= 0 or height <= 0:
+        raise ValueError(f"invalid image size: ({image_w}, {image_h})")
+
+    fovy = float(fovy_rad)
+    if not math.isfinite(fovy) or fovy <= 0.0 or fovy >= math.pi:
+        raise ValueError(f"invalid vertical fov: {fovy_rad}")
+
+    aspect = float(width) / float(height)
+    fovx = 2.0 * math.atan(math.tan(fovy * 0.5) * aspect)
+    return float(fovx), float(fovy)
+
+
+def _image_u_to_yaw_error_rad(u_norm: float, image_w: int, image_h: int, fovy_rad: float) -> float:
+    u = float(u_norm)
+    if not math.isfinite(u):
+        raise ValueError(f"invalid normalized u value: {u_norm}")
+    fovx_rad, _ = _get_camera_fov_xy(image_w=image_w, image_h=image_h, fovy_rad=fovy_rad)
+    ndc_x = 2.0 * u - 1.0
+    return float(math.atan(-(ndc_x) * math.tan(0.5 * fovx_rad)))
 
 
 def _load_whitelist(path: Path) -> list[str]:
@@ -496,7 +519,7 @@ def _direct_camera_delta_env_deg(
 ) -> int:
     current_uv = _target_uv_for_annotation(current_annotation, target_key)
     if current_uv is not None:
-        yaw_error_rad = image_u_to_yaw_error_rad(
+        yaw_error_rad = _image_u_to_yaw_error_rad(
             current_uv[0],
             image_w=int(image_w),
             image_h=int(image_h),
