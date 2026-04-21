@@ -403,21 +403,28 @@ def _render_object_search_response(metadata: dict[str, Any], snapshot: EpisodeSn
 
 
 def _build_stage_action_chunk(context: EpisodeContext, slot: MemorySlot) -> list[list[float]]:
-    row_dim = int(context.left_arm_actions.shape[1] if context.left_arm_actions.ndim == 2 else 0) + int(
-        context.right_arm_actions.shape[1] if context.right_arm_actions.ndim == 2 else 0
-    )
+    row_dim = int(context.left_arm_actions.shape[1] if context.left_arm_actions.ndim == 2 else 0)
+    row_dim += int(1 if context.left_gripper_actions.ndim >= 1 and context.left_gripper_actions.shape[0] > 0 else 0)
+    row_dim += int(context.right_arm_actions.shape[1] if context.right_arm_actions.ndim == 2 else 0)
+    row_dim += int(1 if context.right_gripper_actions.ndim >= 1 and context.right_gripper_actions.shape[0] > 0 else 0)
     if not slot.action_chunk_frame_indices:
         return [[0.0] * row_dim for _ in range(int(context.action_chunk_size))]
 
     action_chunk: list[list[float]] = []
     for frame_idx in slot.action_chunk_frame_indices:
         left = []
+        left_gripper = []
         right = []
+        right_gripper = []
         if int(frame_idx) < context.left_arm_actions.shape[0]:
             left = np.array(context.left_arm_actions[int(frame_idx)], dtype=np.float64).tolist()
+        if int(frame_idx) < context.left_gripper_actions.shape[0]:
+            left_gripper = [float(context.left_gripper_actions[int(frame_idx)])]
         if int(frame_idx) < context.right_arm_actions.shape[0]:
             right = np.array(context.right_arm_actions[int(frame_idx)], dtype=np.float64).tolist()
-        row = list(left) + list(right)
+        if int(frame_idx) < context.right_gripper_actions.shape[0]:
+            right_gripper = [float(context.right_gripper_actions[int(frame_idx)])]
+        row = list(left) + list(left_gripper) + list(right) + list(right_gripper)
         if not row:
             row = [0.0] * row_dim
         action_chunk.append(row)

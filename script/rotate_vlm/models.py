@@ -144,7 +144,9 @@ class EpisodeContext:
     max_context_frames: int
     frames: list[Any]
     left_arm_actions: Any
+    left_gripper_actions: Any
     right_arm_actions: Any
+    right_gripper_actions: Any
     memory_slots: list[MemorySlot] = field(default_factory=list)
     snapshots: list[EpisodeSnapshot] = field(default_factory=list)
     compression_events: list[CompressionEvent] = field(default_factory=list)

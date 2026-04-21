@@ -69,10 +69,12 @@ def _decode_jpeg_array(payload: bytes) -> np.ndarray:
     return frame
 
 
-def load_hdf5_episode_data(hdf5_path: str) -> tuple[list[np.ndarray], np.ndarray, np.ndarray]:
+def load_hdf5_episode_data(hdf5_path: str) -> tuple[list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     frames: list[np.ndarray] = []
     left_arm = np.zeros((0, 0), dtype=np.float64)
+    left_gripper = np.zeros((0,), dtype=np.float64)
     right_arm = np.zeros((0, 0), dtype=np.float64)
+    right_gripper = np.zeros((0,), dtype=np.float64)
     with h5py.File(hdf5_path, "r") as hdf5_file:
         rgb_dataset = None
         for key in [
@@ -103,8 +105,12 @@ def load_hdf5_episode_data(hdf5_path: str) -> tuple[list[np.ndarray], np.ndarray
             frame_count = 0
             if "joint_action/left_arm" in hdf5_file:
                 frame_count = max(frame_count, int(hdf5_file["joint_action/left_arm"].shape[0]))
+            if "joint_action/left_gripper" in hdf5_file:
+                frame_count = max(frame_count, int(hdf5_file["joint_action/left_gripper"].shape[0]))
             if "joint_action/right_arm" in hdf5_file:
                 frame_count = max(frame_count, int(hdf5_file["joint_action/right_arm"].shape[0]))
+            if "joint_action/right_gripper" in hdf5_file:
+                frame_count = max(frame_count, int(hdf5_file["joint_action/right_gripper"].shape[0]))
             if frame_count <= 0:
                 raise KeyError(f"missing camera_head/head_camera RGB dataset in {hdf5_path}")
             frames = [np.zeros((64, 64, 3), dtype=np.uint8) for _ in range(frame_count)]
@@ -112,9 +118,13 @@ def load_hdf5_episode_data(hdf5_path: str) -> tuple[list[np.ndarray], np.ndarray
             frames = [_decode_jpeg_array(bytes(payload)) for payload in rgb_dataset[:]]
         if "joint_action/left_arm" in hdf5_file:
             left_arm = np.array(hdf5_file["joint_action/left_arm"][:], dtype=np.float64)
+        if "joint_action/left_gripper" in hdf5_file:
+            left_gripper = np.array(hdf5_file["joint_action/left_gripper"][:], dtype=np.float64)
         if "joint_action/right_arm" in hdf5_file:
             right_arm = np.array(hdf5_file["joint_action/right_arm"][:], dtype=np.float64)
-    return frames, left_arm, right_arm
+        if "joint_action/right_gripper" in hdf5_file:
+            right_gripper = np.array(hdf5_file["joint_action/right_gripper"][:], dtype=np.float64)
+    return frames, left_arm, left_gripper, right_arm, right_gripper
 
 
 def _segment_key(annotation: dict[str, Any]) -> tuple[int, int, float | None]:
@@ -411,7 +421,7 @@ def build_episode_context(
     action_chunk_size: int = 10,
     max_context_frames: int = 16,
 ) -> EpisodeContext:
-    frames, left_arm_actions, right_arm_actions = load_hdf5_episode_data(hdf5_path)
+    frames, left_arm_actions, left_gripper_actions, right_arm_actions, right_gripper_actions = load_hdf5_episode_data(hdf5_path)
     annotations = [dict(item) for item in list(metadata.get("frame_annotations", []) or [])]
     memory_slots = _build_memory_slots(annotations=annotations, action_chunk_size=int(action_chunk_size))
 
@@ -422,7 +432,9 @@ def build_episode_context(
         max_context_frames=int(max_context_frames),
         frames=frames,
         left_arm_actions=left_arm_actions,
+        left_gripper_actions=left_gripper_actions,
         right_arm_actions=right_arm_actions,
+        right_gripper_actions=right_gripper_actions,
         memory_slots=list(memory_slots),
     )
 

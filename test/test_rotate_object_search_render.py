@@ -129,13 +129,19 @@ def test_stage3_object_search_uses_real_action_chunk(tmp_path: Path):
         max_context_frames=16,
         frames=[np.zeros((16, 16, 3), dtype=np.uint8), np.zeros((16, 16, 3), dtype=np.uint8)],
         left_arm_actions=np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64),
+        left_gripper_actions=np.array([0.1, 0.2], dtype=np.float64),
         right_arm_actions=np.array([[5.0], [6.0]], dtype=np.float64),
+        right_gripper_actions=np.array([0.3, 0.4], dtype=np.float64),
     )
 
     sample = _build_object_search_sample(tmp_path, 0, _metadata(), context, snapshot)
     assistant_content = str(sample["messages"][-1]["content"])
 
-    expected_chunk = [[1.0, 2.0, 5.0], [3.0, 4.0, 6.0], [3.0, 4.0, 6.0]]
+    expected_chunk = [
+        [1.0, 2.0, 0.1, 5.0, 0.3],
+        [3.0, 4.0, 0.2, 6.0, 0.4],
+        [3.0, 4.0, 0.2, 6.0, 0.4],
+    ]
     think = _extract_tag(assistant_content, "think")
     assert sample["action"] == expected_chunk
     assert sample["metadata"]["prompt_image_count"] == 1
@@ -144,7 +150,7 @@ def test_stage3_object_search_uses_real_action_chunk(tmp_path: Path):
     assert think.endswith("Next: Rotate(0, 0).")
     assert _extract_tag(assistant_content, "frame") == "[1]"
     assert _extract_tag(assistant_content, "camera") == "Rotate(0, 0)"
-    assert _extract_tag(assistant_content, "action") == "[[1.0,2.0,5.0],[3.0,4.0,6.0],[3.0,4.0,6.0]]"
+    assert _extract_tag(assistant_content, "action") == "[[1.0,2.0,0.1,5.0,0.3],[3.0,4.0,0.2,6.0,0.4],[3.0,4.0,0.2,6.0,0.4]]"
 
 
 def test_stage3_memory_slot_uses_first_frame_in_chunk():
@@ -186,10 +192,12 @@ def test_stage3_memory_slot_uses_first_frame_in_chunk():
 def test_stage3_snapshots_keep_previous_action_chunks_in_prompt(monkeypatch):
     frames = [np.zeros((8, 8, 3), dtype=np.uint8) for _ in range(21)]
     left = np.zeros((21, 1), dtype=np.float64)
+    left_gripper = np.zeros((21,), dtype=np.float64)
     right = np.zeros((21, 1), dtype=np.float64)
+    right_gripper = np.zeros((21,), dtype=np.float64)
 
     def _fake_load_hdf5_episode_data(_hdf5_path: str):
-        return frames, left, right
+        return frames, left, left_gripper, right, right_gripper
 
     monkeypatch.setattr("script.rotate_vlm.snapshots.load_hdf5_episode_data", _fake_load_hdf5_episode_data)
 
