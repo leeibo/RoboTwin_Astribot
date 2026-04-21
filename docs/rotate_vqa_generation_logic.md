@@ -38,6 +38,11 @@
    - 基础注释视频 `episode*_annotated.mp4`
    - 右侧带 object-search QA 面板的视频 `episode*_annotated_object_search_qa.mp4`
 
+额外说明:
+
+- 环境内部 rotate 的正负号约定与 VQA 输出不同。
+- 当前 VQA 文本与 metadata 里统一使用: 向左为负，向右为正。
+
 默认导出参数是:
 
 - 最大上下文帧数 `max_context_frames = 16`

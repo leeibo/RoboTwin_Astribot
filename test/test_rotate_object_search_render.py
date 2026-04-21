@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
 from script.rotate_vlm import (  # noqa: E402
+    _build_angle_delta_sample,
     _build_object_search_sample,
     _collect_angle_delta_pairs,
     _render_angle_delta_response,
@@ -97,13 +98,13 @@ def test_object_search_history_evidence_mentions_evidence_frame():
     content = _render_object_search_response(_metadata(), snapshot)
     think = _extract_tag(content, "think")
 
-    assert think.startswith('Frames: 2 total (1 history + current). Past actions: [(-25, 0)]. The current task is "Find the target object.".')
+    assert think.startswith('Frames: 2 total (1 history + current). Past actions: [(25, 0)]. The current task is "Find the target object.".')
     assert "The target object is the target object." in think
     assert "The target object was found in frame 1 at (200,700)." in think
-    assert think.endswith("Next: Rotate(25, 0).")
+    assert think.endswith("Next: Rotate(-25, 0).")
     assert _extract_tag(content, "info") == "1"
     assert _extract_tag(content, "frame") == "[1]"
-    assert _extract_tag(content, "camera") == "Rotate(25, 0)"
+    assert _extract_tag(content, "camera") == "Rotate(-25, 0)"
 
 
 def test_stage3_object_search_uses_real_action_chunk(tmp_path: Path):
@@ -145,6 +146,7 @@ def test_stage3_object_search_uses_real_action_chunk(tmp_path: Path):
     think = _extract_tag(assistant_content, "think")
     assert sample["action"] == expected_chunk
     assert sample["metadata"]["prompt_image_count"] == 1
+    assert sample["metadata"]["camera_delta_deg"] == 0
     assert think.startswith('Frames: current only. Past actions: none. The current task is "Find the target object.". The target object is the target object.')
     assert "The robot is now executing the task." in think
     assert think.endswith("Next: Rotate(0, 0).")
@@ -245,9 +247,23 @@ def test_angle_delta_uses_rotation_difference_not_cumulative_planning():
     assert len(pairs) == 1
     assert pairs[0][2] == (30, 0)
     assert _render_angle_delta_response(pairs[0][2]) == (
-        "<think>Frames: 2 total (1 history + current). From frame 1 to frame 2, the rotation difference is (30, 0).</think>"
-        "<camera>Rotate(30, 0)</camera>"
+        "<think>Frames: 2 total (1 history + current). From frame 1 to frame 2, the rotation difference is (-30, 0).</think>"
+        "<camera>Rotate(-30, 0)</camera>"
     )
+
+    sample = _build_angle_delta_sample(Path("."), 0, _metadata(), EpisodeContext(
+        metadata=_metadata(),
+        hdf5_path="",
+        action_chunk_size=3,
+        max_context_frames=16,
+        frames=[np.zeros((16, 16, 3), dtype=np.uint8) for _ in range(6)],
+        left_arm_actions=np.zeros((0, 0), dtype=np.float64),
+        left_gripper_actions=np.zeros((0,), dtype=np.float64),
+        right_arm_actions=np.zeros((0, 0), dtype=np.float64),
+        right_gripper_actions=np.zeros((0,), dtype=np.float64),
+    ), previous_slot, current_slot, pairs[0][2])
+    assert sample["metadata"]["angle_delta_deg"] == -30
+    assert sample["metadata"]["camera_delta_pair"] == ["-30", "0"]
 
 
 def test_memory_compression_response_uses_view_deltas_and_frame_list():
@@ -265,7 +281,7 @@ def test_memory_compression_response_uses_view_deltas_and_frame_list():
     content = _render_memory_compression_response(metadata, sample_slots, kept_slots)
     think = _extract_tag(content, "think")
 
-    assert think.startswith("Frames: 3 total (2 history + current). Past actions: [(30, 0), (30, 0)].")
+    assert think.startswith("Frames: 3 total (2 history + current). Past actions: [(-30, 0), (-30, 0)].")
     assert "Spatially, keep frames [1, 3] for distinct coverage." in think
     assert "Keep frames [1, 3]." in think
     assert _extract_tag(content, "info") == "1"

@@ -237,6 +237,10 @@ def _rotation_difference_pair(from_heading_deg: float, to_heading_deg: float) ->
     return (int(round(_wrap_to_180(float(to_heading_deg) - float(from_heading_deg)))), 0)
 
 
+def _to_vqa_rotation_pair(rotation: tuple[int, int] | list[int] | tuple[float, float]) -> tuple[int, int]:
+    return (-int(round(float(rotation[0]))), int(round(float(rotation[1]))))
+
+
 def _slot_view_delta(previous_slot: MemorySlot, current_slot: MemorySlot) -> tuple[int, int]:
     return _rotation_difference_pair(previous_slot.current_heading_deg, current_slot.current_heading_deg)
 
@@ -250,11 +254,14 @@ def _slot_sequence_view_deltas(slots: list[MemorySlot]) -> list[tuple[int, int]]
 def _format_rotation_pairs(actions: list[tuple[int, int]]) -> str:
     if not actions:
         return "none"
-    return "[" + ", ".join(f"({int(dx)}, {int(dy)})" for dx, dy in actions) + "]"
+    return "[" + ", ".join(
+        f"({int(vqa_dx)}, {int(vqa_dy)})" for vqa_dx, vqa_dy in (_to_vqa_rotation_pair((dx, dy)) for dx, dy in actions)
+    ) + "]"
 
 
 def _format_rotate_text(rotation: tuple[int, int]) -> str:
-    return f"Rotate({int(rotation[0])}, {int(rotation[1])})"
+    vqa_dx, vqa_dy = _to_vqa_rotation_pair(rotation)
+    return f"Rotate({int(vqa_dx)}, {int(vqa_dy)})"
 
 
 def _history_or_current_images(
@@ -276,7 +283,7 @@ def _history_or_current_images(
 
 
 def _metadata_action_pairs(actions: list[tuple[int, int]]) -> list[list[str]]:
-    return [[str(int(a)), str(int(b))] for a, b in actions]
+    return [[str(int(vqa_a)), str(int(vqa_b))] for vqa_a, vqa_b in (_to_vqa_rotation_pair((a, b)) for a, b in actions)]
 
 
 def _infer_primary_arm(metadata: dict[str, Any]) -> str | None:
@@ -477,7 +484,7 @@ def _build_object_search_sample(
             "evidence_frame_idx": snapshot.evidence_frame_idx,
             "evidence_prompt_index": snapshot.evidence_prompt_index,
             "evidence_uv_norm": snapshot.evidence_uv_norm,
-            "camera_delta_deg": int(_search_camera_delta(snapshot)),
+            "camera_delta_deg": int(_to_vqa_rotation_pair((_search_camera_delta(snapshot), 0))[0]),
             "action_chunk_size": int(context.action_chunk_size),
             "action_chunk_actual_size": int(snapshot.current_slot.action_chunk_actual_size),
             "action_chunk_pad_count": int(snapshot.current_slot.action_chunk_pad_count),
@@ -499,9 +506,10 @@ def _build_angle_delta_user_prompt(metadata: dict[str, Any], previous_slot: Memo
 
 
 def _render_angle_delta_response(rotation_difference: tuple[int, int]) -> str:
+    vqa_rotation_difference = _to_vqa_rotation_pair(rotation_difference)
     think = (
         "Frames: 2 total (1 history + current). "
-        f"From frame 1 to frame 2, the rotation difference is ({int(rotation_difference[0])}, {int(rotation_difference[1])})."
+        f"From frame 1 to frame 2, the rotation difference is ({int(vqa_rotation_difference[0])}, {int(vqa_rotation_difference[1])})."
     )
     return f"<think>{think}</think><camera>{_format_rotate_text(rotation_difference)}</camera>"
 
@@ -560,7 +568,7 @@ def _build_angle_delta_sample(
             "subtask_id": int(current_slot.subtask_id),
             "frame_indices": frame_indices,
             "source_slot_frame_indices": [int(previous_slot.frame_idx), int(current_slot.frame_idx)],
-            "angle_delta_deg": int(angle_delta_pair[0]),
+            "angle_delta_deg": int(_to_vqa_rotation_pair(angle_delta_pair)[0]),
             "camera_delta_pair": _metadata_action_pairs([angle_delta_pair])[0],
             "view_rotation_difference": _metadata_action_pairs([angle_delta_pair])[0],
         },
