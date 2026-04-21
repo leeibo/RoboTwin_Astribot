@@ -159,7 +159,7 @@ def _task_subtask_think_clause(metadata: dict[str, Any], subtask_id: int) -> str
     subtask_instruction = _subtask_instruction(metadata, subtask_id)
     return (
         f'The current task is "{task_instruction}". '
-        f'Now executing subtask "{subtask_instruction}".'
+        f'Now executing subtask is "{subtask_instruction}".'
     )
 
 

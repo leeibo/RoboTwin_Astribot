@@ -23,7 +23,34 @@ except Exception:  # pragma: no cover
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATIC_ROOT = REPO_ROOT / "web" / "vqa_viewer"
 DEFAULT_DATA_ROOT = REPO_ROOT / "data"
-TASK_TYPES = ("object_search", "angle_delta", "memory_compression_vqa")
+TASK_TYPE_SPECS: dict[str, dict[str, str]] = {
+    "object_search": {
+        "dir_name": "vlm",
+        "file_name": "object_search.json",
+        "label": "Object Search",
+    },
+    "angle_delta": {
+        "dir_name": "vlm",
+        "file_name": "angle_delta.json",
+        "label": "Angle Delta",
+    },
+    "memory_compression_vqa": {
+        "dir_name": "vlm",
+        "file_name": "memory_compression_vqa.json",
+        "label": "Memory Compression",
+    },
+    "object_search_visibility_memory_v1": {
+        "dir_name": "vlm_object_search_visibility_memory_v1",
+        "file_name": "object_search_visibility_memory_v1.json",
+        "label": "Object Search Visibility Memory V1",
+    },
+    "object_search_visibility_memory_v2": {
+        "dir_name": "vlm_object_search_visibility_memory_v2",
+        "file_name": "object_search_visibility_memory_v2.json",
+        "label": "Object Search Visibility Memory V2",
+    },
+}
+TASK_TYPES = tuple(TASK_TYPE_SPECS.keys())
 TEXT_TAGS = ("think", "info", "frame", "camera", "action", "answer")
 
 
@@ -76,9 +103,20 @@ def _resolve_repo_relative(rel_path: str) -> Path:
     return candidate
 
 
+def _task_type_path(task_dir: Path, task_type: str) -> Path:
+    if task_type not in TASK_TYPE_SPECS:
+        raise ValueError(f"unsupported task type: {task_type}")
+    spec = TASK_TYPE_SPECS[task_type]
+    return task_dir / spec["dir_name"] / spec["file_name"]
+
+
 def _iter_task_dirs(data_root: Path) -> list[Path]:
     return sorted(
-        path for path in data_root.glob("*/*") if path.is_dir() and (path / "vlm").exists() and (path / "video").exists()
+        path
+        for path in data_root.glob("*/*")
+        if path.is_dir()
+        and (path / "video").exists()
+        and any(_task_type_path(path, task_type).exists() for task_type in TASK_TYPES)
     )
 
 
@@ -167,7 +205,7 @@ class VqaDataset:
         signature: list[tuple[str, int]] = []
         for task_dir in _iter_task_dirs(self.data_root):
             for task_type in TASK_TYPES:
-                path = task_dir / "vlm" / f"{task_type}.json"
+                path = _task_type_path(task_dir, task_type)
                 if path.exists():
                     signature.append((_repo_relative(path), path.stat().st_mtime_ns))
         return tuple(signature)
@@ -191,7 +229,7 @@ class VqaDataset:
                 counts: dict[str, int] = {}
                 available_types: list[str] = []
                 for task_type in TASK_TYPES:
-                    path = task_dir / "vlm" / f"{task_type}.json"
+                    path = _task_type_path(task_dir, task_type)
                     if not path.exists():
                         counts[task_type] = 0
                         continue
@@ -221,6 +259,7 @@ class VqaDataset:
                 "data_root": _repo_relative(self.data_root),
                 "storages": sorted(storage_names),
                 "task_types": list(TASK_TYPES),
+                "task_type_labels": {task_type: spec["label"] for task_type, spec in TASK_TYPE_SPECS.items()},
                 "task_count": len(tasks),
                 "totals": totals,
                 "tasks": tasks,
@@ -241,7 +280,7 @@ class VqaDataset:
         if task_type not in TASK_TYPES:
             raise ValueError(f"unsupported task type: {task_type}")
         task_dir = self._task_dir(task_name, storage_name)
-        samples_path = task_dir / "vlm" / f"{task_type}.json"
+        samples_path = _task_type_path(task_dir, task_type)
         samples = self._load_json(samples_path) if samples_path.exists() else []
         summaries: list[dict[str, Any]] = []
 
@@ -257,13 +296,14 @@ class VqaDataset:
             if current_frame_idx is None:
                 frame_indices = metadata.get("frame_indices", []) or []
                 current_frame_idx = frame_indices[-1] if frame_indices else None
+            stage_value = metadata.get("stage", metadata.get("raw_stage", None))
 
             summaries.append(
                 {
                     "sample_idx": sample_idx,
                     "episode_idx": _safe_int(metadata.get("episode_idx"), 0),
                     "subtask_id": _safe_int(metadata.get("subtask_id"), None),
-                    "stage": _safe_int(metadata.get("stage"), None),
+                    "stage": _safe_int(stage_value, None),
                     "current_frame_idx": _safe_int(current_frame_idx, None),
                     "prompt_image_count": _safe_int(
                         metadata.get("prompt_image_count"), len(sample.get("images", []) or [])
@@ -292,7 +332,7 @@ class VqaDataset:
         if task_type not in TASK_TYPES:
             raise ValueError(f"unsupported task type: {task_type}")
         task_dir = self._task_dir(task_name, storage_name)
-        samples_path = task_dir / "vlm" / f"{task_type}.json"
+        samples_path = _task_type_path(task_dir, task_type)
         samples = self._load_json(samples_path) if samples_path.exists() else []
         if sample_idx < 0 or sample_idx >= len(samples):
             raise IndexError(f"sample index out of range: {sample_idx}")

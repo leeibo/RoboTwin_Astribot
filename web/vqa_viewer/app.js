@@ -58,6 +58,14 @@ const elements = {
   lightboxClose: document.getElementById("lightboxClose"),
 };
 
+const TASK_TYPE_LABELS = {
+  object_search: "Object Search",
+  angle_delta: "Angle Delta",
+  memory_compression_vqa: "Memory Compression",
+  object_search_visibility_memory_v1: "Object Search Visibility Memory V1",
+  object_search_visibility_memory_v2: "Object Search Visibility Memory V2",
+};
+
 function taskKey(taskName, storageName) {
   return `${taskName}::${storageName}`;
 }
@@ -70,6 +78,37 @@ function apiUrl(path, params = {}) {
     }
   });
   return url.toString();
+}
+
+function taskTypeLabel(taskType) {
+  if (state.index?.task_type_labels?.[taskType]) {
+    return state.index.task_type_labels[taskType];
+  }
+  return TASK_TYPE_LABELS[taskType] || taskType;
+}
+
+function taskTypeShortLabel(taskType) {
+  const labelMap = {
+    object_search: "object",
+    angle_delta: "angle",
+    memory_compression_vqa: "compress",
+    object_search_visibility_memory_v1: "vismem",
+    object_search_visibility_memory_v2: "vismem-v2",
+  };
+  return labelMap[taskType] || taskType;
+}
+
+function metadataStage(metadata = {}) {
+  if (metadata.stage !== undefined && metadata.stage !== null) return metadata.stage;
+  if (metadata.raw_stage !== undefined && metadata.raw_stage !== null) return metadata.raw_stage;
+  return undefined;
+}
+
+function summarizeTaskCounts(task) {
+  if (!task || !state.index?.task_types) return "";
+  return state.index.task_types
+    .map((type) => `${taskTypeShortLabel(type)} ${task.sample_counts?.[type] || 0}`)
+    .join(" · ");
 }
 
 async function fetchJson(path, params = {}) {
@@ -137,9 +176,10 @@ function renderGlobalStats() {
   const cards = [
     { label: "Tasks", value: state.index.task_count },
     { label: "Storages", value: state.index.storages.length },
-    { label: "Object Search", value: state.index.totals.object_search || 0 },
-    { label: "Angle Delta", value: state.index.totals.angle_delta || 0 },
-    { label: "Compression", value: state.index.totals.memory_compression_vqa || 0 },
+    ...(state.index.task_types || []).map((taskType) => ({
+      label: taskTypeLabel(taskType),
+      value: state.index.totals?.[taskType] || 0,
+    })),
   ];
   elements.globalStats.innerHTML = cards
     .map(
@@ -185,12 +225,9 @@ function renderTaskList() {
   elements.taskList.innerHTML = tasks
     .map((task) => {
       const active = taskKey(task.task_name, task.storage_name) === state.selectedTaskKey ? "active" : "";
-      const chips = [
-        `episodes ${task.episode_count}`,
-        `object ${task.sample_counts.object_search || 0}`,
-        `angle ${task.sample_counts.angle_delta || 0}`,
-        `compress ${task.sample_counts.memory_compression_vqa || 0}`,
-      ];
+      const chips = [`episodes ${task.episode_count}`].concat(
+        (state.index?.task_types || []).map((taskType) => `${taskTypeShortLabel(taskType)} ${task.sample_counts?.[taskType] || 0}`)
+      );
       return `
         <article class="task-card ${active}" data-task-key="${taskKey(task.task_name, task.storage_name)}">
           <div class="task-card-title">${task.task_name}</div>
@@ -231,7 +268,7 @@ function renderHeader() {
     return;
   }
   elements.selectionTitle.textContent = task.task_name;
-  elements.selectionSubtitle.textContent = `${task.storage_name} · ${task.episode_count} episodes · object ${task.sample_counts.object_search || 0} · angle ${task.sample_counts.angle_delta || 0} · compression ${task.sample_counts.memory_compression_vqa || 0}`;
+  elements.selectionSubtitle.textContent = `${task.storage_name} · ${task.episode_count} episodes · ${summarizeTaskCounts(task)}`;
 }
 
 function renderTypeTabs() {
@@ -245,14 +282,9 @@ function renderTypeTabs() {
     .map((type) => {
       const count = task.sample_counts[type] || 0;
       const active = type === state.selectedType ? "active" : "";
-      const labelMap = {
-        object_search: "Object Search",
-        angle_delta: "Angle Delta",
-        memory_compression_vqa: "Memory Compression",
-      };
       return `
         <button class="type-tab ${active}" data-type="${type}" type="button">
-          ${labelMap[type] || type}
+          ${taskTypeLabel(type)}
           <small>${count} samples</small>
         </button>
       `;
@@ -286,6 +318,9 @@ async function loadIndex(forceRefresh = false) {
     if (!taskExists && payload.tasks[0]) {
       state.selectedTaskKey = taskKey(payload.tasks[0].task_name, payload.tasks[0].storage_name);
     }
+  }
+  if (!payload.task_types?.includes(state.selectedType)) {
+    state.selectedType = payload.task_types?.[0] || "object_search";
   }
   renderGlobalStats();
   renderStorageOptions();
@@ -388,7 +423,7 @@ function renderSampleList(payload) {
       }
       return `
         <article class="sample-card ${active}" data-sample-idx="${sample.sample_idx}">
-          <div class="sample-card-title">#${sample.sample_idx} · ${sample.task_type}</div>
+          <div class="sample-card-title">#${sample.sample_idx} · ${taskTypeLabel(sample.task_type)}</div>
           <div class="sample-card-meta">${chips.map((chip) => `<span class="chip">${chip}</span>`).join("")}</div>
           <p class="sample-preview">${sample.assistant_preview || sample.user_preview || "No preview"}</p>
         </article>
@@ -453,11 +488,13 @@ function chip(label, variant = "") {
 
 function formatMetadataLine(detail) {
   const metadata = detail.metadata || {};
+  const stage = metadataStage(metadata);
   const parts = [
     metadata.episode_idx !== undefined ? `Episode ${metadata.episode_idx}` : null,
     metadata.current_frame_idx !== undefined ? `Current frame ${metadata.current_frame_idx}` : null,
-    metadata.stage !== undefined ? `Stage ${metadata.stage}` : null,
+    stage !== undefined ? `Stage ${stage}` : null,
     metadata.subtask_id !== undefined ? `Subtask ${metadata.subtask_id}` : null,
+    metadata.mode ? `Mode ${metadata.mode}` : null,
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -619,12 +656,15 @@ function formatValue(value) {
 
 function renderMetadata(detail) {
   const metadata = detail.metadata || {};
+  const stage = metadataStage(metadata);
   const fields = [
     ["task_type", detail.task_type],
     ["episode_idx", metadata.episode_idx],
     ["current_frame_idx", metadata.current_frame_idx],
-    ["stage", metadata.stage],
+    ["stage", stage],
+    ["raw_stage", metadata.raw_stage],
     ["subtask_id", metadata.subtask_id],
+    ["mode", metadata.mode],
     ["roles", metadata.roles],
     ["prompt_frame_indices", metadata.prompt_frame_indices || metadata.frame_indices],
     ["prompt_image_count", metadata.prompt_image_count],
@@ -648,14 +688,16 @@ function renderMetadata(detail) {
 
 function renderDetail(detail) {
   state.selectedImageIdx = detail.images.length ? detail.images.length - 1 : null;
-  elements.detailTitle.textContent = `#${detail.sample_idx} · ${detail.task_type}`;
+  elements.detailTitle.textContent = `#${detail.sample_idx} · ${taskTypeLabel(detail.task_type)}`;
   elements.detailMetaLine.textContent = formatMetadataLine(detail);
   const metadata = detail.metadata || {};
+  const stage = metadataStage(metadata);
   const chips = [
     chip(`${detail.images.length} images`),
     metadata.prompt_image_count ? chip(`prompt ${metadata.prompt_image_count}`) : "",
-    metadata.stage !== undefined ? chip(`stage ${metadata.stage}`) : "",
+    stage !== undefined ? chip(`stage ${stage}`) : "",
     metadata.subtask_id !== undefined ? chip(`subtask ${metadata.subtask_id}`) : "",
+    metadata.mode ? chip(metadata.mode) : "",
     metadata.evidence_from_history ? chip("history evidence", "history") : "",
     detail.action_stats?.rows ? chip(`action ${detail.action_stats.rows}×${detail.action_stats.dims}`) : "",
   ]
