@@ -6,6 +6,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
 from script.rotate_vlm.models import MemorySlot
+from script.rotate_vlm.models import CompressionEvent
+from script.rotate_vlm import _compression_subset_variants
 from script.rotate_vlm.snapshots import _compress_memory_slots
 
 
@@ -61,3 +63,25 @@ def test_current_newest_frame_is_preserved_during_incremental_compression():
     kept = _compress_memory_slots(slots, half_fov_deg=35.0)
     assert kept[-1].frame_idx == 3
     assert [slot.frame_idx for slot in kept] == [0, 3]
+
+
+def test_subtask_switch_small_compression_event_exports_single_direct_variant():
+    before_slots = [
+        _make_slot(0, 0, 0.0, 10.0),
+        _make_slot(1, 1, 20.0, 10.0),
+        _make_slot(2, 2, 40.0, 10.0),
+    ]
+    event = CompressionEvent(
+        trigger="subtask_switch",
+        trigger_frame_idx=43,
+        before_slots=before_slots,
+        after_slots=_compress_memory_slots(before_slots, half_fov_deg=35.0),
+    )
+
+    variants = _compression_subset_variants(event)
+
+    assert len(variants) == 1
+    variant_name, sample_slots, kept_slots = variants[0]
+    assert variant_name == "subtask_switch_direct"
+    assert [slot.frame_idx for slot in sample_slots] == [0, 1, 2]
+    assert [slot.frame_idx for slot in kept_slots] == [0, 2]

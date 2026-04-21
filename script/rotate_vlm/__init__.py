@@ -24,7 +24,7 @@ from .snapshots import (
 
 
 DEFAULT_MAX_CONTEXT_FRAMES = 16
-DEFAULT_ACTION_CHUNK_SIZE = 10
+DEFAULT_ACTION_CHUNK_SIZE = 16
 REGISTERED_TASK_TYPES = ("object_search", "angle_delta", "memory_compression_vqa")
 MAX_COMPRESSION_VARIANTS_PER_SIZE = 64
 DEFAULT_EXPORT_WORKERS = max(1, min(8, int(os.cpu_count() or 1)))
@@ -759,6 +759,10 @@ def _compression_subset_variants(
 ) -> list[tuple[str, list[MemorySlot], list[MemorySlot]]]:
     before_slots = list(event.before_slots)
     optimal_slots = compress_memory_slots(before_slots)
+    if len(optimal_slots) >= len(before_slots):
+        return []
+    if str(event.trigger) == "subtask_switch" and len(before_slots) < 4:
+        return [("subtask_switch_direct", before_slots, optimal_slots)]
     optimal_slot_set = {_slot_identity(slot) for slot in optimal_slots}
     discarded_slots = [slot for slot in before_slots if _slot_identity(slot) not in optimal_slot_set]
     min_size = max(len(optimal_slots), 4)
