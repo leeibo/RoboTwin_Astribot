@@ -1,0 +1,40 @@
+{
+  "full_description": "Put the green block on the skillet.",
+  "schema": "{A} denotes the green block, {B} denotes the skillet, {a} denotes the arm that moves the block",
+  "preference": "num of words should not exceed 12",
+  "seen": [
+    "Pick up {A} and place it on {B}.",
+    "Use {a} to move {A} onto {B}.",
+    "Find {A}, lift it, and set it on {B}.",
+    "Carry {A} and place it on {B}.",
+    "Move {A} with {a} and drop it on {B}.",
+    "Grasp {A}, move it upward, and place it on {B}.",
+    "Take {A} and set it on {B}.",
+    "Transfer {A} onto {B} using {a}."
+  ],
+  "unseen": [
+    "Place {A} on {B}.",
+    "Pick {A} and put it on {B}.",
+    "Move {A} onto {B} with {a}.",
+    "Carry {A} over and place it on {B}.",
+    "Lift {A} and set it on {B}."
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "find {A} and grasp it"
+      ],
+      "unseen": [
+        "find {A} and grasp it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "find {B} and place {A} on it"
+      ],
+      "unseen": [
+        "find {B} and place {A} on it"
+      ]
+    }
+  }
+}

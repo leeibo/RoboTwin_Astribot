@@ -1,0 +1,254 @@
+{
+  "project": "rotate_view_subtask_state_tracking",
+  "status": "in_progress",
+  "stage": "rotate_search_logic_discrete_stage1_edge_reversal",
+  "last_update": "2026-04-08T20:42:50+08:00",
+  "completed": [
+    "shared_base_task_rotate_subtask_runtime",
+    "frame_annotation_hdf5_fields",
+    "episode_subtask_metadata_sidecar",
+    "camera_projection_helper",
+    "collect_data_metadata_hook",
+    "collect_rotate_tasks_multi_difficulty_whitelist_all_task_migrations",
+    "robotwin_py_compile_validation",
+    "camera_visibility_unit_test",
+    "click_bell_rotate_view_real_collection_smoke_validation",
+    "place_empty_cup_rotate_view_multi_subtask_episode_level_smoke_validation",
+    "broaden_multi_subtask_runtime_smoke_collection_to_more_tasks",
+    "easy_whitelist_headless_collection_3episodes_each",
+    "all_78_episode_frame_annotation_count_validation",
+    "subtask_instruction_templates_follow_original_generation_pipeline",
+    "per_episode_annotated_video_export",
+    "discrete_stage1_rotate_scan_and_image_based_stage2"
+  ],
+  "in_progress": [],
+  "pending": [
+    "design_and_export_multiframe_vlm_pretrain_data",
+    "optional_harden_seed_stage_grasp_pose_none_and_unstable_object_failures"
+  ],
+  "resume_from": "If continuing, start from exporting multiframe VLM data from subtask_metadata/HDF5 labels, or harden seed-stage failures like pre_grasp_pose=None and UnStableError for even larger-scale collection.",
+  "converted_tasks": [
+    "beat_block_hammer_rotate_view",
+    "blocks_ranking_rgb_rotate_view",
+    "blocks_ranking_size_rotate_view",
+    "click_alarmclock_rotate_view",
+    "click_bell_rotate_view",
+    "move_pillbottle_pad_rotate_view",
+    "move_stapler_pad_rotate_view",
+    "open_laptop_rotate_view",
+    "place_a2b_left_rotate_view",
+    "place_a2b_right_rotate_view",
+    "place_burger_fries_rotate_view",
+    "place_cans_plasticbox_rotate_view",
+    "place_container_plate_rotate_view",
+    "place_empty_cup_rotate_view",
+    "place_fan_rotate_view",
+    "place_mouse_pad_rotate_view",
+    "place_object_scale_rotate_view",
+    "place_object_stand_rotate_view",
+    "place_shoe_rotate_view",
+    "press_stapler_rotate_view",
+    "shake_bottle_horizontally_rotate_view",
+    "shake_bottle_rotate_view",
+    "stack_blocks_three_rotate_view",
+    "stack_blocks_two_rotate_view",
+    "stamp_seal_rotate_view",
+    "turn_switch_rotate_view"
+  ],
+  "task_added_fields": {
+    "per_task_plan_fields": [
+      "object_registry",
+      "subtask_defs"
+    ],
+    "subtask_def_required_fields": [
+      "id",
+      "name",
+      "instruction_idx",
+      "search_target_keys",
+      "action_target_keys",
+      "required_carried_keys",
+      "carry_keys_after_done",
+      "allow_stage2_from_memory",
+      "done_when",
+      "next_subtask_id"
+    ],
+    "runtime_state_fields": [
+      "current_subtask_idx",
+      "current_stage",
+      "current_instruction_idx",
+      "current_focus_object_key",
+      "current_search_target_keys",
+      "current_action_target_keys",
+      "carried_object_keys",
+      "discovered_objects",
+      "visible_objects",
+      "subtask_done",
+      "current_info_complete",
+      "current_camera_mode",
+      "current_camera_target_theta",
+      "transition_log",
+      "saved_frame_annotations"
+    ],
+    "frame_annotation_fields": [
+      "subtask",
+      "stage",
+      "subtask_instruction_idx",
+      "focus_object_idx",
+      "focus_object_visible",
+      "info_complete",
+      "camera_mode",
+      "camera_target_theta",
+      "visible_object_mask",
+      "discovered_object_mask",
+      "search_target_mask",
+      "action_target_mask",
+      "carried_object_mask",
+      "target_uv_norm"
+    ],
+    "per_task_instruction_fields": [
+      "description/task_instruction/<task>.json::subtask_instruction_template_map"
+    ]
+  },
+  "validation": [
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && python -m py_compile envs/_base_task.py envs/utils/camera_visibility.py script/collect_data.py test/test_camera_visibility.py <all whitelist rotate env files>",
+      "status": "passed"
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && pytest -q test/test_camera_visibility.py",
+      "status": "passed"
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && CUDA_VISIBLE_DEVICES=0 ROBOTWIN_MAX_SEED_TRIES=10 python script/collect_data.py click_bell_rotate_view demo_clean",
+      "status": "passed",
+      "artifacts": [
+        "data/click_bell_rotate_view/demo_clean__easy_fan150/data/episode0.hdf5",
+        "data/click_bell_rotate_view/demo_clean__easy_fan150/subtask_metadata/episode0.json",
+        "data/click_bell_rotate_view/demo_clean__easy_fan150/scene_info.json"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && CUDA_VISIBLE_DEVICES=0 ROBOTWIN_MAX_SEED_TRIES=10 python script/collect_data.py place_empty_cup_rotate_view demo_clean",
+      "status": "partial_validation_after_manual_interrupt",
+      "artifacts": [
+        "data/place_empty_cup_rotate_view/demo_clean__easy_fan150/data/episode0.hdf5",
+        "data/place_empty_cup_rotate_view/demo_clean__easy_fan150/subtask_metadata/episode0.json",
+        "data/place_empty_cup_rotate_view/demo_clean__easy_fan150/scene_info.json"
+      ],
+      "notes": [
+        "seed collection completed successfully",
+        "saved episodes 0 and 1 before manual interrupt",
+        "episode0 transition_log shows subtask 1 complete then subtask 2 begin with carried_after=['A']"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && export MPLCONFIGDIR=/tmp/mpl_robotwin && export CUDA_VISIBLE_DEVICES=0 && export ROBOTWIN_MAX_SEED_TRIES=50 && python script/collect_data.py <each task in task_config/rotate_task_whitelist.yml> demo_clean_easy3_headless",
+      "status": "passed",
+      "artifacts": [
+        "data/<all 26 whitelist tasks>/demo_clean_easy3_headless__easy_fan150/data/episode0.hdf5",
+        "data/<all 26 whitelist tasks>/demo_clean_easy3_headless__easy_fan150/data/episode1.hdf5",
+        "data/<all 26 whitelist tasks>/demo_clean_easy3_headless__easy_fan150/data/episode2.hdf5",
+        "data/<all 26 whitelist tasks>/demo_clean_easy3_headless__easy_fan150/subtask_metadata/episode0.json",
+        "data/<all 26 whitelist tasks>/demo_clean_easy3_headless__easy_fan150/scene_info.json"
+      ],
+      "notes": [
+        "collection used render_freq=0 via task_config/demo_clean_easy3_headless.yml",
+        "all 26 whitelist tasks completed 3 headless episodes each",
+        "total completed real episodes: 78"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && python - <<'PY' ... verify len(HDF5['subtask']) == len(frame_annotations) for all 78 episodes and each scene_info episode has subtask_metadata_path ... PY",
+      "status": "passed",
+      "notes": [
+        "checked episodes: 78",
+        "frame annotation mismatches: 0",
+        "missing scene_info subtask_metadata_path entries: 0"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && export MPLCONFIGDIR=/tmp/mpl_robotwin && export ROBOTWIN_MAX_SEED_TRIES=20 && python script/collect_data.py click_bell_rotate_view annotated_video_smoke_headless",
+      "status": "passed",
+      "artifacts": [
+        "/tmp/robotwin_annotated_smoke/click_bell_rotate_view/tmp_annotated_video_smoke__easy_fan150/video/episode0_annotated.mp4",
+        "/tmp/robotwin_annotated_smoke/click_bell_rotate_view/tmp_annotated_video_smoke__easy_fan150/subtask_metadata/episode0.json",
+        "/tmp/robotwin_annotated_smoke/click_bell_rotate_view/tmp_annotated_video_smoke__easy_fan150/scene_info.json"
+      ],
+      "notes": [
+        "headless smoke used render_freq=0 and episode_num=1",
+        "scene_info.json and subtask_metadata/episode0.json both record annotated_video_path",
+        "episode0_annotated.mp4 was successfully decoded after export"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && python -m py_compile envs/_base_task.py envs/utils/rotate_theta.py envs/utils/camera_visibility.py test/test_camera_visibility.py",
+      "status": "passed"
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && pytest -q test/test_camera_visibility.py",
+      "status": "passed",
+      "notes": [
+        "added coverage for image_u_to_yaw_error_rad center/sign/inverse-projection behavior"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && export MPLCONFIGDIR=/tmp/mpl_robotwin && export ROBOTWIN_MAX_SEED_TRIES=10 && python script/collect_data.py place_a2b_left_rotate_view annotated_video_smoke_headless",
+      "status": "passed",
+      "artifacts": [
+        "/tmp/robotwin_annotated_smoke/place_a2b_left_rotate_view/annotated_video_smoke_headless__easy_fan150/video/episode0_annotated.mp4",
+        "/tmp/robotwin_annotated_smoke/place_a2b_left_rotate_view/annotated_video_smoke_headless__easy_fan150/subtask_metadata/episode0.json",
+        "/tmp/robotwin_annotated_smoke/place_a2b_left_rotate_view/annotated_video_smoke_headless__easy_fan150/scene_info.json"
+      ],
+      "notes": [
+        "headless smoke completed after one seed retry",
+        "this easy episode started directly in stage2 because both objects were already visible in the initial frame"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && export MPLCONFIGDIR=/tmp/mpl_robotwin && export ROBOTWIN_MAX_SEED_TRIES=10 && python script/collect_data.py click_bell_rotate_view annotated_video_smoke_headless",
+      "status": "passed",
+      "artifacts": [
+        "/tmp/robotwin_annotated_smoke/click_bell_rotate_view/annotated_video_smoke_headless__easy_fan150/video/episode0_annotated.mp4",
+        "/tmp/robotwin_annotated_smoke/click_bell_rotate_view/annotated_video_smoke_headless__easy_fan150/subtask_metadata/episode0.json",
+        "/tmp/robotwin_annotated_smoke/click_bell_rotate_view/annotated_video_smoke_headless__easy_fan150/scene_info.json"
+      ],
+      "notes": [
+        "search/focus flow ran successfully with the new image-based stage2 logic",
+        "the sampled easy episode had the bell visible at frame 0, so stage1 was not required"
+      ]
+    },
+    {
+      "command": "source /home/admin1/miniconda3/etc/profile.d/conda.sh && conda activate robotwin && export MPLCONFIGDIR=/tmp/mpl_robotwin && export ROBOTWIN_MAX_SEED_TRIES=10 && python script/collect_data.py move_pillbottle_pad_rotate_view annotated_video_smoke_headless",
+      "status": "passed",
+      "artifacts": [
+        "/tmp/robotwin_annotated_smoke/move_pillbottle_pad_rotate_view/annotated_video_smoke_headless__easy_fan150/video/episode0_annotated.mp4",
+        "/tmp/robotwin_annotated_smoke/move_pillbottle_pad_rotate_view/annotated_video_smoke_headless__easy_fan150/subtask_metadata/episode0.json",
+        "/tmp/robotwin_annotated_smoke/move_pillbottle_pad_rotate_view/annotated_video_smoke_headless__easy_fan150/scene_info.json"
+      ],
+      "notes": [
+        "both subtasks completed successfully under render_freq=0",
+        "the sampled easy episode again started from current-frame visibility, so stage2 immediately followed begin_subtask"
+      ]
+    }
+  ],
+  "easy_collection_validation": {
+    "config": "task_config/demo_clean_easy3_headless.yml",
+    "setting": "demo_clean_easy3_headless__easy_fan150",
+    "render_freq": 0,
+    "episode_num_per_task": 3,
+    "tasks_completed": 26,
+    "episodes_completed": 78
+  },
+  "notes": [
+    "Real subtask ids start from 1; 0 is reserved for init/non-task frames.",
+    "Per-frame numeric labels are written into the episode HDF5 root datasets.",
+    "String-rich subtask mappings and transition traces are written into sidecar JSON under data/<task>/<setting>/subtask_metadata.",
+    "scene_info.json keeps per-episode entries and links each one to subtask_metadata_path instead of inlining all rotate metadata.",
+    "Rotate episodes now also export a head-camera sidecar video at video/episodeX_annotated.mp4, with frame/stage/subtask instruction/found objects overlay.",
+    "Search stage now only enters stage2 when the target is visible in the current frame; otherwise stage1 uses discrete unit turns and reverses when the current-side table edge endpoints enter view without finding the target.",
+    "Stage2 now uses image-space horizontal offset to do fine yaw centering and no longer directly faces the GT object world point during search.",
+    "Place/stack/ranking tasks explicitly update carried_object_keys around grasp and release so subtask switching remains consistent in saved annotations.",
+    "Observed real-collection seed-stage failures were mostly recoverable pre_grasp_pose=None or UnStableError cases; all were absorbed by retries under ROBOTWIN_MAX_SEED_TRIES=50.",
+    "Whitelist rotate subtasks now read templates from description/task_instruction/<task>.json and resolve episode-specific text with the same placeholder pipeline as original task instructions."
+  ]
+}

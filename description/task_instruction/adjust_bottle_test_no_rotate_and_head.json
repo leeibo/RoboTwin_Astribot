@@ -1,0 +1,24 @@
+{
+  "full_description": "Pick up the bottle with the correct arm.",
+  "schema": "{A} notifies the bottle, {a} notifies the arm used to pick it up",
+  "preference": "num of words should not exceed 15",
+  "seen": [
+    "Pick up {A} with {a}.",
+    "Use {a} to grab {A}.",
+    "Lift {A} with {a}.",
+    "Pick {A} up using {a}.",
+    "Grab {A} and lift it with {a}.",
+    "Take {A} with {a}.",
+    "Pick up {A}.",
+    "Lift {A} off the surface.",
+    "Grab the bottle {A} with {a}.",
+    "Use the {a} arm to pick up {A}."
+  ],
+  "unseen": [
+    "Raise {A} with {a}.",
+    "Pick up the bottle {A}.",
+    "Use {a} to lift {A}.",
+    "Take hold of {A} with {a}.",
+    "Grab {A} from the front."
+  ]
+}
