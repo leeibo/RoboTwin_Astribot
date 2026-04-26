@@ -14,6 +14,10 @@ BASE_TASK_PATH = REPO_ROOT / "envs" / "_base_task.py"
 CAMERA_VIS_PATH = REPO_ROOT / "envs" / "utils" / "camera_visibility.py"
 PUT_BLOCK_ON_PATH = REPO_ROOT / "envs" / "put_block_on.py"
 PUT_BOTTLE_ROTATE_HEAD_PATH = REPO_ROOT / "envs" / "put_bottle_on_cabinet_rotate_and_head.py"
+FAN_DOUBLE_UTILS_PATH = REPO_ROOT / "envs" / "_fan_double_task_utils.py"
+PUT_BLOCK_TARGET_FAN_DOUBLE_BASE_PATH = REPO_ROOT / "envs" / "_put_block_target_fan_double_base.py"
+BLOCKS_RANKING_RGB_FAN_DOUBLE_PATH = REPO_ROOT / "envs" / "blocks_ranking_rgb_fan_double.py"
+BLOCKS_RANKING_SIZE_FAN_DOUBLE_PATH = REPO_ROOT / "envs" / "blocks_ranking_size_fan_double.py"
 DEMO_CLEAN_FAN_DOUBLE_CONFIG_PATH = REPO_ROOT / "task_config" / "demo_clean_fan_double.yml"
 DEMO_RANDOMIZED_FAN_DOUBLE_CONFIG_PATH = REPO_ROOT / "task_config" / "demo_randomized_fan_double.yml"
 
@@ -157,6 +161,44 @@ def _extract_class_methods(source_path, class_name, method_names, extra_namespac
 
 def _extract_base_methods(method_names):
     return _extract_class_methods(BASE_TASK_PATH, "Base_Task", method_names)
+
+
+def _extract_module_functions(source_path, function_names, extra_namespace=None):
+    source = source_path.read_text(encoding="utf-8")
+    module = ast.parse(source)
+
+    segments = []
+    found_names = set()
+    for node in module.body:
+        if isinstance(node, ast.FunctionDef) and node.name in function_names:
+            segment = ast.get_source_segment(source, node)
+            assert segment is not None, node.name
+            segments.append(segment)
+            found_names.add(node.name)
+
+    missing = sorted(set(function_names) - found_names)
+    assert not missing, f"Missing module functions in {source_path.name}: {missing}"
+
+    namespace = {
+        "np": np,
+        "t3d": _DummyT3D(),
+    }
+    if extra_namespace is not None:
+        namespace.update(extra_namespace)
+    exec("\n\n".join(segments), namespace)
+    return namespace
+
+
+def _extract_class_constant(source_path, class_name, constant_name):
+    source = source_path.read_text(encoding="utf-8")
+    module = ast.parse(source)
+    class_node = next(node for node in module.body if isinstance(node, ast.ClassDef) and node.name == class_name)
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == constant_name:
+                    return ast.literal_eval(node.value)
+    raise AssertionError(f"Missing {class_name}.{constant_name}")
 
 
 class DummyPose:
@@ -1348,6 +1390,539 @@ def test_put_block_on_dynamic_subtasks_use_remaining_blocks_and_actual_carried_b
     assert task.subtask_def_map[2]["action_target_keys"] == ["A1", "B"]
     assert task.subtask_def_map[2]["required_carried_keys"] == ["A1"]
     assert task.subtask_def_map[2]["allow_stage2_from_memory"] is True
+
+
+def test_put_block_on_upper_plate_search_keeps_lower_phase_before_raising_head():
+    SearchBase = _extract_base_methods(
+        [
+            "_normalize_rotate_search_layer",
+            "_get_rotate_discrete_search_states",
+            "_get_rotate_first_upper_search_state_index",
+            "_set_rotate_search_cursor",
+        ]
+    )
+    ExtractedTask = _extract_class_methods(
+        PUT_BLOCK_ON_PATH,
+        "put_block_on",
+        [
+            "_normalize_layer",
+            "_get_subtask_search_target_keys",
+            "_get_subtask_upper_search_target_keys",
+            "_should_search_lower_before_upper_for_subtask",
+            "_has_unfinished_lower_search_phase",
+            "_get_place_search_block_key",
+            "_is_upper_plate_search_after_lower_pick",
+            "_clear_rotate_target_search_history",
+            "_prepare_subtask_rotate_search",
+            "_prepare_plate_rotate_search",
+            "_should_skip_rotate_head_home_reset",
+            "_get_subtask_search_layers",
+            "_subtask_requires_head_home_reset",
+            "_maybe_reset_head_to_home_for_subtask",
+        ],
+    )
+
+    class DummyTask(ExtractedTask, SearchBase):
+        def __init__(self):
+            self.block_keys = ["A0", "A1"]
+            self.object_registry = {"A0": object(), "A1": object(), "B": object()}
+            self.object_layers = {"A0": "lower", "A1": "lower", "B": "upper"}
+            self.plate_layer = "upper"
+            self.rotate_table_shape = "fan_double"
+            self.carried_object_keys = ["A0"]
+            self.discovered_objects = {
+                "B": {
+                    "discovered": True,
+                    "visible_now": True,
+                    "first_seen_frame": 8,
+                    "last_seen_frame": 8,
+                    "last_seen_subtask": 1,
+                    "last_seen_stage": 2,
+                    "last_uv_norm": [0.4, 0.5],
+                    "last_world_point": [0.68, 0.02, 1.09],
+                }
+            }
+            self.visible_objects = {"B": True}
+            self.subtask_def_map = {
+                1: {
+                    "search_target_keys": ["A0", "A1"],
+                    "action_target_keys": ["A0", "A1"],
+                    "required_carried_keys": [],
+                },
+                2: {
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A0", "B"],
+                    "required_carried_keys": ["A0"],
+                },
+            }
+            self.search_cursor_state = None
+            self.search_cursor_state_index = None
+            self.search_cursor_theta = np.nan
+            self.search_cursor_layer = None
+            self.search_cursor_state_complete = False
+            self.search_cursor_boundary_reached = False
+            self.fixed_layer_head_joint2_only = True
+            self.HEAD_RESET_SAVE_FREQ = -1
+            self.reset_calls = []
+
+        def _get_rotate_subtask_def(self, subtask_idx):
+            return self.subtask_def_map.get(int(subtask_idx))
+
+        def _move_head_to_rotate_search_layer(self, layer_name, head_joint2_name=None, settle_steps=None, save_freq=-1):
+            self.reset_calls.append(str(layer_name))
+            return True
+
+        def _reset_head_to_home_pose(self, settle_steps=None, save_freq=-1):
+            self.reset_calls.append("home")
+            return True
+
+        def _get_current_scan_camera_theta(self, camera_name=None):
+            return 0.0
+
+    DummyTask._normalize_rotate_search_layer = staticmethod(SearchBase._normalize_rotate_search_layer)
+    task = DummyTask()
+    task._set_rotate_search_cursor(state_idx=0, theta=0.0, layer_name="lower")
+
+    assert task._should_skip_rotate_head_home_reset(2, prev_subtask_idx=1) is True
+    assert task._maybe_reset_head_to_home_for_subtask(2, prev_subtask_idx=1) is True
+    assert task.reset_calls == ["lower"]
+
+    task._prepare_plate_rotate_search(2)
+    assert task.search_cursor_state_index == 0
+    assert task.visible_objects["B"] is False
+    assert task.discovered_objects["B"]["discovered"] is False
+
+    task.discovered_objects["B"]["discovered"] = True
+    task.visible_objects["B"] = True
+    task._set_rotate_search_cursor(state_idx=6, theta=0.0, layer_name="upper")
+
+    assert task._should_skip_rotate_head_home_reset(2, prev_subtask_idx=1) is False
+    assert task._maybe_reset_head_to_home_for_subtask(2, prev_subtask_idx=1) is True
+    assert task.reset_calls == ["lower", "upper"]
+
+    task._prepare_plate_rotate_search(2)
+    assert task.search_cursor_state_index == task._get_rotate_first_upper_search_state_index()
+    assert task.search_cursor_layer == "upper"
+
+
+def test_put_block_on_upper_block_pick_search_starts_from_lower_phase():
+    SearchBase = _extract_base_methods(
+        [
+            "_normalize_rotate_search_layer",
+            "_get_rotate_discrete_search_states",
+            "_get_rotate_first_upper_search_state_index",
+            "_set_rotate_search_cursor",
+        ]
+    )
+    ExtractedTask = _extract_class_methods(
+        PUT_BLOCK_ON_PATH,
+        "put_block_on",
+        [
+            "_normalize_layer",
+            "_get_subtask_search_target_keys",
+            "_get_subtask_upper_search_target_keys",
+            "_should_search_lower_before_upper_for_subtask",
+            "_has_unfinished_lower_search_phase",
+            "_clear_rotate_target_search_history",
+            "_prepare_subtask_rotate_search",
+            "_should_skip_rotate_head_home_reset",
+            "_get_subtask_search_layers",
+            "_subtask_requires_head_home_reset",
+            "_maybe_reset_head_to_home_for_subtask",
+        ],
+    )
+
+    class DummyTask(ExtractedTask, SearchBase):
+        def __init__(self):
+            self.block_keys = ["A0", "A1"]
+            self.object_registry = {"A0": object(), "A1": object(), "B": object()}
+            self.object_layers = {"A0": "upper", "A1": "upper", "B": "lower"}
+            self.plate_layer = "lower"
+            self.rotate_table_shape = "fan_double"
+            self.carried_object_keys = []
+            self.discovered_objects = {
+                "A0": {
+                    "discovered": True,
+                    "visible_now": True,
+                    "first_seen_frame": 8,
+                    "last_seen_frame": 8,
+                    "last_seen_subtask": 1,
+                    "last_seen_stage": 1,
+                    "last_uv_norm": [0.4, 0.5],
+                    "last_world_point": [0.68, 0.02, 1.09],
+                },
+                "A1": {
+                    "discovered": True,
+                    "visible_now": True,
+                    "first_seen_frame": 9,
+                    "last_seen_frame": 9,
+                    "last_seen_subtask": 1,
+                    "last_seen_stage": 1,
+                    "last_uv_norm": [0.6, 0.5],
+                    "last_world_point": [0.72, -0.03, 1.09],
+                },
+            }
+            self.visible_objects = {"A0": True, "A1": True}
+            self.subtask_def_map = {
+                1: {
+                    "search_target_keys": ["A0", "A1"],
+                    "action_target_keys": ["A0", "A1"],
+                    "required_carried_keys": [],
+                },
+            }
+            self.search_cursor_state = None
+            self.search_cursor_state_index = None
+            self.search_cursor_theta = np.nan
+            self.search_cursor_layer = None
+            self.search_cursor_state_complete = False
+            self.search_cursor_boundary_reached = False
+            self.fixed_layer_head_joint2_only = True
+            self.HEAD_RESET_SAVE_FREQ = -1
+            self.reset_calls = []
+
+        def _get_rotate_subtask_def(self, subtask_idx):
+            return self.subtask_def_map.get(int(subtask_idx))
+
+        def _move_head_to_rotate_search_layer(self, layer_name, head_joint2_name=None, settle_steps=None, save_freq=-1):
+            self.reset_calls.append(str(layer_name))
+            return True
+
+        def _reset_head_to_home_pose(self, settle_steps=None, save_freq=-1):
+            self.reset_calls.append("home")
+            return True
+
+    DummyTask._normalize_rotate_search_layer = staticmethod(SearchBase._normalize_rotate_search_layer)
+    task = DummyTask()
+
+    assert task._should_search_lower_before_upper_for_subtask(1) is True
+    assert task._should_skip_rotate_head_home_reset(1, prev_subtask_idx=None) is True
+
+    task._prepare_subtask_rotate_search(1)
+    assert task.search_cursor_state_index is None
+    assert task.discovered_objects["A0"]["discovered"] is False
+    assert task.discovered_objects["A1"]["discovered"] is False
+
+    assert task._maybe_reset_head_to_home_for_subtask(1, prev_subtask_idx=None) is True
+    assert task.reset_calls == ["lower"]
+
+
+def test_put_block_on_masks_upper_plate_visibility_during_lower_stage1_search():
+    SearchBase = _extract_base_methods(
+        [
+            "_normalize_rotate_search_layer",
+            "_get_rotate_discrete_search_states",
+            "_get_rotate_first_upper_search_state_index",
+        ]
+    )
+    ExtractedTask = _extract_class_methods(
+        PUT_BLOCK_ON_PATH,
+        "put_block_on",
+        [
+            "_normalize_layer",
+            "_get_subtask_search_target_keys",
+            "_get_subtask_upper_search_target_keys",
+            "_should_search_lower_before_upper_for_subtask",
+            "_get_place_search_block_key",
+            "_is_upper_plate_search_after_lower_pick",
+            "_clear_rotate_target_search_history",
+            "_after_rotate_visibility_refresh",
+        ],
+    )
+
+    class DummyTask(ExtractedTask, SearchBase):
+        def __init__(self):
+            self.block_keys = ["A0", "A1"]
+            self.object_layers = {"A0": "lower", "A1": "lower", "B": "upper"}
+            self.plate_layer = "upper"
+            self.rotate_table_shape = "fan_double"
+            self.carried_object_keys = ["A0"]
+            self.current_stage = 1
+            self.current_subtask_idx = 2
+            self.search_cursor_layer = "lower"
+            self.subtask_def_map = {
+                2: {
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A0", "B"],
+                    "required_carried_keys": ["A0"],
+                }
+            }
+            self.discovered_objects = {
+                "B": {
+                    "discovered": True,
+                    "visible_now": True,
+                    "first_seen_frame": 8,
+                    "last_seen_frame": 8,
+                    "last_seen_subtask": 2,
+                    "last_seen_stage": 1,
+                    "last_uv_norm": [0.4, 0.5],
+                    "last_world_point": [0.68, 0.02, 1.09],
+                }
+            }
+            self.visible_objects = {"B": True}
+
+        def _get_rotate_subtask_def(self, subtask_idx):
+            return self.subtask_def_map.get(int(subtask_idx))
+
+    DummyTask._normalize_rotate_search_layer = staticmethod(SearchBase._normalize_rotate_search_layer)
+    task = DummyTask()
+    visibility_map = {
+        "B": {
+            "visible": True,
+            "u_norm": 0.41,
+            "v_norm": 0.37,
+            "world_point": [0.68, 0.02, 1.09],
+        }
+    }
+
+    task._after_rotate_visibility_refresh(visibility_map)
+
+    assert task.visible_objects["B"] is False
+    assert task.discovered_objects["B"]["discovered"] is False
+    assert visibility_map["B"] == {
+        "visible": False,
+        "u_norm": None,
+        "v_norm": None,
+        "world_point": None,
+    }
+
+
+def test_put_block_target_fan_double_upper_target_search_stays_lower_first():
+    SearchBase = _extract_base_methods(
+        [
+            "_normalize_rotate_search_layer",
+            "_get_rotate_discrete_search_states",
+            "_get_rotate_first_upper_search_state_index",
+            "_set_rotate_search_cursor",
+        ]
+    )
+    ExtractedTask = _extract_class_methods(
+        PUT_BLOCK_TARGET_FAN_DOUBLE_BASE_PATH,
+        "PutBlockTargetFanDoubleBase",
+        [
+            "_normalize_layer",
+            "_get_subtask_search_layers",
+            "_subtask_requires_head_home_reset",
+            "_get_subtask_search_target_keys",
+            "_get_subtask_upper_search_target_keys",
+            "_should_search_lower_before_upper_for_subtask",
+            "_has_unfinished_lower_search_phase",
+            "_clear_rotate_target_search_history",
+            "_prepare_subtask_rotate_search",
+            "_should_enforce_rotate_stage1_search_order",
+            "_should_skip_rotate_head_home_reset",
+            "_maybe_reset_head_to_home_for_subtask",
+            "_after_rotate_visibility_refresh",
+        ],
+    )
+
+    class DummyTask(ExtractedTask, SearchBase):
+        def __init__(self):
+            self.object_registry = {"A0": object(), "B": object()}
+            self.object_layers = {"A0": "lower", "B": "upper"}
+            self.rotate_table_shape = "fan_double"
+            self.subtask_def_map = {
+                1: {
+                    "search_target_keys": ["A0"],
+                    "action_target_keys": ["A0"],
+                },
+                2: {
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["A0", "B"],
+                },
+            }
+            self.discovered_objects = {
+                "B": {
+                    "discovered": True,
+                    "visible_now": True,
+                    "first_seen_frame": 5,
+                    "last_seen_frame": 5,
+                    "last_seen_subtask": 2,
+                    "last_seen_stage": 1,
+                    "last_uv_norm": [0.4, 0.4],
+                    "last_world_point": [0.7, 0.0, 1.09],
+                }
+            }
+            self.visible_objects = {"B": True}
+            self.search_cursor_state = None
+            self.search_cursor_state_index = None
+            self.search_cursor_theta = np.nan
+            self.search_cursor_layer = None
+            self.search_cursor_state_complete = False
+            self.search_cursor_boundary_reached = False
+            self.current_stage = 1
+            self.current_subtask_idx = 2
+            self.fixed_layer_head_joint2_only = True
+            self.HEAD_RESET_SAVE_FREQ = -1
+            self.reset_calls = []
+
+        def _get_rotate_subtask_def(self, subtask_idx):
+            return self.subtask_def_map.get(int(subtask_idx))
+
+        def _move_head_to_rotate_search_layer(self, layer_name, head_joint2_name=None, settle_steps=None, save_freq=-1):
+            self.reset_calls.append((str(layer_name), save_freq))
+            return True
+
+        def _reset_head_to_home_pose(self, settle_steps=None, save_freq=-1):
+            self.reset_calls.append(("home", save_freq))
+            return True
+
+        def _get_current_scan_camera_theta(self, camera_name=None):
+            return 0.0
+
+    DummyTask._normalize_rotate_search_layer = staticmethod(SearchBase._normalize_rotate_search_layer)
+    task = DummyTask()
+
+    assert task._should_enforce_rotate_stage1_search_order(2) is True
+    assert task._should_skip_rotate_head_home_reset(2, prev_subtask_idx=1) is True
+
+    task._prepare_subtask_rotate_search(2)
+    assert task.search_cursor_state_index is None
+    assert task.discovered_objects["B"]["discovered"] is False
+    assert task.visible_objects["B"] is False
+
+    visibility_map = {
+        "B": {
+            "visible": True,
+            "u_norm": 0.41,
+            "v_norm": 0.37,
+            "world_point": [0.68, 0.02, 1.09],
+        }
+    }
+    task.search_cursor_layer = "lower"
+    task._after_rotate_visibility_refresh(visibility_map)
+    assert visibility_map["B"] == {
+        "visible": False,
+        "u_norm": None,
+        "v_norm": None,
+        "world_point": None,
+    }
+
+    assert task._maybe_reset_head_to_home_for_subtask(2, prev_subtask_idx=1) is True
+    assert task.reset_calls == [("lower", -1)]
+
+    task.discovered_objects["B"]["discovered"] = True
+    task.visible_objects["B"] = True
+    task._set_rotate_search_cursor(state_idx=task._get_rotate_first_upper_search_state_index(), layer_name="upper")
+
+    assert task._should_skip_rotate_head_home_reset(2, prev_subtask_idx=1) is False
+    task._prepare_subtask_rotate_search(2)
+    assert task.search_cursor_state_index == task._get_rotate_first_upper_search_state_index()
+    assert task.search_cursor_layer == "upper"
+    assert task._maybe_reset_head_to_home_for_subtask(2, prev_subtask_idx=1) is True
+    assert task.reset_calls == [("lower", -1), ("upper", -1)]
+
+
+def test_put_single_block_target_fan_double_defaults_enable_fixed_head_and_025_escape():
+    assert (
+        _extract_class_constant(
+            PUT_BLOCK_TARGET_FAN_DOUBLE_BASE_PATH,
+            "PutSingleBlockTargetFanDoubleBase",
+            "FIXED_LAYER_HEAD_JOINT2_ONLY",
+        )
+        is True
+    )
+    assert _extract_class_constant(
+        PUT_BLOCK_TARGET_FAN_DOUBLE_BASE_PATH,
+        "PutSingleBlockTargetFanDoubleBase",
+        "UPPER_PLACE_LATERAL_ESCAPE_DIS",
+    ) == 0.25
+
+
+def test_fan_double_utils_skip_reset_moves_head_to_lower_fixed_layer():
+    namespace = _extract_module_functions(
+        FAN_DOUBLE_UTILS_PATH,
+        ["maybe_reset_head_for_subtask"],
+    )
+    maybe_reset_head_for_subtask = namespace["maybe_reset_head_for_subtask"]
+
+    class DummyTask:
+        def __init__(self):
+            self.fixed_layer_head_joint2_only = True
+            self.HEAD_RESET_SAVE_FREQ = -1
+            self.reset_calls = []
+
+        def _should_skip_rotate_head_home_reset(self, subtask_idx, prev_subtask_idx=None):
+            assert subtask_idx == 3
+            assert prev_subtask_idx == 2
+            return True
+
+        def _move_head_to_rotate_search_layer(self, layer_name, save_freq=-1):
+            self.reset_calls.append((str(layer_name), save_freq))
+            return True
+
+        def _reset_head_to_home_pose(self, save_freq=-1):
+            self.reset_calls.append(("home", save_freq))
+            return True
+
+    task = DummyTask()
+    assert maybe_reset_head_for_subtask(task, 3, prev_subtask_idx=2) is True
+    assert task.reset_calls == [("lower", -1)]
+
+
+def test_blocks_ranking_rgb_fan_double_place_updates_object_layer_to_target_layer():
+    fake_fd = types.SimpleNamespace(
+        place_object=lambda *args, **kwargs: True,
+        normalize_layer=lambda layer_name: str(layer_name).lower(),
+    )
+    ExtractedTask = _extract_class_methods(
+        BLOCKS_RANKING_RGB_FAN_DOUBLE_PATH,
+        "blocks_ranking_rgb_fan_double",
+        ["_place"],
+        extra_namespace={"fd": fake_fd},
+    )
+
+    class DummyTask(ExtractedTask):
+        TARGET_LAYER = "lower"
+        LOWER_PLACE_FUNCTIONAL_POINT_ID = 0
+        LOWER_PLACE_PRE_DIS = 0.18
+        LOWER_PLACE_DIS = 0.03
+        LOWER_PLACE_CONSTRAIN = "free"
+        LOWER_PLACE_PRE_DIS_AXIS = "fp"
+        LOWER_PLACE_IS_OPEN = True
+
+        def __init__(self):
+            self.blocks = {"B": object()}
+            self.block_layers = {"B": "upper"}
+            self.object_layers = {"A": "lower", "B": "upper", "C": "lower"}
+            self.target_poses = {"B": [0.5, 0.0, 0.74, 0.0, 1.0, 0.0, 0.0]}
+
+    task = DummyTask()
+    assert task._place(2, "B", "left", "A") is True
+    assert task.block_layers["B"] == "lower"
+    assert task.object_layers["B"] == "lower"
+
+
+def test_blocks_ranking_size_fan_double_place_updates_object_layer_to_target_layer():
+    fake_fd = types.SimpleNamespace(
+        place_object=lambda *args, **kwargs: True,
+        normalize_layer=lambda layer_name: str(layer_name).lower(),
+    )
+    ExtractedTask = _extract_class_methods(
+        BLOCKS_RANKING_SIZE_FAN_DOUBLE_PATH,
+        "blocks_ranking_size_fan_double",
+        ["_place"],
+        extra_namespace={"fd": fake_fd},
+    )
+
+    class DummyTask(ExtractedTask):
+        TARGET_LAYER = "lower"
+        LOWER_PLACE_FUNCTIONAL_POINT_ID = 0
+        LOWER_PLACE_PRE_DIS = 0.18
+        LOWER_PLACE_DIS = 0.03
+        LOWER_PLACE_CONSTRAIN = "free"
+        LOWER_PLACE_PRE_DIS_AXIS = "fp"
+        LOWER_PLACE_IS_OPEN = True
+
+        def __init__(self):
+            self.blocks = {"C": object()}
+            self.block_layers = {"C": "upper"}
+            self.object_layers = {"A": "lower", "B": "lower", "C": "upper"}
+            self.target_poses = {"C": [0.4, 0.1, 0.74, 0.0, 1.0, 0.0, 0.0]}
+
+    task = DummyTask()
+    assert task._place(4, "C", "left", "B") is True
+    assert task.block_layers["C"] == "lower"
+    assert task.object_layers["C"] == "lower"
 
 
 def test_put_block_on_multi_block_success_requires_all_blocks_in_plate():

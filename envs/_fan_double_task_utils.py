@@ -644,6 +644,81 @@ def reset_head(task):
     return task._reset_head_to_home_pose(save_freq=getattr(task, "HEAD_RESET_SAVE_FREQ", -1))
 
 
+def clear_rotate_target_search_history(task, object_key):
+    key = str(object_key)
+    discovered_objects = getattr(task, "discovered_objects", None)
+    if isinstance(discovered_objects, dict):
+        state = discovered_objects.get(key, None)
+        if state is not None:
+            state.update(
+                {
+                    "discovered": False,
+                    "visible_now": False,
+                    "first_seen_frame": None,
+                    "last_seen_frame": None,
+                    "last_seen_subtask": 0,
+                    "last_seen_stage": 0,
+                    "last_uv_norm": None,
+                    "last_world_point": None,
+                }
+            )
+    visible_objects = getattr(task, "visible_objects", None)
+    if isinstance(visible_objects, dict) and key in visible_objects:
+        visible_objects[key] = False
+
+
+def get_subtask_search_target_keys(task, subtask_idx):
+    subtask_def = task._get_rotate_subtask_def(subtask_idx) or {}
+    return [str(key) for key in subtask_def.get("search_target_keys", [])]
+
+
+def get_subtask_upper_search_target_keys(task, subtask_idx):
+    object_layers = getattr(task, "object_layers", {}) or {}
+    upper_keys = []
+    for key in get_subtask_search_target_keys(task, subtask_idx):
+        layer_name = object_layers.get(key, None)
+        if layer_name is None:
+            continue
+        if normalize_layer(layer_name) == "upper":
+            upper_keys.append(str(key))
+    return upper_keys
+
+
+def should_search_lower_before_upper_for_subtask(task, subtask_idx):
+    first_upper_idx = task._get_rotate_first_upper_search_state_index()
+    if first_upper_idx is None:
+        return False
+    return bool(len(get_subtask_upper_search_target_keys(task, subtask_idx)) > 0)
+
+
+def has_unfinished_lower_search_phase(task):
+    first_upper_idx = task._get_rotate_first_upper_search_state_index()
+    if first_upper_idx is None:
+        return False
+
+    state_idx = getattr(task, "search_cursor_state_index", None)
+    if state_idx is None:
+        return True
+    try:
+        state_idx = int(state_idx)
+    except (TypeError, ValueError):
+        return True
+    return bool(state_idx < int(first_upper_idx))
+
+
+def prepare_subtask_rotate_search(task, subtask_idx):
+    upper_target_keys = get_subtask_upper_search_target_keys(task, subtask_idx)
+    for key in upper_target_keys:
+        clear_rotate_target_search_history(task, key)
+    if len(upper_target_keys) == 0:
+        return
+    if has_unfinished_lower_search_phase(task):
+        return
+    first_upper_idx = task._get_rotate_first_upper_search_state_index()
+    if first_upper_idx is not None:
+        task._set_rotate_search_cursor(state_idx=first_upper_idx, layer_name="upper")
+
+
 def get_subtask_search_layers(task, subtask_idx):
     subtask_def = task._get_rotate_subtask_def(subtask_idx) or {}
     search_target_keys = [str(key) for key in subtask_def.get("search_target_keys", [])]
@@ -682,7 +757,21 @@ def subtask_requires_head_home_reset(task, subtask_idx, prev_subtask_idx=None):
 
 
 def maybe_reset_head_for_subtask(task, subtask_idx, prev_subtask_idx=None):
+    if bool(task._should_skip_rotate_head_home_reset(subtask_idx, prev_subtask_idx=prev_subtask_idx)):
+        if bool(getattr(task, "fixed_layer_head_joint2_only", False)):
+            return task._move_head_to_rotate_search_layer(
+                "lower",
+                save_freq=getattr(task, "HEAD_RESET_SAVE_FREQ", -1),
+            )
+        return True
     if subtask_requires_head_home_reset(task, subtask_idx, prev_subtask_idx=prev_subtask_idx):
+        if bool(getattr(task, "fixed_layer_head_joint2_only", False)):
+            current_layers = get_subtask_search_layers(task, subtask_idx)
+            if current_layers is not None and len(current_layers) == 1:
+                return task._move_head_to_rotate_search_layer(
+                    next(iter(current_layers)),
+                    save_freq=getattr(task, "HEAD_RESET_SAVE_FREQ", -1),
+                )
         return reset_head(task)
     return True
 
