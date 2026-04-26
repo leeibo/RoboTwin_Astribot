@@ -102,7 +102,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
 
         box_pose = rand_pose_cyl(
             rlim=[0.4, 0.4],
-            thetalim=rotate_theta_center(self),
+            thetalim=[0,0],
 
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
@@ -184,7 +184,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         self.enter_rotate_action_stage(1, focus_object_key=(object1_key or "A"))
         self.move(self.grasp_actor(self.object1, arm_tag=arm_tag_left, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
-        self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.11))
+        self.move(self.move_by_displacement(arm_tag=arm_tag_left, z=0.09))
         self.complete_rotate_subtask(1, carried_after=["A"])
 
         box_key = self.search_and_focus_rotate_subtask(
@@ -216,7 +216,7 @@ class place_cans_plasticbox_rotate_view(place_cans_plasticbox):
         self.enter_rotate_action_stage(3, focus_object_key=(object2_key or "C"))
         self.move(self.grasp_actor(self.object2, arm_tag=arm_tag_right, pre_grasp_dis=0.07,grasp_dis=-0.02, gripper_pos=0.2))
         self._set_carried_object_keys(["C"])
-        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.11))
+        self.move(self.move_by_displacement(arm_tag=arm_tag_right, z=0.09))
         self.complete_rotate_subtask(3, carried_after=["C"])
 
         box_key = self.search_and_focus_rotate_subtask(

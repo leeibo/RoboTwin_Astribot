@@ -4,6 +4,7 @@ data/*
 __pycache__/
 **/checkpoints/
 result/
+.progress/
 envs/curobo
 *.zip
 viewer_show.*
@@ -13,7 +14,7 @@ task_config/
 task_config/*
 !task_config/rotate_task_whitelist.yml
 **/.DS_Store
-
+.pytest_cache/
 # eval result
 eval_result/
 script/calibration/*

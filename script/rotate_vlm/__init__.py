@@ -338,6 +338,8 @@ def _object_search_memory_summary(snapshot: EpisodeSnapshot) -> str:
 
 def _object_search_frame_field(snapshot: EpisodeSnapshot, info_complete: bool) -> str:
     if "stage3_chunk" in snapshot.roles:
+        if info_complete and snapshot.evidence_prompt_index is not None:
+            return _format_frame_field([int(snapshot.evidence_prompt_index)])
         return _format_frame_field([int(len(snapshot.prompt_frame_indices))])
     if info_complete and snapshot.evidence_prompt_index is not None:
         return _format_frame_field([int(snapshot.evidence_prompt_index)])
