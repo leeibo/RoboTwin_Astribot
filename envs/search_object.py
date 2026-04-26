@@ -72,11 +72,11 @@ class search_object(Base_Task):
     UPPER_PLACE_BODY_JOINT_NAME = "astribot_torso_joint_2"
 
     OBJECT_Z_BIAS = OBJECT_HALF_SIZE + 0.002
-    OBJECT_OUTER_EDGE_OFFSET = 0.05 
+    OBJECT_OUTER_EDGE_OFFSET = 0.01 
     # Keep cabinet-opening behavior local to this task instead of inheriting open_cabinet.
     DRAWER_OPEN_SUCCESS_DIS = 0.08
-    DRAWER_PULL_TOTAL_DIS = 0.30
-    DRAWER_PULL_STEPS = 3
+    DRAWER_PULL_TOTAL_DIS = 0.20
+    DRAWER_PULL_STEPS = 2
     CABINET_PRE_GRASP_DIS = 0.05
     CABINET_GRASP_DIS = 0.01
     CABINET_GRIPPER_POS = -0.02

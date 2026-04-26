@@ -5,6 +5,7 @@ import numpy as np
 
 
 class place_object_basket_fan_double(Base_Task):
+    BASKET_THETA_JITTER_DEG = 0.0
     LAYER_SPECS = {
         "lower": {
             "inner_margin": 0.12,
@@ -25,8 +26,19 @@ class place_object_basket_fan_double(Base_Task):
     OBJECT_CANDIDATES = {
         "081_playingcards": [0, 1, 2],
         "057_toycar": [0, 1, 2, 3, 4, 5],
+        "071_can": [0, 1, 2, 3, 5, 6],
     }
-    BASKET_MODEL_IDS = [0, 1]
+    OBJECT_R_RANGE_BY_MODEL = {
+        "071_can": [0.35, 0.50],
+    }
+    OBJECT_ROTATE_RAND_BY_MODEL = {
+        "071_can": False,
+    }
+    OBJECT_PRE_GRASP_DIS_BY_MODEL = {
+        "071_can": 0.12,
+    }
+    BASKET_MODEL_NAME = "076_breadbasket"
+    BASKET_MODEL_IDS = [0]
     OBJECT_R_RANGE = [0.40, 0.50]
     OBJECT_QPOS = [0.707225, 0.706849, -0.0100455, -0.00982061]
     OBJECT_ROTATE_RAND = True
@@ -48,8 +60,8 @@ class place_object_basket_fan_double(Base_Task):
         },
     }
     BASKET_POSE_SPECS = {
-        "lower": {"r": 0.52, "theta_deg": 38.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
-        "upper": {"r": 0.70, "theta_deg": 0.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
+        "lower": {"r": 0.48, "theta_deg": -18.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
+        "upper": {"r": 0.68, "theta_deg": 5.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
     }
     LIFT_BASKET_AFTER_PLACE = False
 
@@ -60,21 +72,23 @@ class place_object_basket_fan_double(Base_Task):
 
     PICK_LIFT_Z = 0.20
     POST_GRASP_EXTRA_LIFT_Z = 0.02
-    PLACE_RETREAT_Z = 0.10
+    PLACE_RETREAT_Z = 0.0
     LOWER_PLACE_WITH_PLACE_ACTOR = True
-    RETURN_TO_HOMESTATE_AFTER_PLACE = True
+    RETURN_TO_HOMESTATE_AFTER_PLACE = False
 
     DIRECT_RELEASE_TCP_BACKOFF = 0.12
     DIRECT_RELEASE_ENTRY_R_MARGIN_FROM_UPPER_INNER = 0.08
     DIRECT_RELEASE_TCP_Z_OFFSET = 0.09
-    DIRECT_RELEASE_ENTRY_TCP_Z_OFFSET = 0.15
-    DIRECT_RELEASE_APPROACH_TCP_Z_OFFSET = 0.14
-    DIRECT_RELEASE_RETREAT_Z = 0.08
+    DIRECT_RELEASE_ENTRY_TCP_Z_OFFSET = 0.12
+    DIRECT_RELEASE_APPROACH_TCP_Z_OFFSET = 0.10
+    DIRECT_RELEASE_RETREAT_Z = 0.0
     DIRECT_RELEASE_R_OFFSETS = (0.0, -0.03, 0.03)
     DIRECT_RELEASE_THETA_OFFSETS_DEG = (0.0, -3.0, 3.0)
     DIRECT_RELEASE_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0)
-    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.18
+    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.0
     UPPER_PLACE_BODY_JOINT_NAME = "astribot_torso_joint_2"
+    LOWER_PLACE_RETREAT_Z = 0.0
+    UPPER_TO_LOWER_RELEASE_RETREAT_Z = 0.0
 
     UPPER_PICK_ENTRY_Z_OFFSET = 0.09
     UPPER_PICK_PRE_GRASP_DIS = 0.11
@@ -88,6 +102,22 @@ class place_object_basket_fan_double(Base_Task):
     def setup_demo(self, **kwargs):
         kwargs = fd.setup_fan_double_defaults(self, kwargs)
         super()._init_task_env_(**kwargs)
+
+    def _get_basket_pose_spec(self):
+        basket_spec = dict(self.BASKET_POSE_SPECS[self.basket_layer])
+        basket_spec["theta_deg"] = float(basket_spec.get("theta_deg", 0.0)) + float(
+            np.random.uniform(-self.BASKET_THETA_JITTER_DEG, self.BASKET_THETA_JITTER_DEG)
+        )
+        return basket_spec
+
+    def _get_object_r_range(self):
+        return list(self.OBJECT_R_RANGE_BY_MODEL.get(self.object_name, self.OBJECT_R_RANGE))
+
+    def _get_object_rotate_rand(self):
+        return bool(self.OBJECT_ROTATE_RAND_BY_MODEL.get(self.object_name, self.OBJECT_ROTATE_RAND))
+
+    def _get_object_pre_grasp_dis(self):
+        return float(self.OBJECT_PRE_GRASP_DIS_BY_MODEL.get(self.object_name, self.OBJECT_PRE_GRASP_DIS))
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -130,7 +160,7 @@ class place_object_basket_fan_double(Base_Task):
         self.basket_layer = fd.normalize_layer(self.BASKET_LAYER)
         self.object_name = str(np.random.choice(list(self.OBJECT_CANDIDATES.keys())))
         self.object_id = int(np.random.choice(self.OBJECT_CANDIDATES[self.object_name]))
-        self.basket_name = "110_basket"
+        self.basket_name = str(self.BASKET_MODEL_NAME)
         self.basket_id = int(np.random.choice(self.BASKET_MODEL_IDS))
         self.arm_tag = ArmTag({0: "left", 1: "right"}[int(np.random.randint(0, 2))])
 
@@ -142,13 +172,13 @@ class place_object_basket_fan_double(Base_Task):
                 + float(self.OBJECT_POSE_SPECS[self.object_layer].get("z_offset", 0.0))
             )
             object_pose = rand_pose_cyl(
-                rlim=self.OBJECT_R_RANGE,
+                rlim=self._get_object_r_range(),
                 thetalim=rotate_theta_side(self, side=1 if self.arm_tag == "left" else -1),
                 zlim=[object_z, object_z],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
                 qpos=self.OBJECT_QPOS,
-                rotate_rand=self.OBJECT_ROTATE_RAND,
+                rotate_rand=self._get_object_rotate_rand(),
                 rotate_lim=self.OBJECT_ROTATE_LIM,
             )
         else:
@@ -171,7 +201,7 @@ class place_object_basket_fan_double(Base_Task):
         basket_pose = fd.pose_from_cyl(
             self,
             self.basket_layer,
-            self.BASKET_POSE_SPECS[self.basket_layer],
+            self._get_basket_pose_spec(),
             default_qpos=[0.5, 0.5, 0.5, 0.5],
             ret="pose",
         )
@@ -221,17 +251,47 @@ class place_object_basket_fan_double(Base_Task):
         object_z = float(self.object.get_pose().p[2])
         return bool(object_z - float(self.object_start_height) > float(self.PICK_SUCCESS_Z_DELTA))
 
-    def _should_enforce_rotate_stage1_search_order(self, subtask_idx, subtask_def=None):
-        if int(subtask_idx) != 2:
-            return False
+    def _clear_rotate_target_search_history(self, object_key):
+        key = str(object_key)
+        state = self.discovered_objects.get(key, None)
+        if state is not None:
+            state.update(
+                {
+                    "discovered": False,
+                    "visible_now": False,
+                    "first_seen_frame": None,
+                    "last_seen_frame": None,
+                    "last_seen_subtask": 0,
+                    "last_seen_stage": 0,
+                    "last_uv_norm": None,
+                    "last_world_point": None,
+                }
+            )
+        if key in self.visible_objects:
+            self.visible_objects[key] = False
+
+    def _prepare_basket_rotate_search(self):
+        self._clear_rotate_target_search_history("B")
         if self.object_layer != "lower" or self.basket_layer != "upper":
-            return False
-        return bool(self._has_pending_lower_rotate_search_states())
+            return
+        if self._has_pending_lower_rotate_search_states():
+            return
+        first_upper_idx = self._get_rotate_first_upper_search_state_index()
+        if first_upper_idx is not None:
+            self._set_rotate_search_cursor(state_idx=first_upper_idx, layer_name="upper")
+
+    def _should_enforce_rotate_stage1_search_order(self, subtask_idx, subtask_def=None):
+        return bool(int(subtask_idx) == 2 and self.object_layer == "lower" and self.basket_layer == "upper")
 
     def _should_skip_rotate_head_home_reset(self, subtask_idx, prev_subtask_idx=None):
         if prev_subtask_idx is None or int(prev_subtask_idx) != 1:
             return False
-        return bool(self._should_enforce_rotate_stage1_search_order(subtask_idx))
+        return bool(
+            int(subtask_idx) == 2
+            and self.object_layer == "lower"
+            and self.basket_layer == "upper"
+            and self._has_pending_lower_rotate_search_states()
+        )
 
     def play_once(self):
         prev_subtask_idx = None
@@ -248,7 +308,7 @@ class place_object_basket_fan_double(Base_Task):
                 self.object,
                 self.object_layer,
                 arm_tag=self.arm_tag,
-                lower_grasp_kwargs={"pre_grasp_dis": self.OBJECT_PRE_GRASP_DIS},
+                lower_grasp_kwargs={"pre_grasp_dis": self._get_object_pre_grasp_dis()},
             )
             if self.plan_success and not self._object_lifted_after_pick():
                 self.plan_success = False
@@ -257,6 +317,7 @@ class place_object_basket_fan_double(Base_Task):
 
         if self.plan_success:
             fd.maybe_reset_head_for_subtask(self, 2, prev_subtask_idx=prev_subtask_idx)
+            self._prepare_basket_rotate_search()
             basket_key = fd.search_focus(self, 2)
             if basket_key is None:
                 self.plan_success = False
@@ -290,7 +351,4 @@ class place_object_basket_fan_double(Base_Task):
     def check_success(self):
         obj_p = np.array(self.object.get_pose().p, dtype=np.float64).reshape(3)
         basket_p = np.array(self.basket.get_pose().p, dtype=np.float64).reshape(3)
-        near_basket = np.linalg.norm(obj_p - basket_p) < self.SUCCESS_DIST
-        lifted_from_start = obj_p[2] - self.object_start_height > self.SUCCESS_Z_MIN_DELTA
-        gripper_open = self.is_left_gripper_open() and self.is_right_gripper_open()
-        return bool(near_basket and lifted_from_start and gripper_open)
+        return bool(np.linalg.norm(obj_p - basket_p) < self.SUCCESS_DIST)

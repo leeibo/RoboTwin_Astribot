@@ -15,7 +15,7 @@ class put_block_on(Base_Task):
     # BLOCK_COUNT 手动控制生成 1/2/3 个 block。
     # BLOCK_LAYER_SEQUENCE 显式决定每个 block 的层，长度必须等于 BLOCK_COUNT。
     BLOCK_COUNT = 2
-    BLOCK_LAYER_SEQUENCE = ("upper","upper")
+    BLOCK_LAYER_SEQUENCE = ("upper","lower")
     BLOCK_SIZE_RANGE = (0.015, 0.025)
     BLOCK_COLOR = (0.10, 0.80, 0.20)
     BLOCK_COLOR_CANDIDATES = (
@@ -44,11 +44,13 @@ class put_block_on(Base_Task):
 
     # plate anchor 参数：
     # plate 的 z 由对应桌面 top_z + z_offset 计算，避免和 fan_double_layer_gap 不一致。
+
+    # 注意：这里的 theta_deg 只是占位/回退值，不能在这个表里调盘子角度；实际 lower 角度在 _get_plate_theta_deg() 里从 {-60, 20, 20, -60} 采样，upper 角度跟随 fan_double_support_theta_deg。
     PLATE_MODEL_ID = 0
-    PLATE_LAYER = "lower"
+    PLATE_LAYER = "upper"
     PLATE_LAYER_SPECS = {
         "lower": {
-            "r": 0.45,
+            "r": 0.55,
             "theta_deg": -60,
             "z_offset": 0.0,
             "qpos": [0.5, 0.5, 0.5, 0.5],
@@ -56,7 +58,7 @@ class put_block_on(Base_Task):
         },
         "upper": {
             "r": 0.70,
-            "theta_deg": -10,
+            "theta_deg": 0.0,
             "z_offset": 0.0,
             "qpos": [0.5, 0.5, 0.5, 0.5],
             "scale": [0.025, 0.025, 0.025],
@@ -127,14 +129,14 @@ class put_block_on(Base_Task):
 
     # 上层 block 抓取参数：
     # 由于上层较远，采用和 direct release 一致的 TCP->planner pose 语义直接 move。
-    UPPER_PICK_ENTRY_Z_OFFSET = 0.10
-    UPPER_PICK_PRE_GRASP_DIS = 0.10
-    UPPER_PICK_GRASP_Z_BIAS = 0.02
+    UPPER_PICK_ENTRY_Z_OFFSET = 0.06
+    UPPER_PICK_PRE_GRASP_DIS = 0.06
+    PLATE_PLACE_SLOT_OFFSETS = 0.025
     UPPER_PICK_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0, 30.0, -30.0)
     UPPER_PICK_GRIPPER_POS = -0.02
 
     # 上层放置后先沿当前机器人本体左右方向侧向撤离，再回 homestate。
-    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.18
+    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.2
     UPPER_PLACE_BODY_JOINT_NAME = "astribot_torso_joint_2"
 
     # 放置后是否直接用 move_joint 回到 homestate。
@@ -187,6 +189,31 @@ class put_block_on(Base_Task):
 
     def _get_plate_layer(self):
         return self._normalize_layer(self.PLATE_LAYER)
+
+    def _get_plate_theta_deg(self, layer_name, plate_spec):
+        layer_name = self._normalize_layer(layer_name)
+        theta_cache = getattr(self, "_plate_theta_deg_cache", None)
+        if not isinstance(theta_cache, dict):
+            theta_cache = {}
+            self._plate_theta_deg_cache = theta_cache
+        if layer_name in theta_cache:
+            return float(theta_cache[layer_name])
+
+        if layer_name == "lower":
+            theta_deg = float(np.random.choice((-55.0, 55.0)))
+        elif layer_name == "upper":
+            support_theta_world_rad = getattr(self, "rotate_fan_double_support_theta_world_rad", None)
+            if support_theta_world_rad is not None:
+                theta_deg = float(
+                    np.rad2deg(self._wrap_to_pi(float(support_theta_world_rad) - float(self.robot_yaw)))
+                )
+            else:
+                theta_deg = float(plate_spec.get("theta_deg", 0.0))
+        else:
+            theta_deg = float(plate_spec.get("theta_deg", 0.0))
+
+        theta_cache[layer_name] = float(theta_deg)
+        return float(theta_deg)
 
     def _sample_block_colors(self, block_count):
         palette = [tuple(float(channel) for channel in color) for color in self.BLOCK_COLOR_CANDIDATES]
@@ -561,7 +588,7 @@ class put_block_on(Base_Task):
         return {
             "layer": layer_name,
             "r": float(plate_spec.get("r", 0.70 if layer_name == "upper" else 0.55)),
-            "theta_deg": float(plate_spec.get("theta_deg", 0.0)),
+            "theta_deg": self._get_plate_theta_deg(layer_name, plate_spec),
             "z": float(layer_spec["top_z"]) + float(plate_spec.get("z_offset", 0.0)),
             "qpos": list(plate_spec.get("qpos", [0.5, 0.5, 0.5, 0.5])),
             "scale": list(plate_spec.get("scale", [0.025, 0.025, 0.025])),
@@ -677,6 +704,7 @@ class put_block_on(Base_Task):
 
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
+        self._plate_theta_deg_cache = {}
         self._apply_task_initial_homestate()
 
         self.block_count = self._get_block_count()

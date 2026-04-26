@@ -1,19 +1,19 @@
 {
-  "full_description": "Find the target object and place it into the basket on the double-layer fan table.",
-  "schema": "{A} denotes the target object, {B} denotes the basket, {a} denotes the arm that moves the object",
+  "full_description": "Find the target object and place it into the bread basket on the double-layer fan table.",
+  "schema": "{A} denotes the target object, {B} denotes the bread basket, {a} denotes the arm that moves the object",
   "preference": "num of words should not exceed 20",
   "seen": [
     "Find {A} and place it into {B}.",
     "Use {a} to move {A} into {B}.",
     "Pick up {A}, then put it in {B}.",
-    "Place the object into the basket.",
+    "Place the object into the bread basket.",
     "Lift {A} and drop it into {B}.",
     "Search for {B}, then place {A} inside it."
   ],
   "unseen": [
     "Move {A} into {B}.",
     "Put {A} in {B}.",
-    "Drop the object into the basket.",
+    "Drop the object into the bread basket.",
     "Use {a} to place {A} into {B}."
   ],
   "subtask_instruction_template_map": {
