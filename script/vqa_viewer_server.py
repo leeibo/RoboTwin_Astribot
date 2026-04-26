@@ -49,6 +49,16 @@ TASK_TYPE_SPECS: dict[str, dict[str, str]] = {
         "file_name": "object_search_visibility_memory_v2.json",
         "label": "Object Search Visibility Memory V2",
     },
+    "object_search_visibility_memory_v3": {
+        "dir_name": "vlm_object_search_visibility_memory_v3",
+        "file_name": "object_search_visibility_memory_v3.json",
+        "label": "Object Search Visibility Memory V3",
+    },
+    "object_search_visibility_memory_v4": {
+        "dir_name": "vlm_object_search_visibility_memory_v4",
+        "file_name": "object_search_visibility_memory_v4.json",
+        "label": "Object Search Visibility Memory V4",
+    },
 }
 TASK_TYPES = tuple(TASK_TYPE_SPECS.keys())
 TEXT_TAGS = ("think", "info", "frame", "camera", "action", "answer")
