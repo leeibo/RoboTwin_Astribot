@@ -78,8 +78,10 @@ class put_block_on(Base_Task):
     SCAN_Z_BIAS = 0.90
     SCAN_JOINT_NAME = "astribot_torso_joint_2"
     PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = 0.8
-    PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None
+    PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = 1.22
     REQUIRE_PLATE_VISIBLE_BEFORE_PLACE = True
+    # 锁住视角只在上下两个离散位置变化
+    FIXED_LAYER_HEAD_JOINT2_ONLY = True
     # 重新低头搜索时保存 head 运动过程，避免视频里相机视角瞬移。
     HEAD_RESET_SAVE_FREQ = -1
 
@@ -131,12 +133,12 @@ class put_block_on(Base_Task):
     # 由于上层较远，采用和 direct release 一致的 TCP->planner pose 语义直接 move。
     UPPER_PICK_ENTRY_Z_OFFSET = 0.06
     UPPER_PICK_PRE_GRASP_DIS = 0.06
-    PLATE_PLACE_SLOT_OFFSETS = 0.025
+    UPPER_PICK_GRASP_Z_BIAS = 0.025
     UPPER_PICK_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0, 30.0, -30.0)
     UPPER_PICK_GRIPPER_POS = -0.02
 
     # 上层放置后先沿当前机器人本体左右方向侧向撤离，再回 homestate。
-    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.2
+    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.25
     UPPER_PLACE_BODY_JOINT_NAME = "astribot_torso_joint_2"
 
     # 放置后是否直接用 move_joint 回到 homestate。
@@ -162,6 +164,22 @@ class put_block_on(Base_Task):
         kwargs.setdefault("fan_double_support_theta_deg", -40.0)
         kwargs.setdefault("fan_angle_deg", 150)
         kwargs.setdefault("fan_center_deg", 90)
+        self.fixed_layer_head_joint2_only = bool(
+            kwargs.get(
+                "fixed_layer_head_joint2_only",
+                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
+            )
+        )
+        if "place_plate_upper_head_joint2_target" in kwargs:
+            self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_plate_upper_head_joint2_target"])
+        if "place_plate_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_plate_lower_head_joint2_target"]
+            self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        if "place_target_upper_head_joint2_target" in kwargs:
+            self.PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_target_upper_head_joint2_target"])
+        if "place_target_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_target_lower_head_joint2_target"]
+            self.PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
         kwargs = init_rotate_theta_bounds(self, kwargs)
         super()._init_task_env_(**kwargs)
 
@@ -342,8 +360,39 @@ class put_block_on(Base_Task):
 
         return next(iter(current_layers)) != next(iter(prev_layers))
 
+    def _get_layer_fixed_head_joint2_target(self, layer_name):
+        layer_name = self._normalize_layer(layer_name)
+        if layer_name == "upper":
+            return float(
+                getattr(
+                    self,
+                    "PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET",
+                    getattr(
+                        self,
+                        "PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET",
+                        getattr(self, "rotate_stage1_upper_head_joint2_rad", 0.8),
+                    ),
+                )
+            )
+
+        lower_target = getattr(
+            self,
+            "PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET",
+            getattr(self, "PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET", None),
+        )
+        if lower_target is None:
+            lower_target = getattr(self, "rotate_stage1_lower_head_joint2_rad", 1.22)
+        return float(lower_target)
+
     def _maybe_reset_head_to_home_for_subtask(self, subtask_idx, prev_subtask_idx=None):
         if self._subtask_requires_head_home_reset(subtask_idx, prev_subtask_idx=prev_subtask_idx):
+            if bool(getattr(self, "fixed_layer_head_joint2_only", False)):
+                current_layers = self._get_subtask_search_layers(subtask_idx)
+                if current_layers is not None and len(current_layers) == 1:
+                    return self._move_head_to_rotate_search_layer(
+                        next(iter(current_layers)),
+                        save_freq=self.HEAD_RESET_SAVE_FREQ,
+                    )
             return self._reset_head_to_home_pose(save_freq=self.HEAD_RESET_SAVE_FREQ)
         return True
 
@@ -1266,15 +1315,8 @@ class put_block_on(Base_Task):
         plate_layer = getattr(self, "object_layers", {}).get(str(plate_key), None)
         if plate_layer is None:
             plate_layer = self._get_plate_layer()
-        if plate_layer == "upper":
-            target_joint2 = float(self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET)
-        else:
-            lower_target = self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET
-            if lower_target is None:
-                head_home = np.array(getattr(self.robot, "head_homestate", []), dtype=np.float64).reshape(-1)
-                lower_target = head_home[head_joint2_idx] if head_home.shape[0] > head_joint2_idx else head_now[head_joint2_idx]
-            target_joint2 = float(lower_target)
-        if solve_res is not None:
+        target_joint2 = self._get_layer_fixed_head_joint2_target(plate_layer)
+        if (not bool(getattr(self, "fixed_layer_head_joint2_only", False))) and solve_res is not None:
             solved_head_target = np.array(solve_res.get("target", []), dtype=np.float64).reshape(-1)
             if solved_head_target.shape[0] > head_joint2_idx:
                 if plate_layer == "upper":

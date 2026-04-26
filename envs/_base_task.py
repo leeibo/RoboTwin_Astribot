@@ -2497,6 +2497,13 @@ class Base_Task(gym.Env):
             target[i] = self.robot._clip_joint_target_to_limits(self.robot.head_joints[i], target[i])
         return target
 
+    @staticmethod
+    def _joint_delta_is_noop(delta_rad, tol=1e-6):
+        delta_rad = np.array(delta_rad, dtype=np.float64).reshape(-1)
+        if delta_rad.shape[0] == 0:
+            return True
+        return bool(np.max(np.abs(delta_rad)) <= max(float(tol), 0.0))
+
     def _build_head_joint_plan(self, delta_rad, min_steps=None):
         delta_rad = np.array(delta_rad, dtype=np.float64).reshape(-1)
         if delta_rad.shape[0] == 0:
@@ -2634,6 +2641,8 @@ class Base_Task(gym.Env):
             print("[Base_Task.move_head_to] invalid head target, skip move_head_to action")
             return False
         delta = target - head_now
+        if self._joint_delta_is_noop(delta):
+            return True
         head_plan = self._build_head_joint_plan(delta, min_steps=settle_steps)
         return self._execute_head_plan(head_plan, save_freq=save_freq)
 
@@ -2800,6 +2809,8 @@ class Base_Task(gym.Env):
             print("[Base_Task.move_torso_to] invalid torso target, skip move_torso_to action")
             return False
         delta = target - torso_now
+        if self._joint_delta_is_noop(delta):
+            return True
         torso_plan = self._build_torso_joint_plan(delta, min_steps=settle_steps)
         return self._execute_torso_plan(torso_plan, save_freq=save_freq)
 

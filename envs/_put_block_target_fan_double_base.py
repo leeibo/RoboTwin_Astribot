@@ -78,6 +78,7 @@ class PutBlockTargetFanDoubleBase(Base_Task):
     PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = 0.8
     PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None
     REQUIRE_PLATE_VISIBLE_BEFORE_PLACE = True
+    FIXED_LAYER_HEAD_JOINT2_ONLY = False
     # 重新低头搜索时保存 head 运动过程，避免视频里相机视角瞬移。
     HEAD_RESET_SAVE_FREQ = -1
 
@@ -160,6 +161,22 @@ class PutBlockTargetFanDoubleBase(Base_Task):
         kwargs.setdefault("fan_double_support_theta_deg", -40.0)
         kwargs.setdefault("fan_angle_deg", 150)
         kwargs.setdefault("fan_center_deg", 90)
+        self.fixed_layer_head_joint2_only = bool(
+            kwargs.get(
+                "fixed_layer_head_joint2_only",
+                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
+            )
+        )
+        if "place_plate_upper_head_joint2_target" in kwargs:
+            self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_plate_upper_head_joint2_target"])
+        if "place_plate_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_plate_lower_head_joint2_target"]
+            self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        if "place_target_upper_head_joint2_target" in kwargs:
+            self.PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_target_upper_head_joint2_target"])
+        if "place_target_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_target_lower_head_joint2_target"]
+            self.PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
         kwargs = init_rotate_theta_bounds(self, kwargs)
         super()._init_task_env_(**kwargs)
 
@@ -349,8 +366,39 @@ class PutBlockTargetFanDoubleBase(Base_Task):
 
         return next(iter(current_layers)) != next(iter(prev_layers))
 
+    def _get_layer_fixed_head_joint2_target(self, layer_name):
+        layer_name = self._normalize_layer(layer_name)
+        if layer_name == "upper":
+            return float(
+                getattr(
+                    self,
+                    "PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET",
+                    getattr(
+                        self,
+                        "PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET",
+                        getattr(self, "rotate_stage1_upper_head_joint2_rad", 0.8),
+                    ),
+                )
+            )
+
+        lower_target = getattr(
+            self,
+            "PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET",
+            getattr(self, "PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET", None),
+        )
+        if lower_target is None:
+            lower_target = getattr(self, "rotate_stage1_lower_head_joint2_rad", 1.22)
+        return float(lower_target)
+
     def _maybe_reset_head_to_home_for_subtask(self, subtask_idx, prev_subtask_idx=None):
         if self._subtask_requires_head_home_reset(subtask_idx, prev_subtask_idx=prev_subtask_idx):
+            if bool(getattr(self, "fixed_layer_head_joint2_only", False)):
+                current_layers = self._get_subtask_search_layers(subtask_idx)
+                if current_layers is not None and len(current_layers) == 1:
+                    return self._move_head_to_rotate_search_layer(
+                        next(iter(current_layers)),
+                        save_freq=self.HEAD_RESET_SAVE_FREQ,
+                    )
             return self._reset_head_to_home_pose(save_freq=self.HEAD_RESET_SAVE_FREQ)
         return True
 
@@ -1289,25 +1337,8 @@ class PutBlockTargetFanDoubleBase(Base_Task):
         target_layer = getattr(self, "object_layers", {}).get(str(target_key), None)
         if target_layer is None:
             target_layer = self._get_target_layer()
-        upper_head_joint2 = getattr(
-            self,
-            "PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET",
-            getattr(self, "PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET", 0.8),
-        )
-        lower_head_joint2 = getattr(
-            self,
-            "PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET",
-            getattr(self, "PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET", None),
-        )
-        if target_layer == "upper":
-            target_joint2 = float(upper_head_joint2)
-        else:
-            lower_target = lower_head_joint2
-            if lower_target is None:
-                head_home = np.array(getattr(self.robot, "head_homestate", []), dtype=np.float64).reshape(-1)
-                lower_target = head_home[head_joint2_idx] if head_home.shape[0] > head_joint2_idx else head_now[head_joint2_idx]
-            target_joint2 = float(lower_target)
-        if solve_res is not None:
+        target_joint2 = self._get_layer_fixed_head_joint2_target(target_layer)
+        if (not bool(getattr(self, "fixed_layer_head_joint2_only", False))) and solve_res is not None:
             solved_head_target = np.array(solve_res.get("target", []), dtype=np.float64).reshape(-1)
             if solved_head_target.shape[0] > head_joint2_idx:
                 if target_layer == "upper":
