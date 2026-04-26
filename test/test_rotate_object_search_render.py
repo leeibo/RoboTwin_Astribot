@@ -147,7 +147,10 @@ def test_stage3_object_search_uses_real_action_chunk(tmp_path: Path):
     assert sample["action"] == expected_chunk
     assert sample["metadata"]["prompt_image_count"] == 1
     assert sample["metadata"]["camera_delta_deg"] == 0
-    assert think.startswith('Frames: current only. Past actions: none. The current task is "Find the target object.". The target object is the target object.')
+    assert think.startswith(
+        'Frames: current only. Past actions: none. The current task is "Find the target object.". '
+        'Now executing subtask is "Find the target object.". The target object is the target object.'
+    )
     assert "The robot is now executing the task." in think
     assert think.endswith("Next: Rotate(0, 0).")
     assert _extract_tag(assistant_content, "frame") == "[1]"
@@ -189,6 +192,43 @@ def test_stage3_memory_slot_uses_first_frame_in_chunk():
     assert slots[0].frame_idx == 10
     assert slots[0].current_annotation["frame_idx"] == 10
     assert slots[0].action_chunk_frame_indices == [10, 11, 12]
+
+
+def test_camera_heading_and_pitch_override_waist_heading_for_view_delta():
+    annotations = [
+        {
+            "frame_idx": 0,
+            "subtask": 0,
+            "stage": 1,
+            "waist_heading_deg": 90.0,
+            "camera_heading_deg": 10.0,
+            "camera_pitch_deg": -20.0,
+            "camera_target_theta": None,
+            "search_target_keys": ["target"],
+        },
+        {
+            "frame_idx": 1,
+            "subtask": 0,
+            "stage": 1,
+            "waist_heading_deg": 90.0,
+            "camera_heading_deg": 25.0,
+            "camera_pitch_deg": -5.0,
+            "camera_target_theta": None,
+            "search_target_keys": ["target"],
+        },
+    ]
+
+    slots = _build_memory_slots(annotations=annotations, action_chunk_size=16)
+    pairs = _collect_angle_delta_pairs(slots)
+
+    assert [(slot.current_heading_deg, slot.current_pitch_deg) for slot in slots] == [(10.0, -20.0), (25.0, -5.0)]
+    assert len(pairs) == 1
+    assert pairs[0][2] == (15, 15)
+    assert _render_angle_delta_response(pairs[0][2]) == (
+        "<think>Frames: 2 total (1 history + current). "
+        "From frame 1 to frame 2, the horizontal/vertical rotation difference is (-15, 15)."
+        "</think><camera>Rotate(-15, 15)</camera>"
+    )
 
 
 def test_stage3_snapshots_keep_previous_action_chunks_in_prompt(monkeypatch):
@@ -238,7 +278,7 @@ def test_stage3_snapshots_keep_previous_action_chunks_in_prompt(monkeypatch):
     assert stage3_snapshots[1].prompt_frame_indices == [0, 1, 11]
 
 
-def test_angle_delta_uses_rotation_difference_not_cumulative_planning():
+def test_angle_delta_uses_rotation_difference_not_cumulative_planning(tmp_path: Path):
     previous_slot = _make_slot(slot_idx=0, frame_idx=0, stage=1, roles=["stage1_start"], planned_delta_deg=30.0, current_heading_deg=10.0)
     current_slot = _make_slot(slot_idx=1, frame_idx=5, stage=2, roles=["stage2_end"], planned_delta_deg=5.0, current_heading_deg=40.0)
 
@@ -251,7 +291,7 @@ def test_angle_delta_uses_rotation_difference_not_cumulative_planning():
         "<camera>Rotate(-30, 0)</camera>"
     )
 
-    sample = _build_angle_delta_sample(Path("."), 0, _metadata(), EpisodeContext(
+    sample = _build_angle_delta_sample(tmp_path, 0, _metadata(), EpisodeContext(
         metadata=_metadata(),
         hdf5_path="",
         action_chunk_size=3,
