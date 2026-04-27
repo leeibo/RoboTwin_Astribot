@@ -8,6 +8,8 @@ result/
 envs/curobo
 *.zip
 viewer_show.*
+logs/
+imgs/
 eval_video/
 task_config/
 !task_config/
