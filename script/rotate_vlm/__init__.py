@@ -974,7 +974,8 @@ def _export_episode_payload(args: tuple[str, int, str, str, int, int, tuple[str,
     )
 
     annotated_video_path = metadata.get("annotated_video_path", None) or default_annotated_video_path(str(save_path), episode_idx)
-    if not Path(annotated_video_path).exists():
+    skip_annotated_video = os.environ.get("ROBOTWIN_SKIP_ANNOTATED_VIDEO", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not skip_annotated_video and not Path(annotated_video_path).exists():
         export_annotated_video(context.frames, list(metadata.get("frame_annotations", []) or []), annotated_video_path)
     annotated_exists = Path(annotated_video_path).exists()
 

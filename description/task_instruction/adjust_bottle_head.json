@@ -1,0 +1,24 @@
+{
+  "full_description": "Raise the head if needed, then pick up the bottle with the correct arm.",
+  "schema": "{A} notifies the bottle, {a} notifies the arm used to pick it up",
+  "preference": "num of words should not exceed 18",
+  "seen": [
+    "Raise the head if needed, then pick up {A} with {a}.",
+    "Look for {A} by lifting the head, then grab it with {a}.",
+    "Use {a} to find and pick up {A}.",
+    "Lift the head until {A} appears, then pick it up.",
+    "Find {A} with the head camera and grab it with {a}.",
+    "Look up for {A}, then lift it with {a}.",
+    "Use the head camera to find {A}, then pick it up.",
+    "Raise the head and grab {A} with {a}.",
+    "Find {A} first, then pick it up with {a}.",
+    "Use {a} to pick up {A} after spotting it."
+  ],
+  "unseen": [
+    "Search upward for {A} and lift it with {a}.",
+    "Spot {A} with the head camera, then grab it.",
+    "Lift the head until {A} is visible, then use {a}.",
+    "Find and raise {A} with {a}.",
+    "Use {a} after locating {A} with the head."
+  ]
+}

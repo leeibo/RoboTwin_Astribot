@@ -76,6 +76,15 @@ class Robot:
         self._left_live_prev_rot = None
         self.left_base_link = None
         self.head_camera = None
+        self.communication_flag = False
+        self.left_planner = None
+        self.right_planner = None
+        self.left_mplib_planner = None
+        self.right_mplib_planner = None
+        self.left_conn = None
+        self.right_conn = None
+        self.left_proc = None
+        self.right_proc = None
 
         self.left_js = None
         self.right_js = None
@@ -338,7 +347,10 @@ class Robot:
                 self.right_conn.send({"cmd": "reset"})
                 _ = self.right_conn.recv()
         else:
-            if not isinstance(self.left_planner, CuroboPlanner) or not isinstance(self.right_planner, CuroboPlanner):
+            if (
+                not isinstance(getattr(self, "left_planner", None), CuroboPlanner)
+                or not isinstance(getattr(self, "right_planner", None), CuroboPlanner)
+            ):
                 self.set_planner(scene=scene)
 
         self.init_joints()

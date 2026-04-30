@@ -51,7 +51,7 @@ class Sapien_TEST(gym.Env):
             print("\033[32m" + "Render Well" + "\033[0m")
         except:
             print("\033[31m" + "Render Error" + "\033[0m")
-            exit()
+            raise SystemExit(1)
 
     def setup_scene(self, **kwargs):
         """

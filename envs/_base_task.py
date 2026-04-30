@@ -169,6 +169,12 @@ class Base_Task(gym.Env):
 
         self.robot.set_origin_endpose()
         self._init_rotate_subtask_runtime_state()
+        self.rotate_head_joint2_name = str(kwags.get("rotate_head_joint2_name", "astribot_head_joint_2"))
+        self.rotate_stage1_lower_head_joint2_rad = float(kwags.get("rotate_stage1_lower_head_joint2_rad", 1.22))
+        self.rotate_stage1_upper_head_joint2_rad = float(kwags.get("rotate_stage1_upper_head_joint2_rad", 0.8))
+        self.rotate_stage1_head_settle_steps = max(int(kwags.get("rotate_stage1_head_settle_steps", 12)), 1)
+        self.rotate_stage2_head_vertical_tol = max(float(kwags.get("rotate_stage2_head_vertical_tol", 0.08)), 0.0)
+        self.rotate_stage2_head_refine_iters = max(int(kwags.get("rotate_stage2_head_refine_iters", 2)), 1)
         self.load_actors()
 
         if self.cluttered_table:
@@ -1333,6 +1339,31 @@ class Base_Task(gym.Env):
                         os.remove(directory + file)
 
         pkl_dic = self.get_obs()
+        if self.data_type.get("top_view", False):
+            top_view_freq = int(self.data_type.get("top_view_snapshot_freq", self.data_type.get("top_view_image_freq", 0)))
+            if top_view_freq > 0 and self.FRAME_IDX % top_view_freq == 0:
+                top_view_camera_names = list(getattr(self.cameras, "top_view_camera_names", []) or ["top_view_camera"])
+                multi_top_view = len(top_view_camera_names) > 1
+                for top_view_camera_name in top_view_camera_names:
+                    top_view_rgb = (
+                        pkl_dic.get("observation", {})
+                        .get(top_view_camera_name, {})
+                        .get("rgb", None)
+                    )
+                    if top_view_rgb is None:
+                        continue
+                    image_dir_parts = ["top_view_images"]
+                    if multi_top_view or top_view_camera_name != "top_view_camera":
+                        image_dir_parts.append(str(top_view_camera_name))
+                    image_dir_parts.append(f"episode{self.ep_num}")
+                    save_img(
+                        os.path.join(
+                            self.save_dir,
+                            *image_dir_parts,
+                            f"frame_{self.FRAME_IDX:04d}.png",
+                        ),
+                        top_view_rgb,
+                    )
         save_pkl(self.folder_path["cache"] + f"{self.FRAME_IDX}.pkl", pkl_dic)  # use cache
         if self._latest_frame_annotation is not None:
             frame_annotation = dict(self._latest_frame_annotation)
@@ -1447,6 +1478,13 @@ class Base_Task(gym.Env):
             "right_camera": f"{self.save_dir}/video/episode{self.ep_num}_right_camera.mp4",
             "camera_head": f"{self.save_dir}/video/episode{self.ep_num}_camera_head.mp4",
         }
+        if self.data_type.get("top_view", False):
+            top_view_camera_names = list(getattr(self.cameras, "top_view_camera_names", []) or ["top_view_camera"])
+            for top_view_camera_name in top_view_camera_names:
+                video_suffix = "top_view" if top_view_camera_name == "top_view_camera" else str(top_view_camera_name)
+                target_video_path_map[top_view_camera_name] = (
+                    f"{self.save_dir}/video/episode{self.ep_num}_{video_suffix}.mp4"
+                )
         # print('Merging pkl to hdf5: ', cache_path, ' -> ', target_file_path)
 
         os.makedirs(f"{self.save_dir}/data", exist_ok=True)

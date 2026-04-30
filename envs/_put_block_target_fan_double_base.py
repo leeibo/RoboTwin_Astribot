@@ -78,6 +78,7 @@ class PutBlockTargetFanDoubleBase(Base_Task):
     PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = 0.8
     PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None
     REQUIRE_PLATE_VISIBLE_BEFORE_PLACE = True
+    FIXED_LAYER_HEAD_JOINT2_ONLY = False
     # 重新低头搜索时保存 head 运动过程，避免视频里相机视角瞬移。
     HEAD_RESET_SAVE_FREQ = -1
 
@@ -148,7 +149,7 @@ class PutBlockTargetFanDoubleBase(Base_Task):
     SUCCESS_EPS = np.array([0.08, 0.08, 0.08], dtype=np.float64)
 
     def setup_demo(self, **kwargs):
-        kwargs["table_shape"] = "fan_double"
+        kwargs.setdefault("table_shape", "fan_double")
         kwargs.setdefault("fan_center_on_robot", True)
         kwargs.setdefault("fan_double_lower_outer_radius", 0.9)
         kwargs.setdefault("fan_double_lower_inner_radius", 0.3)
@@ -160,6 +161,22 @@ class PutBlockTargetFanDoubleBase(Base_Task):
         kwargs.setdefault("fan_double_support_theta_deg", -40.0)
         kwargs.setdefault("fan_angle_deg", 150)
         kwargs.setdefault("fan_center_deg", 90)
+        self.fixed_layer_head_joint2_only = bool(
+            kwargs.get(
+                "fixed_layer_head_joint2_only",
+                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
+            )
+        )
+        if "place_plate_upper_head_joint2_target" in kwargs:
+            self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_plate_upper_head_joint2_target"])
+        if "place_plate_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_plate_lower_head_joint2_target"]
+            self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        if "place_target_upper_head_joint2_target" in kwargs:
+            self.PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_target_upper_head_joint2_target"])
+        if "place_target_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_target_lower_head_joint2_target"]
+            self.PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
         kwargs = init_rotate_theta_bounds(self, kwargs)
         super()._init_task_env_(**kwargs)
 
@@ -349,8 +366,142 @@ class PutBlockTargetFanDoubleBase(Base_Task):
 
         return next(iter(current_layers)) != next(iter(prev_layers))
 
+    def _get_subtask_search_target_keys(self, subtask_idx):
+        subtask_def = self._get_rotate_subtask_def(subtask_idx) or {}
+        return [str(key) for key in subtask_def.get("search_target_keys", [])]
+
+    def _get_subtask_upper_search_target_keys(self, subtask_idx):
+        object_layers = getattr(self, "object_layers", {}) or {}
+        upper_keys = []
+        for key in self._get_subtask_search_target_keys(subtask_idx):
+            layer_name = object_layers.get(key, None)
+            if layer_name is None:
+                continue
+            if self._normalize_layer(layer_name) == "upper":
+                upper_keys.append(str(key))
+        return upper_keys
+
+    def _should_search_lower_before_upper_for_subtask(self, subtask_idx):
+        first_upper_idx = self._get_rotate_first_upper_search_state_index()
+        if first_upper_idx is None:
+            return False
+        return bool(len(self._get_subtask_upper_search_target_keys(subtask_idx)) > 0)
+
+    def _has_unfinished_lower_search_phase(self):
+        first_upper_idx = self._get_rotate_first_upper_search_state_index()
+        if first_upper_idx is None:
+            return False
+
+        state_idx = getattr(self, "search_cursor_state_index", None)
+        if state_idx is None:
+            return True
+        try:
+            state_idx = int(state_idx)
+        except (TypeError, ValueError):
+            return True
+        return bool(state_idx < int(first_upper_idx))
+
+    def _clear_rotate_target_search_history(self, object_key):
+        key = str(object_key)
+        state = self.discovered_objects.get(key, None)
+        if state is not None:
+            state.update(
+                {
+                    "discovered": False,
+                    "visible_now": False,
+                    "first_seen_frame": None,
+                    "last_seen_frame": None,
+                    "last_seen_subtask": 0,
+                    "last_seen_stage": 0,
+                    "last_uv_norm": None,
+                    "last_world_point": None,
+                }
+            )
+        if key in self.visible_objects:
+            self.visible_objects[key] = False
+
+    def _prepare_subtask_rotate_search(self, subtask_idx):
+        upper_target_keys = self._get_subtask_upper_search_target_keys(subtask_idx)
+        for key in upper_target_keys:
+            self._clear_rotate_target_search_history(key)
+        if len(upper_target_keys) == 0:
+            return
+        if self._has_unfinished_lower_search_phase():
+            return
+        first_upper_idx = self._get_rotate_first_upper_search_state_index()
+        if first_upper_idx is not None:
+            self._set_rotate_search_cursor(state_idx=first_upper_idx, layer_name="upper")
+
+    def _should_enforce_rotate_stage1_search_order(self, subtask_idx, subtask_def=None):
+        return bool(self._should_search_lower_before_upper_for_subtask(subtask_idx))
+
+    def _should_skip_rotate_head_home_reset(self, subtask_idx, prev_subtask_idx=None):
+        return bool(
+            self._should_search_lower_before_upper_for_subtask(subtask_idx)
+            and self._has_unfinished_lower_search_phase()
+        )
+
+    def _after_rotate_visibility_refresh(self, visibility_map):
+        if int(getattr(self, "current_stage", 0)) != 1:
+            return None
+        subtask_idx = int(getattr(self, "current_subtask_idx", 0))
+        if subtask_idx <= 0 or (not self._should_search_lower_before_upper_for_subtask(subtask_idx)):
+            return None
+        current_layer = self._normalize_layer(getattr(self, "search_cursor_layer", "lower") or "lower")
+        if current_layer != "lower":
+            return None
+
+        for key in self._get_subtask_upper_search_target_keys(subtask_idx):
+            self._clear_rotate_target_search_history(key)
+            if isinstance(visibility_map, dict) and key in visibility_map:
+                visibility_map[key] = {
+                    "visible": False,
+                    "u_norm": None,
+                    "v_norm": None,
+                    "world_point": None,
+                }
+        return None
+
+    def _get_layer_fixed_head_joint2_target(self, layer_name):
+        layer_name = self._normalize_layer(layer_name)
+        if layer_name == "upper":
+            return float(
+                getattr(
+                    self,
+                    "PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET",
+                    getattr(
+                        self,
+                        "PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET",
+                        getattr(self, "rotate_stage1_upper_head_joint2_rad", 0.8),
+                    ),
+                )
+            )
+
+        lower_target = getattr(
+            self,
+            "PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET",
+            getattr(self, "PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET", None),
+        )
+        if lower_target is None:
+            lower_target = getattr(self, "rotate_stage1_lower_head_joint2_rad", 1.22)
+        return float(lower_target)
+
     def _maybe_reset_head_to_home_for_subtask(self, subtask_idx, prev_subtask_idx=None):
+        if bool(self._should_skip_rotate_head_home_reset(subtask_idx, prev_subtask_idx=prev_subtask_idx)):
+            if bool(getattr(self, "fixed_layer_head_joint2_only", False)):
+                return self._move_head_to_rotate_search_layer(
+                    "lower",
+                    save_freq=self.HEAD_RESET_SAVE_FREQ,
+                )
+            return True
         if self._subtask_requires_head_home_reset(subtask_idx, prev_subtask_idx=prev_subtask_idx):
+            if bool(getattr(self, "fixed_layer_head_joint2_only", False)):
+                current_layers = self._get_subtask_search_layers(subtask_idx)
+                if current_layers is not None and len(current_layers) == 1:
+                    return self._move_head_to_rotate_search_layer(
+                        next(iter(current_layers)),
+                        save_freq=self.HEAD_RESET_SAVE_FREQ,
+                    )
             return self._reset_head_to_home_pose(save_freq=self.HEAD_RESET_SAVE_FREQ)
         return True
 
@@ -1289,25 +1440,8 @@ class PutBlockTargetFanDoubleBase(Base_Task):
         target_layer = getattr(self, "object_layers", {}).get(str(target_key), None)
         if target_layer is None:
             target_layer = self._get_target_layer()
-        upper_head_joint2 = getattr(
-            self,
-            "PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET",
-            getattr(self, "PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET", 0.8),
-        )
-        lower_head_joint2 = getattr(
-            self,
-            "PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET",
-            getattr(self, "PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET", None),
-        )
-        if target_layer == "upper":
-            target_joint2 = float(upper_head_joint2)
-        else:
-            lower_target = lower_head_joint2
-            if lower_target is None:
-                head_home = np.array(getattr(self.robot, "head_homestate", []), dtype=np.float64).reshape(-1)
-                lower_target = head_home[head_joint2_idx] if head_home.shape[0] > head_joint2_idx else head_now[head_joint2_idx]
-            target_joint2 = float(lower_target)
-        if solve_res is not None:
+        target_joint2 = self._get_layer_fixed_head_joint2_target(target_layer)
+        if (not bool(getattr(self, "fixed_layer_head_joint2_only", False))) and solve_res is not None:
             solved_head_target = np.array(solve_res.get("target", []), dtype=np.float64).reshape(-1)
             if solved_head_target.shape[0] > head_joint2_idx:
                 if target_layer == "upper":
@@ -1544,6 +1678,7 @@ class PutBlockTargetFanDoubleBase(Base_Task):
             place_subtask_idx = pick_subtask_idx + 1
             self._prepare_dynamic_pick_subtask(pick_subtask_idx, remaining_block_keys)
 
+            self._prepare_subtask_rotate_search(pick_subtask_idx)
             self._maybe_reset_head_to_home_for_subtask(pick_subtask_idx, prev_subtask_idx=prev_subtask_idx)
             block_key = self.search_and_focus_rotate_and_head_subtask(
                 pick_subtask_idx,
@@ -1570,6 +1705,7 @@ class PutBlockTargetFanDoubleBase(Base_Task):
             prev_subtask_idx = pick_subtask_idx
 
             self._prepare_dynamic_place_subtask(place_subtask_idx, block_key)
+            self._prepare_subtask_rotate_search(place_subtask_idx)
             self._maybe_reset_head_to_home_for_subtask(place_subtask_idx, prev_subtask_idx=prev_subtask_idx)
             target_key = self._prepare_target_subtask(place_subtask_idx, scan_z)
             if target_key is None:
@@ -1614,8 +1750,10 @@ class PutSingleBlockTargetFanDoubleBase(PutBlockTargetFanDoubleBase):
     BLOCK_SIZE_RANGE = (0.018, 0.022)
     BLOCK_COLOR = (0.10, 0.80, 0.20)
     BLOCK_COLOR_CANDIDATES = ((0.10, 0.80, 0.20),)
+    FIXED_LAYER_HEAD_JOINT2_ONLY = True
     LOWER_PLACE_PRE_DIS = 0.12
     LOWER_PLACE_DIS = 0.02
+    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.25
 
     TARGET_MODEL_NAME = None
     TARGET_MODEL_ID = 0

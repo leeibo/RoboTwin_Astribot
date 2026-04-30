@@ -389,121 +389,6 @@ def create_table(
     return table
 
 
-def create_fan_table(
-        scene,
-        pose: sapien.Pose,
-        outer_radius: float,
-        height: float,
-        inner_radius: float = 0.3,
-        angle_deg: float = 200.0,
-        center_deg: float = 90.0,
-        thickness: float = 0.05,
-        color=(1, 1, 1),
-        name="table",
-        is_static=True,
-        texture_id=None,
-        radial_segments: int = 14,
-        min_theta_segments: int = 24,
-        theta_segments_per_meter: float = 18.0,
-        outer_leg_count: int = 6,
-) -> sapien.Entity:
-    """
-    Create an annular-sector ("fan") table.
-    - The table center is at `pose.p[:2]`.
-    - Sector points around `center_deg` in XY plane.
-    - Top surface is approximated by many thin box patches.
-    """
-    scene, pose = preprocess(scene, pose)
-    builder = scene.create_actor_builder()
-
-    if is_static:
-        builder.set_physx_body_type("static")
-    else:
-        builder.set_physx_body_type("dynamic")
-
-    outer_radius = max(float(outer_radius), 0.15)
-    inner_radius = float(max(0.0, min(inner_radius, outer_radius - 0.05)))
-    thickness = max(float(thickness), 1e-3)
-    angle_rad = float(np.deg2rad(np.clip(angle_deg, 10.0, 340.0)))
-    center_rad = float(np.deg2rad(center_deg))
-    theta_start = center_rad - angle_rad / 2.0
-    theta_end = center_rad + angle_rad / 2.0
-
-    # Add texture
-    if texture_id is not None:
-        texturepath = f"./assets/background_texture/{texture_id}.png"
-        texture2d = sapien.render.RenderTexture2D(texturepath)
-        table_mat = sapien.render.RenderMaterial()
-        table_mat.set_base_color_texture(texture2d)
-        table_mat.base_color = [1, 1, 1, 1]
-        table_mat.metallic = 0.1
-        table_mat.roughness = 0.3
-    else:
-        table_mat = color
-
-    r_edges = np.linspace(inner_radius, outer_radius, max(1, int(radial_segments)) + 1)
-    for ridx in range(len(r_edges) - 1):
-        r0, r1 = float(r_edges[ridx]), float(r_edges[ridx + 1])
-        r_mid = 0.5 * (r0 + r1)
-        radial_depth = max((r1 - r0) * 1.12, 1e-3)
-
-        arc_len = max(r_mid * angle_rad, 1e-6)
-        theta_seg = max(
-            int(min_theta_segments),
-            int(np.ceil(arc_len * max(float(theta_segments_per_meter), 1.0))),
-        )
-        dtheta = angle_rad / max(theta_seg, 1)
-
-        for tidx in range(theta_seg):
-            theta = theta_start + (tidx + 0.5) * dtheta
-            tangential_len = max(r_mid * dtheta * 1.12, 1e-3)
-            half_size = [tangential_len / 2.0, radial_depth / 2.0, thickness / 2.0]
-            patch_pose = sapien.Pose(
-                p=[r_mid * np.cos(theta), r_mid * np.sin(theta), -thickness / 2.0],
-                q=t3d.euler.euler2quat(0.0, 0.0, theta + np.pi / 2.0, axes="sxyz"),
-            )
-            builder.add_box_collision(
-                pose=patch_pose,
-                half_size=half_size,
-                material=scene.default_physical_material,
-            )
-            builder.add_box_visual(
-                pose=patch_pose,
-                half_size=half_size,
-                material=table_mat,
-            )
-
-    # Legs: distribute along outer arc + two inner-side support legs.
-    leg_half_h = max(height / 2.0 - 0.002, 1e-3)
-    leg_pose_z = -height / 2.0 - 0.002
-    leg_half_size = [thickness / 2.0, thickness / 2.0, leg_half_h]
-    leg_color = color
-    leg_margin = max(0.06, thickness * 1.2)
-
-    leg_num = max(2, int(outer_leg_count))
-    outer_leg_radius = max(inner_radius + leg_margin, outer_radius - leg_margin)
-    outer_angles = np.linspace(theta_start + 0.08 * angle_rad, theta_end - 0.08 * angle_rad, leg_num)
-    for theta in outer_angles:
-        leg_pose = sapien.Pose(
-            p=[outer_leg_radius * np.cos(theta), outer_leg_radius * np.sin(theta), leg_pose_z]
-        )
-        builder.add_box_collision(pose=leg_pose, half_size=leg_half_size)
-        builder.add_box_visual(pose=leg_pose, half_size=leg_half_size, material=leg_color)
-
-    if inner_radius > leg_margin * 1.5:
-        inner_leg_radius = inner_radius + leg_margin
-        for theta in [theta_start + 0.06 * angle_rad, theta_end - 0.06 * angle_rad]:
-            leg_pose = sapien.Pose(
-                p=[inner_leg_radius * np.cos(theta), inner_leg_radius * np.sin(theta), leg_pose_z]
-            )
-            builder.add_box_collision(pose=leg_pose, half_size=leg_half_size)
-            builder.add_box_visual(pose=leg_pose, half_size=leg_half_size, material=leg_color)
-
-    builder.set_initial_pose(pose)
-    table = builder.build(name=name)
-    return table
-
-
 def _create_table_visual_material(texture_id=None, color=(1, 1, 1)):
     if texture_id is not None:
         texturepath = f"./assets/background_texture/{texture_id}.png"
@@ -517,7 +402,24 @@ def _create_table_visual_material(texture_id=None, color=(1, 1, 1)):
     return color
 
 
-def _add_table_box(builder, scene, pose, half_size, material):
+def _normalize_fan_table_geometry(
+        outer_radius: float,
+        inner_radius: float,
+        angle_deg: float,
+        center_deg: float,
+        thickness: float,
+):
+    outer_radius = max(float(outer_radius), 0.15)
+    inner_radius = float(max(0.0, min(inner_radius, outer_radius - 0.05)))
+    thickness = max(float(thickness), 1e-3)
+    angle_rad = float(np.deg2rad(np.clip(angle_deg, 10.0, 340.0)))
+    center_rad = float(np.deg2rad(center_deg))
+    theta_start = center_rad - angle_rad / 2.0
+    theta_end = center_rad + angle_rad / 2.0
+    return outer_radius, inner_radius, thickness, angle_rad, theta_start, theta_end
+
+
+def _add_table_box(builder, scene, pose: sapien.Pose, half_size, material):
     builder.add_box_collision(
         pose=pose,
         half_size=half_size,
@@ -528,23 +430,6 @@ def _add_table_box(builder, scene, pose, half_size, material):
         half_size=half_size,
         material=material,
     )
-
-
-def _normalize_fan_table_geometry(
-        outer_radius: float,
-        inner_radius: float,
-        angle_deg: float,
-        center_deg: float,
-        thickness: float,
-):
-    outer_radius = max(float(outer_radius), 0.15)
-    inner_radius = float(max(0.0, min(float(inner_radius), outer_radius - 0.05)))
-    thickness = max(float(thickness), 1e-3)
-    angle_rad = float(np.deg2rad(np.clip(angle_deg, 10.0, 340.0)))
-    center_rad = float(np.deg2rad(center_deg))
-    theta_start = center_rad - angle_rad / 2.0
-    theta_end = center_rad + angle_rad / 2.0
-    return outer_radius, inner_radius, thickness, angle_rad, theta_start, theta_end
 
 
 def _add_fan_table_surface(
@@ -585,6 +470,41 @@ def _add_fan_table_surface(
             _add_table_box(builder, scene, patch_pose, half_size, material)
 
 
+def _add_fan_table_outer_and_inner_legs(
+        builder,
+        scene,
+        material,
+        inner_radius: float,
+        outer_radius: float,
+        height: float,
+        thickness: float,
+        theta_start: float,
+        angle_rad: float,
+        outer_leg_count: int,
+):
+    leg_half_h = max(height / 2.0 - 0.002, 1e-3)
+    leg_pose_z = -height / 2.0 - 0.002
+    leg_half_size = [thickness / 2.0, thickness / 2.0, leg_half_h]
+    leg_margin = max(0.06, thickness * 1.2)
+
+    leg_num = max(2, int(outer_leg_count))
+    outer_leg_radius = max(inner_radius + leg_margin, outer_radius - leg_margin)
+    outer_angles = np.linspace(theta_start + 0.08 * angle_rad, theta_start + 0.92 * angle_rad, leg_num)
+    for theta in outer_angles:
+        leg_pose = sapien.Pose(
+            p=[outer_leg_radius * np.cos(theta), outer_leg_radius * np.sin(theta), leg_pose_z]
+        )
+        _add_table_box(builder, scene, leg_pose, leg_half_size, material)
+
+    if inner_radius > leg_margin * 1.5:
+        inner_leg_radius = inner_radius + leg_margin
+        for theta in [theta_start + 0.06 * angle_rad, theta_start + 0.94 * angle_rad]:
+            leg_pose = sapien.Pose(
+                p=[inner_leg_radius * np.cos(theta), inner_leg_radius * np.sin(theta), leg_pose_z]
+            )
+            _add_table_box(builder, scene, leg_pose, leg_half_size, material)
+
+
 def _add_fan_table_side_columns(
         builder,
         scene,
@@ -608,6 +528,78 @@ def _add_fan_table_side_columns(
             p=[support_radius * np.cos(theta), support_radius * np.sin(theta), column_pose_z]
         )
         _add_table_box(builder, scene, column_pose, column_half_size, material)
+
+
+def create_fan_table(
+        scene,
+        pose: sapien.Pose,
+        outer_radius: float,
+        height: float,
+        inner_radius: float = 0.3,
+        angle_deg: float = 200.0,
+        center_deg: float = 90.0,
+        thickness: float = 0.05,
+        color=(1, 1, 1),
+        name="table",
+        is_static=True,
+        texture_id=None,
+        radial_segments: int = 14,
+        min_theta_segments: int = 24,
+        theta_segments_per_meter: float = 18.0,
+        outer_leg_count: int = 6,
+) -> sapien.Entity:
+    """
+    Create an annular-sector ("fan") table.
+    - The table center is at `pose.p[:2]`.
+    - Sector points around `center_deg` in XY plane.
+    - Top surface is approximated by many thin box patches.
+    """
+    scene, pose = preprocess(scene, pose)
+    builder = scene.create_actor_builder()
+
+    if is_static:
+        builder.set_physx_body_type("static")
+    else:
+        builder.set_physx_body_type("dynamic")
+
+    outer_radius, inner_radius, thickness, angle_rad, theta_start, theta_end = _normalize_fan_table_geometry(
+        outer_radius=outer_radius,
+        inner_radius=inner_radius,
+        angle_deg=angle_deg,
+        center_deg=center_deg,
+        thickness=thickness,
+    )
+    table_mat = _create_table_visual_material(texture_id=texture_id, color=color)
+
+    _add_fan_table_surface(
+        builder=builder,
+        scene=scene,
+        material=table_mat,
+        inner_radius=inner_radius,
+        outer_radius=outer_radius,
+        thickness=thickness,
+        theta_start=theta_start,
+        angle_rad=angle_rad,
+        radial_segments=radial_segments,
+        min_theta_segments=min_theta_segments,
+        theta_segments_per_meter=theta_segments_per_meter,
+    )
+    _add_fan_table_outer_and_inner_legs(
+        builder=builder,
+        scene=scene,
+        material=color,
+        inner_radius=inner_radius,
+        outer_radius=outer_radius,
+        height=height,
+        thickness=thickness,
+        theta_start=theta_start,
+        angle_rad=angle_rad,
+        outer_leg_count=outer_leg_count,
+    )
+
+    builder.set_initial_pose(pose)
+    table = builder.build(name=name)
+    return table
 
 
 def create_fan_double_table(
@@ -635,8 +627,11 @@ def create_fan_double_table(
 ) -> sapien.Entity:
     """
     Create a two-layer annular-sector table.
-    The lower layer uses the normal fan footprint; the upper layer can use a
-    narrower angular span and a different inner/outer radius.
+    - The lower tabletop footprint is controlled by `lower_*_radius`.
+    - The upper tabletop footprint is controlled by `upper_*_radius`.
+    - If upper radii are omitted, they default to the lower-layer radii.
+    - The upper tabletop can use its own angular span.
+    - A single slim support column connects the outer edge of the upper layer to the lower layer.
     """
     scene, pose = preprocess(scene, pose)
     builder = scene.create_actor_builder()
@@ -646,7 +641,7 @@ def create_fan_double_table(
     else:
         builder.set_physx_body_type("dynamic")
 
-    lower_outer_radius, lower_inner_radius, thickness, angle_rad, theta_start, _ = _normalize_fan_table_geometry(
+    lower_outer_radius, lower_inner_radius, thickness, angle_rad, theta_start, theta_end = _normalize_fan_table_geometry(
         outer_radius=lower_outer_radius,
         inner_radius=lower_inner_radius,
         angle_deg=angle_deg,
@@ -673,7 +668,8 @@ def create_fan_double_table(
     if upper_theta_end_deg <= upper_theta_start_deg:
         upper_theta_end_deg = upper_theta_start_deg + 1.0
     upper_theta_start = float(np.deg2rad(upper_theta_start_deg))
-    upper_angle_rad = max(float(np.deg2rad(upper_theta_end_deg - upper_theta_start_deg)), 1e-6)
+    upper_theta_end = float(np.deg2rad(upper_theta_end_deg))
+    upper_angle_rad = max(upper_theta_end - upper_theta_start, 1e-6)
     if support_theta_deg is None:
         support_theta_deg = upper_theta_start_deg - 10.0
     support_theta = float(np.deg2rad(float(support_theta_deg)))

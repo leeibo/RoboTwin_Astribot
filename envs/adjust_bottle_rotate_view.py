@@ -2,9 +2,38 @@ from .adjust_bottle import adjust_bottle
 from .utils import *
 import numpy as np
 import transforms3d as t3d
+import json
+from pathlib import Path
 
 
 class adjust_bottle_rotate_view(adjust_bottle):
+
+    def _get_sideways_bottle_spawn_z(self, qpos, model_id, clearance=0.004):
+        """
+        Estimate a collision-safe spawn height from the bottle's local bounding box.
+        The adjust-bottle task places the bottle with a fixed base orientation, so a
+        mesh-based support height is more reliable than the legacy hard-coded z.
+        """
+        model_data_path = Path("assets/objects/001_bottle") / f"model_data{int(model_id)}.json"
+        fallback_z = float(getattr(self, "rotate_table_top_z", 0.74)) + 0.045
+        if not model_data_path.exists():
+            return fallback_z
+
+        try:
+            with open(model_data_path, "r", encoding="utf-8") as f:
+                model_data = json.load(f)
+            scale = np.array(model_data.get("scale", [1.0, 1.0, 1.0]), dtype=np.float64).reshape(3)
+            center = np.array(model_data.get("center", [0.0, 0.0, 0.0]), dtype=np.float64).reshape(3) * scale
+            extents = np.array(model_data.get("extents", [0.06, 0.24, 0.06]), dtype=np.float64).reshape(3) * scale
+            half_extents = 0.5 * np.abs(extents)
+            rot = t3d.quaternions.quat2mat(np.array(qpos, dtype=np.float64).reshape(4))
+            center_world = rot @ center
+            support_half_height = float(np.sum(np.abs(rot[2, :]) * half_extents))
+            min_relative_z = float(center_world[2] - support_half_height)
+            table_top_z = float(getattr(self, "rotate_table_top_z", 0.74))
+            return table_top_z - min_relative_z + float(clearance)
+        except Exception:
+            return fallback_z
 
     def setup_demo(self, **kwags):
         kwags.setdefault("table_shape", "fan")
@@ -39,13 +68,13 @@ class adjust_bottle_rotate_view(adjust_bottle):
             )
 
     def _sample_bottle_pose(self, qpos):
+        bottle_spawn_z = self._get_sideways_bottle_spawn_z(qpos=qpos, model_id=self.model_id)
         side_thetalim = rotate_theta_side(self, side=1 if self.qpose_tag == 0 else -1)
         for _ in range(120):
             pose = rand_pose_cyl(
                 rlim=[0.4, 0.5],
                 thetalim=side_thetalim,
-
-                zlim=[0.752, 0.752],
+                zlim=[bottle_spawn_z, bottle_spawn_z],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
                 rotate_rand=True,
@@ -66,7 +95,7 @@ class adjust_bottle_rotate_view(adjust_bottle):
         fallback_band = rotate_theta_side(self, side=1 if self.qpose_tag == 0 else -1)
         fallback_theta = fallback_band[1] if self.qpose_tag == 0 else fallback_band[0]
         return place_pose_cyl(
-            [0.46, fallback_theta, 0.752, qpos[0], qpos[1], qpos[2], qpos[3]],
+            [0.46, fallback_theta, bottle_spawn_z, qpos[0], qpos[1], qpos[2], qpos[3]],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="pose",
@@ -86,6 +115,7 @@ class adjust_bottle_rotate_view(adjust_bottle):
             convex=True,
             model_id=self.model_id,
         )
+        self.bottle.set_mass(0.01)
 
         self.delay(4)
         self.add_prohibit_area(self.bottle, padding=0.15)
@@ -109,7 +139,7 @@ class adjust_bottle_rotate_view(adjust_bottle):
         arm_tag = ArmTag("right" if self.qpose_tag == 1 else "left")
         target_pose = self.right_target_pose if self.qpose_tag == 1 else self.left_target_pose
 
-        # # self.face_object_with_torso(self.bottle, joint_name_prefer="astribot_torso_joint_2")
+        self.face_object_with_torso(self.bottle, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(self.bottle, arm_tag=arm_tag, pre_grasp_dis=0.1))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
 

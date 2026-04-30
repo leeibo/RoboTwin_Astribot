@@ -76,7 +76,7 @@ class put_object_cabinet(Base_Task):
             convex=True,
             model_id=self.selected_model_id,
         )
-        self.object.set_mass(0.01)
+        self.object.set_mass(0.02) # kg
         self.add_prohibit_area(self.object, padding=0.01)
         self.add_prohibit_area(self.cabinet, padding=0.01)
         self.prohibited_area.append([-0.15, -0.3, 0.15, 0.3])
@@ -87,12 +87,20 @@ class put_object_cabinet(Base_Task):
         self.origin_z = self.object.get_pose().p[2]
 
         # Grasp the object and grasp the drawer bar
-        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
-        self.move(self.grasp_actor(self.cabinet, arm_tag=arm_tag.opposite, pre_grasp_dis=0.05))
+        self.move(self.grasp_actor(
+            self.cabinet,
+            arm_tag=arm_tag.opposite,
+            pre_grasp_dis=0.04,
+            grasp_dis= 0.01,
+            gripper_pos= -0.02,
+        ))
+        
 
         # Pull the drawer
-        for _ in range(4):
-            self.move(self.move_by_displacement(arm_tag=arm_tag.opposite, y=-0.04))
+        for _ in range(3):
+            self.move(self.move_by_displacement(arm_tag=arm_tag.opposite, y=-0.1))
+
+        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
 
         # Lift the object
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.15))

@@ -427,8 +427,9 @@ def run(TASK_ENV, args):
 
 
 if __name__ == "__main__":
-    from test_render import Sapien_TEST
-    Sapien_TEST()
+    if not _env_flag("ROBOTWIN_SKIP_RENDER_TEST", default=False):
+        from test_render import Sapien_TEST
+        Sapien_TEST()
 
     import torch.multiprocessing as mp
     mp.set_start_method("spawn", force=True)
