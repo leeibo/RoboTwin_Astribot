@@ -53,11 +53,36 @@ class Camera:
 
         self.static_camera_config = []
         self.camera_runtime_specs = {}
+        self.camera_args = kwags["camera"]
         self.head_camera_type = kwags["camera"].get("head_camera_type", "D435")
         self.wrist_camera_type = kwags["camera"].get("wrist_camera_type", "D435")
 
         self.collect_head_camera = kwags["camera"].get("collect_head_camera", True)
         self.collect_wrist_camera = kwags["camera"].get("collect_wrist_camera", True)
+        raw_top_view_camera_configs = kwags["camera"].get("top_view_cameras", None)
+        self.collect_top_view_camera = bool(
+            kwags["camera"].get("collect_top_view_camera", False)
+            or kwags.get("data_type", {}).get("top_view", False)
+            or raw_top_view_camera_configs is not None
+        )
+        if raw_top_view_camera_configs is None:
+            top_view_camera_config = dict(kwags["camera"].get("top_view_camera", {}))
+            top_view_camera_config.setdefault("name", "top_view_camera")
+            self.top_view_camera_configs = [top_view_camera_config] if self.collect_top_view_camera else []
+        elif isinstance(raw_top_view_camera_configs, dict):
+            self.top_view_camera_configs = []
+            for camera_name, camera_config in raw_top_view_camera_configs.items():
+                camera_config = dict(camera_config or {})
+                camera_config.setdefault("name", str(camera_name))
+                self.top_view_camera_configs.append(camera_config)
+        else:
+            self.top_view_camera_configs = []
+            for idx, camera_config in enumerate(raw_top_view_camera_configs):
+                camera_config = dict(camera_config or {})
+                camera_config.setdefault("name", "top_view_camera" if idx == 0 else f"top_view_camera_{idx}")
+                self.top_view_camera_configs.append(camera_config)
+        self.top_view_cameras = []
+        self.top_view_camera_names = []
         # Head-mounted camera (URDF link camera_head/head_camera), moving with robot head.
         self.collect_head_link_camera = kwags["camera"].get("collect_head_link_camera", True)
         self.has_head_link_camera = bool(kwags.get("has_head_link_camera", False))
@@ -253,23 +278,81 @@ class Camera:
                 register_camera_spec(camera_info["name"], camera_config)
 
         # observer camera
+        observer_camera_args = dict(self.camera_args.get("observer_camera", {}))
+        observer_width = int(observer_camera_args.get("w", 320))
+        observer_height = int(observer_camera_args.get("h", 240))
+        observer_fovy = float(observer_camera_args.get("fovy", 93))
+        observer_near = float(observer_camera_args.get("near", near))
+        observer_far = float(observer_camera_args.get("far", far))
         self.observer_camera = scene.add_camera(
             name="observer_camera",
-            width=320,
-            height=240,
-            fovy=np.deg2rad(93),
-            near=near,
-            far=far,
+            width=observer_width,
+            height=observer_height,
+            fovy=np.deg2rad(observer_fovy),
+            near=observer_near,
+            far=observer_far,
         )
-        observer_cam_pos = np.array([0.0, 0.23, 1.33])
-        observer_cam_forward = np.array([0, -1, -1.02])
+        observer_cam_pos = np.array(observer_camera_args.get("position", [0.0, 0.23, 1.33]), dtype=np.float64)
+        observer_cam_forward = np.array(observer_camera_args.get("forward", [0, -1, -1.02]), dtype=np.float64)
+        observer_cam_forward = observer_cam_forward / np.linalg.norm(observer_cam_forward)
         # observer_cam_left = np.array([1,-1, 0])
-        observer_cam_left = np.array([1, 0, 0])
+        observer_cam_left = np.array(observer_camera_args.get("left", [1, 0, 0]), dtype=np.float64)
+        observer_cam_left = observer_cam_left / np.linalg.norm(observer_cam_left)
         observer_up = np.cross(observer_cam_forward, observer_cam_left)
         observer_mat44 = np.eye(4)
         observer_mat44[:3, :3] = np.stack([observer_cam_forward, observer_cam_left, observer_up], axis=1)
         observer_mat44[:3, 3] = observer_cam_pos
         self.observer_camera.entity.set_pose(sapien.Pose(observer_mat44))
+        register_camera_spec(
+            "observer_camera",
+            {
+                "w": observer_width,
+                "h": observer_height,
+                "fovy": observer_fovy,
+                "near": observer_near,
+                "far": observer_far,
+            },
+        )
+
+        for top_view_idx, top_view_args in enumerate(self.top_view_camera_configs):
+            top_view_name = str(top_view_args.get("name", "top_view_camera" if top_view_idx == 0 else f"top_view_camera_{top_view_idx}"))
+            top_view_width = int(top_view_args.get("w", 512))
+            top_view_height = int(top_view_args.get("h", 512))
+            top_view_fovy = float(top_view_args.get("fovy", 78))
+            top_view_camera = scene.add_camera(
+                name=top_view_name,
+                width=top_view_width,
+                height=top_view_height,
+                fovy=np.deg2rad(top_view_fovy),
+                near=float(top_view_args.get("near", near)),
+                far=float(top_view_args.get("far", far)),
+            )
+            top_view_pos = np.array(top_view_args.get("position", [0.0, 0.0, 2.0]), dtype=np.float64)
+            top_view_target = np.array(
+                top_view_args.get("target", [0.0, 0.0, 0.74 + self.table_z_bias]),
+                dtype=np.float64,
+            )
+            top_view_forward = top_view_target - top_view_pos
+            top_view_forward = top_view_forward / np.linalg.norm(top_view_forward)
+            top_view_left = np.array(top_view_args.get("left", [1.0, 0.0, 0.0]), dtype=np.float64)
+            top_view_left = top_view_left / np.linalg.norm(top_view_left)
+            top_view_up = np.cross(top_view_forward, top_view_left)
+            top_view_mat44 = np.eye(4)
+            top_view_mat44[:3, :3] = np.stack([top_view_forward, top_view_left, top_view_up], axis=1)
+            top_view_mat44[:3, 3] = top_view_pos
+            top_view_camera.entity.set_pose(sapien.Pose(top_view_mat44))
+            self.top_view_cameras.append(top_view_camera)
+            self.top_view_camera_names.append(top_view_name)
+            if top_view_idx == 0 or top_view_name == "top_view_camera":
+                self.top_view_camera = top_view_camera
+            register_camera_spec(
+                top_view_name,
+                {
+                    "w": top_view_width,
+                    "h": top_view_height,
+                    "fovy": top_view_fovy,
+                },
+            )
 
         # world pcd camera
         self.world_camera1 = scene.add_camera(
@@ -288,9 +371,10 @@ class Camera:
         world_cam_mat44[:3, :3] = np.stack([world_cam_forward, world_cam_left, world_cam_up], axis=1)
         world_cam_mat44[:3, 3] = world_cam_pos
         self.world_camera1.entity.set_pose(sapien.Pose(world_cam_mat44))
+        register_camera_spec("world_camera1", {"w": 640, "h": 480, "fovy": 50})
 
         self.world_camera2 = scene.add_camera(
-            name="world_camera1",
+            name="world_camera2",
             width=640,
             height=480,
             fovy=np.deg2rad(50),
@@ -305,6 +389,7 @@ class Camera:
         world_cam_mat44[:3, :3] = np.stack([world_cam_forward, world_cam_left, world_cam_up], axis=1)
         world_cam_mat44[:3, 3] = world_cam_pos
         self.world_camera2.entity.set_pose(sapien.Pose(world_cam_mat44))
+        register_camera_spec("world_camera2", {"w": 640, "h": 480, "fovy": 50})
 
     def update_picture(self):
         # camera
@@ -313,6 +398,8 @@ class Camera:
             self.right_camera.take_picture()
         if self.camera_head is not None:
             self.camera_head.take_picture()
+        for camera in self.top_view_cameras:
+            camera.take_picture()
 
         for camera in self.static_camera_list:
             camera.take_picture()
@@ -350,6 +437,8 @@ class Camera:
             res["right_camera"] = _get_config(self.right_camera)
         if self.camera_head is not None:
             res["camera_head"] = _get_config(self.camera_head)
+        for camera, camera_name in zip(self.top_view_cameras, self.top_view_camera_names):
+            res[camera_name] = _get_config(camera)
 
         for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
             if camera_name == "head_camera":
@@ -361,6 +450,19 @@ class Camera:
         # res['head_sensor'] = res['head_camera']
         # print(res)
         return res
+
+    def get_config_by_name(self, camera_name) -> dict:
+        camera = self.get_camera_by_name(camera_name)
+        if camera is None:
+            return None
+        camera_intrinsic_cv = camera.get_intrinsic_matrix()
+        camera_extrinsic_cv = camera.get_extrinsic_matrix()
+        camera_model_matrix = camera.get_model_matrix()
+        return {
+            "intrinsic_cv": camera_intrinsic_cv,
+            "extrinsic_cv": camera_extrinsic_cv,
+            "cam2world_gl": camera_model_matrix,
+        }
 
     def get_rgb(self) -> dict:
         rgba = self.get_rgba()
@@ -381,10 +483,28 @@ class Camera:
             return getattr(self, "right_camera", None)
         if camera_name == "camera_head":
             return getattr(self, "camera_head", None)
+        if camera_name == "observer_camera":
+            return getattr(self, "observer_camera", None)
+        if camera_name == "world_camera1":
+            return getattr(self, "world_camera1", None)
+        if camera_name == "world_camera2":
+            return getattr(self, "world_camera2", None)
+        for camera, name in zip(self.top_view_cameras, self.top_view_camera_names):
+            if str(name) == camera_name:
+                return camera
         for camera, name in zip(self.static_camera_list, self.static_camera_name):
             if str(name) == camera_name:
                 return camera
         return None
+
+    def get_rgb_by_name(self, camera_name) -> dict:
+        camera = self.get_camera_by_name(camera_name)
+        if camera is None:
+            return None
+        camera.take_picture()
+        camera_rgba = camera.get_picture("Color")
+        camera_rgb_img = (camera_rgba * 255).clip(0, 255).astype("uint8")[:, :, :3]
+        return {"rgb": camera_rgb_img}
     
     # Get Camera RGBA
     def get_rgba(self) -> dict:
@@ -410,6 +530,9 @@ class Camera:
         if self.camera_head is not None:
             res["camera_head"] = {}
             res["camera_head"]["rgba"] = _get_rgba(self.camera_head)
+        for camera, camera_name in zip(self.top_view_cameras, self.top_view_camera_names):
+            res[camera_name] = {}
+            res[camera_name]["rgba"] = _get_rgba(camera)
 
         for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
             if camera_name == "head_camera":
@@ -425,14 +548,10 @@ class Camera:
         return res
 
     def get_observer_rgb(self) -> dict:
-        self.observer_camera.take_picture()
-
-        def _get_rgb(camera):
-            camera_rgba = camera.get_picture("Color")
-            camera_rgb_img = (camera_rgba * 255).clip(0, 255).astype("uint8")[:, :, :3]
-            return camera_rgb_img
-
-        return _get_rgb(self.observer_camera)
+        rgb = self.get_rgb_by_name("observer_camera")
+        if rgb is None:
+            return None
+        return rgb["rgb"]
 
     # Get Camera Segmentation
     def get_segmentation(self, level="mesh") -> dict:

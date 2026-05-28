@@ -117,6 +117,9 @@ class Base_Task(gym.Env):
         self.prohibited_area = list()  # [x_min, y_min, x_max, y_max]
         self.record_cluttered_objects = list()  # record cluttered objects info
         self.rotate_cluttered_numbers = int(kwags.get("rotate_cluttered_numbers", kwags.get("cluttered_numbers", 10)))
+        self.rotate_clutter_is_static = bool(
+            kwags.get("rotate_clutter_is_static", random_setting.get("rotate_clutter_is_static", False))
+        )
 
         self.eval_success = False
         self.table_z_bias = (np.random.uniform(low=-self.random_table_height, high=0) + table_height_bias)  # TODO
@@ -169,6 +172,22 @@ class Base_Task(gym.Env):
 
         self.robot.set_origin_endpose()
         self._init_rotate_subtask_runtime_state()
+        self.rotate_head_joint2_name = str(kwags.get("rotate_head_joint2_name", "astribot_head_joint_2"))
+        head_scan_offsets = np.array(
+            kwags.get("rotate_stage1_head_scan_offsets_rad", [-0.55, 0.0, 0.35]),
+            dtype=np.float64,
+        ).reshape(-1)
+        if head_scan_offsets.shape[0] == 0:
+            head_scan_offsets = np.array([-0.55, 0.0, 0.35], dtype=np.float64)
+        self.rotate_stage1_head_scan_offsets_rad = head_scan_offsets
+        self.rotate_stage1_lower_head_joint2_rad = float(kwags.get("rotate_stage1_lower_head_joint2_rad", 1.22))
+        self.rotate_stage1_upper_head_joint2_rad = float(kwags.get("rotate_stage1_upper_head_joint2_rad", 0.8))
+        self.rotate_stage1_head_settle_steps = max(int(kwags.get("rotate_stage1_head_settle_steps", 12)), 1)
+        self.rotate_stage2_head_vertical_tol = max(
+            float(kwags.get("rotate_stage2_head_vertical_tol", 0.08)),
+            0.0,
+        )
+        self.rotate_stage2_head_refine_iters = max(int(kwags.get("rotate_stage2_head_refine_iters", 2)), 1)
         self.load_actors()
 
         if self.cluttered_table:
@@ -745,9 +764,7 @@ class Base_Task(gym.Env):
                 robot_pose_cfg = left_cfg.get("robot_pose", None)
                 if isinstance(robot_pose_cfg, list) and len(robot_pose_cfg) > 0 and len(robot_pose_cfg[0]) >= 2:
                     pose_entry = robot_pose_cfg[0]
-                    fan_center_xy = np.array(pose_entry[:2], dtype=np.float64) + np.array(
-                        table_xy_bias, dtype=np.float64
-                    )
+                    fan_center_xy = np.array(pose_entry[:2], dtype=np.float64) + np.array(table_xy_bias, dtype=np.float64)
                     if len(pose_entry) >= 7:
                         try:
                             fan_center_yaw_deg = float(np.rad2deg(t3d.euler.quat2euler(pose_entry[-4:])[2]))
@@ -783,9 +800,13 @@ class Base_Task(gym.Env):
                 self.rotate_fan_double_upper_outer_radius = float(fan_double_upper_outer_radius)
                 self.rotate_fan_double_upper_inner_radius = float(fan_double_upper_inner_radius)
                 self.rotate_fan_double_layer_gap = float(kwargs.get("fan_double_layer_gap", 0.30))
+                upper_theta_offset_deg = float(kwargs.get("fan_double_upper_theta_offset_deg", 0.0))
                 upper_theta_start_deg = float(kwargs.get("fan_double_upper_theta_start_deg", -30.0))
                 upper_theta_end_deg = float(kwargs.get("fan_double_upper_theta_end_deg", 30.0))
                 support_theta_deg = float(kwargs.get("fan_double_support_theta_deg", upper_theta_start_deg - 10.0))
+                upper_theta_start_deg += upper_theta_offset_deg
+                upper_theta_end_deg += upper_theta_offset_deg
+                support_theta_deg += upper_theta_offset_deg
                 self.rotate_fan_double_upper_theta_start_world_rad = float(
                     np.deg2rad(fan_center_yaw_deg + upper_theta_start_deg)
                 )
@@ -821,14 +842,9 @@ class Base_Task(gym.Env):
                     lower_inner_radius=fan_double_lower_inner_radius,
                     upper_outer_radius=fan_double_upper_outer_radius,
                     upper_inner_radius=fan_double_upper_inner_radius,
-                    upper_theta_start_deg=float(kwargs.get("fan_double_upper_theta_start_deg", -30.0)) + fan_center_yaw_deg,
-                    upper_theta_end_deg=float(kwargs.get("fan_double_upper_theta_end_deg", 30.0)) + fan_center_yaw_deg,
-                    support_theta_deg=float(
-                        kwargs.get(
-                            "fan_double_support_theta_deg",
-                            float(kwargs.get("fan_double_upper_theta_start_deg", -30.0)) - 10.0,
-                        )
-                    ) + fan_center_yaw_deg,
+                    upper_theta_start_deg=upper_theta_start_deg + fan_center_yaw_deg,
+                    upper_theta_end_deg=upper_theta_end_deg + fan_center_yaw_deg,
+                    support_theta_deg=support_theta_deg + fan_center_yaw_deg,
                     layer_gap=float(kwargs.get("fan_double_layer_gap", 0.30)),
                     **fan_surface_kwargs,
                 )
@@ -874,12 +890,23 @@ class Base_Task(gym.Env):
             task_objects_list.append(actor_name)
         self.obj_names, self.cluttered_item_info = get_available_cluttered_objects(task_objects_list)
         fan_region = None
-        if str(getattr(self, "rotate_table_shape", "rect")).lower() in {"fan", "fan_double", "sector", "arc"}:
+        table_shape = str(getattr(self, "rotate_table_shape", "rect")).lower()
+        if table_shape in {"fan", "sector", "arc", "fan_double"}:
             fan_center_xy = np.array(getattr(self, "rotate_table_center_xy", [0.0, 0.0]), dtype=np.float64).reshape(2)
+            if table_shape == "fan_double":
+                inner_radius = getattr(self, "rotate_fan_double_lower_inner_radius", None)
+                outer_radius = getattr(self, "rotate_fan_double_lower_outer_radius", None)
+            else:
+                inner_radius = getattr(self, "rotate_fan_inner_radius", None)
+                outer_radius = getattr(self, "rotate_fan_outer_radius", None)
+            if inner_radius is None:
+                inner_radius = getattr(self, "rotate_fan_inner_radius", 0.3)
+            if outer_radius is None:
+                outer_radius = getattr(self, "rotate_fan_outer_radius", 0.9)
             fan_region = {
                 "center_xy": fan_center_xy.tolist(),
-                "inner_radius": float(getattr(self, "rotate_fan_inner_radius", 0.3) or 0.3),
-                "outer_radius": float(getattr(self, "rotate_fan_outer_radius", 0.9) or 0.9),
+                "inner_radius": float(inner_radius or 0.3),
+                "outer_radius": float(outer_radius or 0.9),
                 "center_theta_rad": float(np.deg2rad(float(getattr(self, "rotate_fan_center_deg", 90.0) or 90.0))),
                 "angle_rad": float(np.deg2rad(float(getattr(self, "rotate_fan_angle_deg", 200.0) or 200.0))),
                 "radius_floor": float(max(getattr(self, "rotate_clutter_min_radius", 0.55), 0.0)),
@@ -888,7 +915,7 @@ class Base_Task(gym.Env):
             }
 
         success_count = 0
-        max_try = 50
+        max_try = int(max(getattr(self, "rotate_clutter_max_tries", 0), max(50, cluttered_numbers * 50)))
         trys = 0
 
         while success_count < cluttered_numbers and trys < max_try:
@@ -915,6 +942,7 @@ class Base_Task(gym.Env):
                 z_offset=obj_offset,
                 z_max=obj_maxz,
                 prohibited_area=self.prohibited_area,
+                is_static=self.rotate_clutter_is_static,
                 fan_region=fan_region,
                 prefer_back=bool(fan_region is not None),
             )
@@ -927,7 +955,15 @@ class Base_Task(gym.Env):
             pose.append(obj_radius)
             self.size_dict.append(pose)
             success_count += 1
-            self.record_cluttered_objects.append({"object_type": obj_name, "object_index": obj_idx})
+            self.record_cluttered_objects.append(
+                {
+                    "object_type": obj_name,
+                    "object_index": obj_idx,
+                    "pose": self.cluttered_obj.get_pose().p.tolist(),
+                    "radius": float(obj_radius),
+                    "is_static": bool(self.rotate_clutter_is_static),
+                }
+            )
 
         if success_count < cluttered_numbers:
             print(f"Warning: Only {success_count} cluttered objects are placed on the table.")
@@ -1233,6 +1269,23 @@ class Base_Task(gym.Env):
 
     # =========================================================== Basic APIs ===========================================================
 
+    def _get_extra_view_camera_names(self):
+        data_type = self.data_type or {}
+        camera_names = []
+        if data_type.get("observer_camera", False) or data_type.get("observer", False):
+            camera_names.append("observer_camera")
+        for camera_name in ["world_camera1", "world_camera2"]:
+            if data_type.get(camera_name, False):
+                camera_names.append(camera_name)
+
+        configured_names = data_type.get("extra_view_cameras", data_type.get("extra_view_camera_names", []))
+        if isinstance(configured_names, str):
+            configured_names = [configured_names]
+        for camera_name in configured_names or []:
+            if camera_name not in camera_names:
+                camera_names.append(str(camera_name))
+        return camera_names
+
     def get_obs(self):
         self._update_render()
         self.cameras.update_picture()
@@ -1253,6 +1306,14 @@ class Base_Task(gym.Env):
         if self.data_type.get("third_view", False):
             third_view_rgb = self.cameras.get_observer_rgb()
             pkl_dic["third_view_rgb"] = third_view_rgb
+
+        for camera_name in self._get_extra_view_camera_names():
+            camera_config = self.cameras.get_config_by_name(camera_name)
+            camera_rgb = self.cameras.get_rgb_by_name(camera_name)
+            if camera_config is None or camera_rgb is None:
+                continue
+            pkl_dic["observation"][camera_name] = camera_config
+            pkl_dic["observation"][camera_name].update(camera_rgb)
         # mesh_segmentation
         if self.data_type.get("mesh_segmentation", False):
             mesh_segmentation = self.cameras.get_segmentation(level="mesh")
@@ -1333,6 +1394,50 @@ class Base_Task(gym.Env):
                         os.remove(directory + file)
 
         pkl_dic = self.get_obs()
+        if self.data_type.get("top_view", False):
+            top_view_freq = int(self.data_type.get("top_view_snapshot_freq", self.data_type.get("top_view_image_freq", 0)))
+            if top_view_freq > 0 and self.FRAME_IDX % top_view_freq == 0:
+                top_view_camera_names = list(getattr(self.cameras, "top_view_camera_names", []) or ["top_view_camera"])
+                multi_top_view = len(top_view_camera_names) > 1
+                for top_view_camera_name in top_view_camera_names:
+                    top_view_rgb = (
+                        pkl_dic.get("observation", {})
+                        .get(top_view_camera_name, {})
+                        .get("rgb", None)
+                    )
+                    if top_view_rgb is None:
+                        continue
+                    image_dir_parts = ["top_view_images"]
+                    if multi_top_view or top_view_camera_name != "top_view_camera":
+                        image_dir_parts.append(str(top_view_camera_name))
+                    image_dir_parts.append(f"episode{self.ep_num}")
+                    save_img(
+                        os.path.join(
+                            self.save_dir,
+                            *image_dir_parts,
+                            f"frame_{self.FRAME_IDX:04d}.png",
+                        ),
+                        top_view_rgb,
+                    )
+        extra_view_freq = int(self.data_type.get("extra_view_snapshot_freq", self.data_type.get("top_view_snapshot_freq", 0)))
+        if extra_view_freq > 0 and self.FRAME_IDX % extra_view_freq == 0:
+            for camera_name in self._get_extra_view_camera_names():
+                extra_view_rgb = (
+                    pkl_dic.get("observation", {})
+                    .get(camera_name, {})
+                    .get("rgb", None)
+                )
+                if extra_view_rgb is None:
+                    continue
+                save_img(
+                    os.path.join(
+                        self.save_dir,
+                        f"{camera_name}_images",
+                        f"episode{self.ep_num}",
+                        f"frame_{self.FRAME_IDX:04d}.png",
+                    ),
+                    extra_view_rgb,
+                )
         save_pkl(self.folder_path["cache"] + f"{self.FRAME_IDX}.pkl", pkl_dic)  # use cache
         if self._latest_frame_annotation is not None:
             frame_annotation = dict(self._latest_frame_annotation)
@@ -1447,6 +1552,15 @@ class Base_Task(gym.Env):
             "right_camera": f"{self.save_dir}/video/episode{self.ep_num}_right_camera.mp4",
             "camera_head": f"{self.save_dir}/video/episode{self.ep_num}_camera_head.mp4",
         }
+        if self.data_type.get("top_view", False):
+            top_view_camera_names = list(getattr(self.cameras, "top_view_camera_names", []) or ["top_view_camera"])
+            for top_view_camera_name in top_view_camera_names:
+                video_suffix = "top_view" if top_view_camera_name == "top_view_camera" else str(top_view_camera_name)
+                target_video_path_map[top_view_camera_name] = (
+                    f"{self.save_dir}/video/episode{self.ep_num}_{video_suffix}.mp4"
+                )
+        for camera_name in self._get_extra_view_camera_names():
+            target_video_path_map[camera_name] = f"{self.save_dir}/video/episode{self.ep_num}_{camera_name}.mp4"
         # print('Merging pkl to hdf5: ', cache_path, ' -> ', target_file_path)
 
         os.makedirs(f"{self.save_dir}/data", exist_ok=True)
@@ -1662,6 +1776,44 @@ class Base_Task(gym.Env):
         }
         self.take_dense_action(control_seq, save_freq=save_freq)
 
+    def _get_remaining_joint_path_count(self, arm_tag):
+        arm_tag = ArmTag(arm_tag)
+        if arm_tag == "left":
+            joint_path = self.left_joint_path if self.left_joint_path is not None else []
+            cnt = int(self.left_cnt)
+        elif arm_tag == "right":
+            joint_path = self.right_joint_path if self.right_joint_path is not None else []
+            cnt = int(self.right_cnt)
+        else:
+            raise ValueError(f"Unsupported arm_tag: {arm_tag}")
+        return max(len(joint_path) - cnt, 0)
+
+    def _consume_cached_joint_path(self, arm_tag):
+        arm_tag = ArmTag(arm_tag)
+        if arm_tag == "left":
+            joint_path = self.left_joint_path if self.left_joint_path is not None else []
+            cnt = int(self.left_cnt)
+        elif arm_tag == "right":
+            joint_path = self.right_joint_path if self.right_joint_path is not None else []
+            cnt = int(self.right_cnt)
+        else:
+            raise ValueError(f"Unsupported arm_tag: {arm_tag}")
+
+        if cnt >= len(joint_path):
+            print(
+                f"[Base_Task] cached {arm_tag} joint path exhausted: "
+                f"requested index={cnt}, available={len(joint_path)}"
+            )
+            self.plan_success = False
+            return None
+
+        result = deepcopy(joint_path[cnt])
+        if arm_tag == "left":
+            self.left_cnt = cnt + 1
+        else:
+            self.right_cnt = cnt + 1
+        return result
+
     def left_move_to_pose(
         self,
         pose,
@@ -1688,8 +1840,9 @@ class Base_Task(gym.Env):
             left_result = self.robot.left_plan_path(pose, constraint_pose=constraint_pose)
             self.left_joint_path.append(deepcopy(left_result))
         else:
-            left_result = deepcopy(self.left_joint_path[self.left_cnt])
-            self.left_cnt += 1
+            left_result = self._consume_cached_joint_path("left")
+            if left_result is None:
+                return
 
         if left_result["status"] != "Success":
             self.plan_success = False
@@ -1721,8 +1874,9 @@ class Base_Task(gym.Env):
             right_result = self.robot.right_plan_path(pose, constraint_pose=constraint_pose)
             self.right_joint_path.append(deepcopy(right_result))
         else:
-            right_result = deepcopy(self.right_joint_path[self.right_cnt])
-            self.right_cnt += 1
+            right_result = self._consume_cached_joint_path("right")
+            if right_result is None:
+                return
 
         if right_result["status"] != "Success":
             self.plan_success = False
@@ -1818,6 +1972,14 @@ class Base_Task(gym.Env):
             self.left_joint_path.append(deepcopy(left_result))
             self.right_joint_path.append(deepcopy(right_result))
         else:
+            if self._get_remaining_joint_path_count("left") <= 0 or self._get_remaining_joint_path_count("right") <= 0:
+                print(
+                    "[Base_Task] cached joint path exhausted during together_move_to_pose: "
+                    f"left_remaining={self._get_remaining_joint_path_count('left')}, "
+                    f"right_remaining={self._get_remaining_joint_path_count('right')}"
+                )
+                self.plan_success = False
+                return
             left_result = deepcopy(self.left_joint_path[self.left_cnt])
             right_result = deepcopy(self.right_joint_path[self.right_cnt])
             self.left_cnt += 1
@@ -2246,6 +2408,9 @@ class Base_Task(gym.Env):
             target_dis=grasp_dis,
             contact_point_id=contact_point_id,
         )
+        if pre_grasp_pose is None or grasp_pose is None:
+            self.plan_success = False
+            return None, []
         if pre_grasp_pose == grasp_pose:
             return arm_tag, [
                 Action(arm_tag, "move", target_pose=pre_grasp_pose),
@@ -2453,6 +2618,13 @@ class Base_Task(gym.Env):
             target[i] = self.robot._clip_joint_target_to_limits(self.robot.head_joints[i], target[i])
         return target
 
+    @staticmethod
+    def _joint_delta_is_noop(delta_rad, tol=1e-6):
+        delta_rad = np.array(delta_rad, dtype=np.float64).reshape(-1)
+        if delta_rad.shape[0] == 0:
+            return True
+        return bool(np.max(np.abs(delta_rad)) <= max(float(tol), 0.0))
+
     def _build_head_joint_plan(self, delta_rad, min_steps=None):
         delta_rad = np.array(delta_rad, dtype=np.float64).reshape(-1)
         if delta_rad.shape[0] == 0:
@@ -2590,6 +2762,8 @@ class Base_Task(gym.Env):
             print("[Base_Task.move_head_to] invalid head target, skip move_head_to action")
             return False
         delta = target - head_now
+        if self._joint_delta_is_noop(delta):
+            return True
         head_plan = self._build_head_joint_plan(delta, min_steps=settle_steps)
         return self._execute_head_plan(head_plan, save_freq=save_freq)
 
@@ -2756,6 +2930,8 @@ class Base_Task(gym.Env):
             print("[Base_Task.move_torso_to] invalid torso target, skip move_torso_to action")
             return False
         delta = target - torso_now
+        if self._joint_delta_is_noop(delta):
+            return True
         torso_plan = self._build_torso_joint_plan(delta, min_steps=settle_steps)
         return self._execute_torso_plan(torso_plan, save_freq=save_freq)
 
@@ -3185,7 +3361,6 @@ class Base_Task(gym.Env):
                 far=camera_spec.get("far", None),
                 horizontal_margin_rad=float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0)),
                 vertical_margin_rad=float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0)),
-                aabb_min_visible_ratio=float(getattr(self, "rotate_scan_aabb_visible_ratio_threshold", 0.4)),
                 ret_debug=True,
             )
             world_point = np.array(debug.get("world_point", self._resolve_object_world_point(obj=obj)), dtype=np.float64)
@@ -3194,7 +3369,6 @@ class Base_Task(gym.Env):
                 "u_norm": float(u_norm) if np.isfinite(u_norm) else None,
                 "v_norm": float(v_norm) if np.isfinite(v_norm) else None,
                 "inside": bool(debug["inside"]),
-                "visible_ratio": float(debug.get("visible_ratio", 0.0)),
             }
         except Exception:
             return None
@@ -3239,7 +3413,6 @@ class Base_Task(gym.Env):
                 "u_norm": None if proj is None else proj["u_norm"],
                 "v_norm": None if proj is None else proj["v_norm"],
                 "world_point": None if proj is None else np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist(),
-                "visible_ratio": 0.0 if proj is None else float(proj.get("visible_ratio", 0.0)),
             }
         post_hook = getattr(self, "_after_rotate_visibility_refresh", None)
         if callable(post_hook):
@@ -3403,15 +3576,13 @@ class Base_Task(gym.Env):
         return state
 
     def _ensure_rotate_search_cursor_initialized(self):
-        states = self._get_rotate_discrete_search_states()
-        if len(states) == 0:
-            return None
         if self.search_cursor_state_index is None:
             return self._set_rotate_search_cursor(
                 state_idx=0,
                 theta=0.0,
-                layer_name=states[0]["layer"],
+                layer_name=self._get_rotate_discrete_search_states()[0]["layer"],
             )
+        states = self._get_rotate_discrete_search_states()
         if self.search_cursor_state_index >= len(states):
             return None
         return self._set_rotate_search_cursor(
@@ -4141,33 +4312,11 @@ class Base_Task(gym.Env):
         yaw = float(np.arctan2(fxy[1], fxy[0]))
         return yaw, np.array(pose.p, dtype=np.float64)
 
-    @staticmethod
-    def _compute_pose_facing_yaw_pitch(pose):
-        if pose is None:
-            return None, None, None
-        rot = t3d.quaternions.quat2mat(np.array(pose.q, dtype=np.float64))
-        forward = np.array(rot[:, 0], dtype=np.float64)
-        fxy_norm = float(np.linalg.norm(forward[:2]))
-        if fxy_norm < 1e-9:
-            forward = np.array(rot[:, 1], dtype=np.float64)
-            fxy_norm = float(np.linalg.norm(forward[:2]))
-            if fxy_norm < 1e-9:
-                return None, None, np.array(pose.p, dtype=np.float64)
-        yaw = float(np.arctan2(forward[1], forward[0]))
-        pitch = float(np.arctan2(forward[2], fxy_norm))
-        return yaw, pitch, np.array(pose.p, dtype=np.float64)
-
     def _get_scan_camera_planar_facing_yaw(self, camera_name=None):
         pose = self._get_scan_camera_pose(camera_name)
         if pose is None:
             return None, None
         return self._compute_pose_planar_facing_yaw(pose)
-
-    def _get_scan_camera_facing_yaw_pitch(self, camera_name=None):
-        pose = self._get_scan_camera_pose(camera_name)
-        if pose is None:
-            return None, None, None
-        return self._compute_pose_facing_yaw_pitch(pose)
 
     def _get_current_scan_camera_theta(self, camera_name=None):
         facing_yaw, _ = self._get_scan_camera_planar_facing_yaw(camera_name=camera_name)
@@ -4692,19 +4841,6 @@ class Base_Task(gym.Env):
         focus_object_idx = self.object_key_to_idx.get(focus_object_key, -1) if focus_object_key is not None else -1
         target_uv_norm = np.array([-1.0, -1.0], dtype=np.float32)
         waist_heading_deg = self._get_current_rotate_waist_heading_deg()
-        camera_heading_deg = None
-        camera_pitch_deg = None
-        camera_facing_yaw, camera_facing_pitch, _ = self._get_scan_camera_facing_yaw_pitch(camera_name="camera_head")
-        if camera_facing_yaw is None or camera_facing_pitch is None:
-            camera_facing_yaw, camera_facing_pitch, _ = self._get_scan_camera_facing_yaw_pitch()
-        if camera_facing_yaw is not None:
-            if hasattr(self, "robot_yaw"):
-                camera_heading_rad = self._wrap_to_pi(float(camera_facing_yaw) - float(self.robot_yaw))
-            else:
-                camera_heading_rad = float(camera_facing_yaw)
-            camera_heading_deg = float(np.rad2deg(camera_heading_rad))
-        if camera_facing_pitch is not None:
-            camera_pitch_deg = float(np.rad2deg(float(camera_facing_pitch)))
         focus_object_visible = 0
         if focus_object_key is not None:
             focus_proj = visibility_map.get(focus_object_key, None)
@@ -4735,31 +4871,12 @@ class Base_Task(gym.Env):
             "camera_mode": np.int8(self.current_camera_mode),
             "camera_target_theta": np.float32(self.current_camera_target_theta),
             "waist_heading_deg": np.float32(np.nan if waist_heading_deg is None else waist_heading_deg),
-            "camera_heading_deg": np.float32(np.nan if camera_heading_deg is None else camera_heading_deg),
-            "camera_pitch_deg": np.float32(np.nan if camera_pitch_deg is None else camera_pitch_deg),
             "visible_object_mask": visible_mask.astype(np.int8),
             "discovered_object_mask": discovered_mask.astype(np.int8),
             "search_target_mask": search_target_mask.astype(np.int8),
             "action_target_mask": action_target_mask.astype(np.int8),
             "carried_object_mask": carried_object_mask.astype(np.int8),
             "target_uv_norm": target_uv_norm.astype(np.float32),
-        }
-        visible_object_uv_map = {
-            str(key): [float(info["u_norm"]), float(info["v_norm"])]
-            for key, info in visibility_map.items()
-            if bool(info.get("visible", False)) and info.get("u_norm") is not None and info.get("v_norm") is not None
-        }
-        discovered_last_uv_map = {
-            str(key): [float(state["last_uv_norm"][0]), float(state["last_uv_norm"][1])]
-            for key, state in self.discovered_objects.items()
-            if bool(state.get("discovered", False))
-            and isinstance(state.get("last_uv_norm"), (list, tuple))
-            and len(state.get("last_uv_norm")) >= 2
-        }
-        visible_object_ratio_map = {
-            str(key): float(info.get("visible_ratio", 0.0))
-            for key, info in visibility_map.items()
-            if bool(info.get("visible", False))
         }
         self._latest_frame_annotation = {
             "subtask": int(self.current_subtask_idx),
@@ -4773,14 +4890,9 @@ class Base_Task(gym.Env):
             "discovered_object_keys": [
                 key for key, state in self.discovered_objects.items() if bool(state.get("discovered", False))
             ],
-            "visible_object_uv_map": visible_object_uv_map,
-            "discovered_last_uv_map": discovered_last_uv_map,
-            "visible_object_ratio_map": visible_object_ratio_map,
             "target_uv_norm": target_uv_norm.tolist(),
             "camera_mode": int(self.current_camera_mode),
             "waist_heading_deg": (None if waist_heading_deg is None else float(waist_heading_deg)),
-            "camera_heading_deg": (None if camera_heading_deg is None else float(camera_heading_deg)),
-            "camera_pitch_deg": (None if camera_pitch_deg is None else float(camera_pitch_deg)),
             "waist_heading_joint_name": self.rotate_waist_heading_joint_name,
             "camera_target_theta": (
                 None if not np.isfinite(self.current_camera_target_theta) else float(self.current_camera_target_theta)

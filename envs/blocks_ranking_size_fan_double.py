@@ -6,6 +6,7 @@ import sapien
 
 
 class blocks_ranking_size_fan_double(Base_Task):
+    FIXED_LAYER_HEAD_JOINT2_ONLY = True
     LAYER_SPECS = {
         "lower": {
             "inner_margin": 0.12,
@@ -82,8 +83,63 @@ class blocks_ranking_size_fan_double(Base_Task):
     SUCCESS_Z_TOL = 0.08
 
     def setup_demo(self, **kwargs):
+        kwargs = dict(kwargs)
+        self.fixed_layer_head_joint2_only = bool(
+            kwargs.get(
+                "fixed_layer_head_joint2_only",
+                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
+            )
+        )
         kwargs = fd.setup_fan_double_defaults(self, kwargs)
         super()._init_task_env_(**kwargs)
+
+    def _get_subtask_search_target_keys(self, subtask_idx):
+        return fd.get_subtask_search_target_keys(self, subtask_idx)
+
+    def _get_subtask_upper_search_target_keys(self, subtask_idx):
+        return fd.get_subtask_upper_search_target_keys(self, subtask_idx)
+
+    def _should_search_lower_before_upper_for_subtask(self, subtask_idx):
+        return fd.should_search_lower_before_upper_for_subtask(self, subtask_idx)
+
+    def _has_unfinished_lower_search_phase(self):
+        return fd.has_unfinished_lower_search_phase(self)
+
+    def _clear_rotate_target_search_history(self, object_key):
+        fd.clear_rotate_target_search_history(self, object_key)
+
+    def _prepare_subtask_rotate_search(self, subtask_idx):
+        fd.prepare_subtask_rotate_search(self, subtask_idx)
+
+    def _should_enforce_rotate_stage1_search_order(self, subtask_idx, subtask_def=None):
+        return bool(self._should_search_lower_before_upper_for_subtask(subtask_idx))
+
+    def _should_skip_rotate_head_home_reset(self, subtask_idx, prev_subtask_idx=None):
+        return bool(
+            self._should_search_lower_before_upper_for_subtask(subtask_idx)
+            and self._has_unfinished_lower_search_phase()
+        )
+
+    def _after_rotate_visibility_refresh(self, visibility_map):
+        if int(getattr(self, "current_stage", 0)) != 1:
+            return None
+        subtask_idx = int(getattr(self, "current_subtask_idx", 0))
+        if subtask_idx <= 0 or (not self._should_search_lower_before_upper_for_subtask(subtask_idx)):
+            return None
+        current_layer = fd.normalize_layer(getattr(self, "search_cursor_layer", "lower") or "lower")
+        if current_layer != "lower":
+            return None
+
+        for key in self._get_subtask_upper_search_target_keys(subtask_idx):
+            self._clear_rotate_target_search_history(key)
+            if isinstance(visibility_map, dict) and key in visibility_map:
+                visibility_map[key] = {
+                    "visible": False,
+                    "u_norm": None,
+                    "v_norm": None,
+                    "world_point": None,
+                }
+        return None
 
     def _sample_block_layers(self):
         non_anchor_layers = ("lower", "upper") if int(np.random.randint(0, 2)) == 0 else ("upper", "lower")
@@ -234,7 +290,7 @@ class blocks_ranking_size_fan_double(Base_Task):
         )
 
     def _place(self, subtask_idx, key, arm_tag, focus_key):
-        return fd.place_object(
+        placed = fd.place_object(
             self,
             subtask_idx,
             key,
@@ -252,12 +308,17 @@ class blocks_ranking_size_fan_double(Base_Task):
             },
             focus_object_key=focus_key,
         )
+        if placed:
+            self.block_layers[str(key)] = fd.normalize_layer(self.TARGET_LAYER)
+            self.object_layers[str(key)] = fd.normalize_layer(self.TARGET_LAYER)
+        return placed
 
     def play_once(self):
         arm_tag_b = ArmTag("left")
         arm_tag_c = ArmTag("left")
         prev_subtask_idx = None
         for pick_idx, place_idx, key, focus_key in [(1, 2, "B", "A"), (3, 4, "C", "B")]:
+            self._prepare_subtask_rotate_search(pick_idx)
             fd.maybe_reset_head_for_subtask(self, pick_idx, prev_subtask_idx=prev_subtask_idx)
             found_key = fd.search_focus(self, pick_idx)
             if found_key is None:
@@ -268,6 +329,7 @@ class blocks_ranking_size_fan_double(Base_Task):
                 break
             prev_subtask_idx = pick_idx
 
+            self._prepare_subtask_rotate_search(place_idx)
             fd.maybe_reset_head_for_subtask(self, place_idx, prev_subtask_idx=prev_subtask_idx)
             found_focus = fd.search_focus(self, place_idx)
             if found_focus is None:

@@ -18,9 +18,16 @@ from argparse import ArgumentParser
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
 
-DEFAULT_MAX_SEED_TRIES = 50
+DEFAULT_MAX_SEED_TRIES = 1000
 SEED_LIMIT_EXCEEDED_EXIT_CODE = 2
 COLLECTION_FAILED_EXIT_CODE = 1
+
+
+def _env_flag(name, default=False):
+    raw = os.environ.get(name, None)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def class_decorator(task_name):
@@ -91,13 +98,6 @@ def clear_collection_failure_report(save_path):
     report_path = get_collection_failure_report_path(save_path)
     if os.path.exists(report_path):
         os.remove(report_path)
-
-
-def _env_flag(name, default=False):
-    raw = os.environ.get(name, None)
-    if raw is None:
-        return bool(default)
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def make_json_safe(value):
@@ -251,7 +251,12 @@ def run(TASK_ENV, args):
                     seed_list = [int(i) for i in seed_list]
                     suc_num = len(seed_list)
                     epid = max(seed_list) + 1
+                elif os.environ.get("ROBOTWIN_START_SEED") is not None:
+                    epid = int(os.environ["ROBOTWIN_START_SEED"])
             print(f"Exist seed file, Start from: {epid} / {suc_num}")
+        elif os.environ.get("ROBOTWIN_START_SEED") is not None:
+            epid = int(os.environ["ROBOTWIN_START_SEED"])
+            print(f"Start from env seed: {epid}")
 
         while suc_num < args["episode_num"]:
             if max_seed_tries is not None and epid > max_seed_tries:
@@ -403,7 +408,7 @@ def run(TASK_ENV, args):
             subtask_metadata_path = TASK_ENV.save_rotate_subtask_metadata(episode_idx)
             if subtask_metadata_path is not None:
                 info_db[f"episode_{episode_idx}"]["subtask_metadata_path"] = subtask_metadata_path
-            annotated_video_path = (None if skip_annotated_video else TASK_ENV.get_rotate_annotated_video_path(episode_idx))
+            annotated_video_path = None if skip_annotated_video else TASK_ENV.get_rotate_annotated_video_path(episode_idx)
             if annotated_video_path is not None and len(getattr(TASK_ENV, "saved_frame_annotations", [])) > 0:
                 info_db[f"episode_{episode_idx}"]["annotated_video_path"] = annotated_video_path
 
@@ -427,8 +432,9 @@ def run(TASK_ENV, args):
 
 
 if __name__ == "__main__":
-    from test_render import Sapien_TEST
-    Sapien_TEST()
+    if not _env_flag("ROBOTWIN_SKIP_RENDER_TEST", default=False):
+        from test_render import Sapien_TEST
+        Sapien_TEST()
 
     import torch.multiprocessing as mp
     mp.set_start_method("spawn", force=True)

@@ -120,7 +120,8 @@ class search_object(Base_Task):
 
     def _get_robot_root_xy_yaw(self):
         root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()
-        yaw = float(t3d.euler.quat2euler(self.robot.left_entity_origion_pose.q)[2])
+        root_q = np.asarray(self.robot.left_entity_origion_pose.q, dtype=np.float64)
+        yaw = float(t3d.euler.quat2euler(root_q)[2])
         return root_xy, yaw
 
     @staticmethod

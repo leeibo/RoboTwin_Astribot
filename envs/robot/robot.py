@@ -76,6 +76,15 @@ class Robot:
         self._left_live_prev_rot = None
         self.left_base_link = None
         self.head_camera = None
+        self.communication_flag = False
+        self.left_planner = None
+        self.right_planner = None
+        self.left_mplib_planner = None
+        self.right_mplib_planner = None
+        self.left_conn = None
+        self.right_conn = None
+        self.left_proc = None
+        self.right_proc = None
 
         self.left_js = None
         self.right_js = None
@@ -338,7 +347,10 @@ class Robot:
                 self.right_conn.send({"cmd": "reset"})
                 _ = self.right_conn.recv()
         else:
-            if not isinstance(self.left_planner, CuroboPlanner) or not isinstance(self.right_planner, CuroboPlanner):
+            if (
+                not isinstance(getattr(self, "left_planner", None), CuroboPlanner)
+                or not isinstance(getattr(self, "right_planner", None), CuroboPlanner)
+            ):
                 self.set_planner(scene=scene)
 
         self.init_joints()
@@ -793,7 +805,7 @@ class Robot:
         return dt
 
     def _recompute_path_velocity(self, path_pos):
-        path_pos = np.array(path_pos, dtype=np.float64, copy=False)
+        path_pos = np.asarray(path_pos, dtype=np.float64)
         vel = np.zeros_like(path_pos, dtype=np.float64)
         if path_pos.ndim != 2 or path_pos.shape[0] <= 1:
             return vel
@@ -812,7 +824,7 @@ class Robot:
         if isinstance(status, str) and status != "Success":
             return plan_res
 
-        raw_pos = np.array(plan_res["position"], dtype=np.float64, copy=False)
+        raw_pos = np.asarray(plan_res["position"], dtype=np.float64)
         if raw_pos.ndim != 2 or raw_pos.shape[0] == 0:
             return plan_res
 

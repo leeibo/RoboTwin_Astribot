@@ -1,8 +1,4 @@
-# Edit this list to keep only the rotate-view tasks you want to collect.
-# Used by:
-#   - collect_rotate_tasks_whitelist.sh
-#   - collect_rotate_tasks_multi_difficulty_whitelist.sh
-
+# DYJ 34-task whitelist mirrored from dyj_whitelist_episode0_videos.
 - beat_block_hammer_rotate_view
 - blocks_ranking_rgb_fan_double
 - blocks_ranking_rgb_rotate_view

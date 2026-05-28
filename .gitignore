@@ -1,5 +1,6 @@
 models/
 data/*
+data_view/
 !data/process_stuck.py
 __pycache__/
 **/checkpoints/

@@ -10,6 +10,8 @@ import toppra as ta
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 import transforms3d as t3d
 import random
+import os
+import tempfile
 import envs._GLOBAL_CONFIGS as CONFIGS
 # left_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_left_identity.json'))
 # right_pose = json.load(open('/home/admin1/Desktop/RoboTwin/script/calibration/ik_right_identity.json'))
@@ -142,6 +144,99 @@ try:
     from curobo.util import logger
     logger.setup_logger(level="error", logger_name="curobo")
 
+    def _get_nested_cfg_value(data, key_path):
+        cur = data
+        for key in key_path:
+            if not isinstance(cur, dict) or key not in cur:
+                return None
+            cur = cur[key]
+        return cur
+
+    def _set_nested_cfg_value(data, key_path, value):
+        cur = data
+        for key in key_path[:-1]:
+            if key not in cur or not isinstance(cur[key], dict):
+                cur[key] = {}
+            cur = cur[key]
+        cur[key_path[-1]] = value
+
+    def _resolve_curobo_file_path(raw_path, yml_dir):
+        if raw_path is None or not isinstance(raw_path, str):
+            return raw_path
+
+        resolved = str(raw_path).strip()
+        if resolved == "":
+            return raw_path
+
+        repo_root = CONFIGS.ROOT_PATH.rstrip("/")
+        for src, dst in {
+            "${ASSETS_PATH}": repo_root,
+            "$ASSETS_PATH": repo_root,
+            "${ROOT_PATH}": repo_root,
+            "$ROOT_PATH": repo_root,
+        }.items():
+            resolved = resolved.replace(src, dst)
+        resolved = os.path.expanduser(os.path.expandvars(resolved))
+
+        candidates = [resolved]
+        if not os.path.isabs(resolved):
+            candidates.append(os.path.abspath(os.path.join(yml_dir, resolved)))
+
+        if "/assets/" in resolved:
+            suffix = resolved.split("/assets/", 1)[1]
+            candidates.append(os.path.abspath(os.path.join(CONFIGS.ASSETS_PATH, suffix)))
+
+        if "/RoboTwin_Astribot/" in resolved:
+            suffix = resolved.split("/RoboTwin_Astribot/", 1)[1]
+            candidates.append(os.path.abspath(os.path.join(CONFIGS.ROOT_PATH, suffix)))
+
+        candidates.append(os.path.abspath(os.path.join(yml_dir, os.path.basename(resolved))))
+
+        seen = set()
+        for candidate in candidates:
+            if not isinstance(candidate, str):
+                continue
+            norm = os.path.abspath(candidate)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            if os.path.exists(norm):
+                return norm
+        return resolved
+
+    def _prepare_curobo_config_file(yml_path):
+        with open(yml_path, "r", encoding="utf-8") as f:
+            yml_data = yaml.safe_load(f)
+
+        yml_dir = os.path.dirname(os.path.abspath(yml_path))
+        changed = False
+        for key_path in [
+            ("robot_cfg", "kinematics", "urdf_path"),
+            ("robot_cfg", "kinematics", "collision_spheres"),
+            ("robot_cfg", "kinematics", "asset_root_path"),
+        ]:
+            raw_value = _get_nested_cfg_value(yml_data, key_path)
+            resolved_value = _resolve_curobo_file_path(raw_value, yml_dir)
+            if resolved_value != raw_value:
+                _set_nested_cfg_value(yml_data, key_path, resolved_value)
+                changed = True
+
+        if not changed:
+            return os.path.abspath(yml_path), yml_data
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".yml",
+            prefix="curobo_resolved_",
+            delete=False,
+            encoding="utf-8",
+        )
+        try:
+            yaml.safe_dump(yml_data, tmp, sort_keys=False)
+        finally:
+            tmp.close()
+        return tmp.name, yml_data
+
     class CuroboPlanner:
 
         def __init__(
@@ -158,15 +253,13 @@ try:
             self.verbose = bool(verbose)
 
             if yml_path != None:
-                self.yml_path = yml_path
+                self.original_yml_path = os.path.abspath(yml_path)
+                self.yml_path, yml_data = _prepare_curobo_config_file(self.original_yml_path)
             else:
                 raise ValueError("[Planner.py]: CuroboPlanner yml_path is None!")
             self.robot_origion_pose = robot_origion_pose
             self.active_joints_name = active_joints_name
             self.all_joints = all_joints
-
-            with open(self.yml_path, "r") as f:
-                yml_data = yaml.safe_load(f)
 
             self._root_to_base_chain = self._extract_urdf_root_to_base_chain(yml_data)
             self.T_root_to_base = np.eye(4, dtype=np.float64)
