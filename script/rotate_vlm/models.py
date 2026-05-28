@@ -15,6 +15,9 @@ class MemorySlot:
     planned_delta_deg: float
     planned_heading_deg: float
     roles: list[str]
+    current_pitch_deg: float = 0.0
+    planned_pitch_delta_deg: float = 0.0
+    planned_pitch_deg: float = 0.0
     action_chunk_frame_indices: list[int] = field(default_factory=list)
     action_chunk_actual_size: int = 0
     action_chunk_pad_count: int = 0

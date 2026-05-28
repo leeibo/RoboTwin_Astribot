@@ -49,16 +49,41 @@ def _annotation_target_keys(annotation: dict[str, Any]) -> list[str]:
 
 def _annotation_planned_delta_deg(annotation: dict[str, Any]) -> float:
     target_theta = annotation.get("camera_target_theta", None)
-    current_heading = _safe_float(annotation.get("waist_heading_deg", 0.0))
+    current_heading = _annotation_current_heading_deg(annotation)
     if target_theta is None:
         return 0.0
     return _wrap_to_180(math.degrees(float(target_theta)) - current_heading)
 
 
+def _annotation_current_heading_deg(annotation: dict[str, Any]) -> float:
+    if annotation.get("camera_heading_deg", None) is not None:
+        return _safe_float(annotation.get("camera_heading_deg", 0.0))
+    return _safe_float(annotation.get("waist_heading_deg", 0.0))
+
+
+def _annotation_current_pitch_deg(annotation: dict[str, Any]) -> float:
+    if annotation.get("camera_pitch_deg", None) is not None:
+        return _safe_float(annotation.get("camera_pitch_deg", 0.0))
+    if annotation.get("head_pitch_deg", None) is not None:
+        return _safe_float(annotation.get("head_pitch_deg", 0.0))
+    return 0.0
+
+
+def _annotation_planned_pitch_delta_deg(annotation: dict[str, Any]) -> float:
+    target_pitch = annotation.get("camera_target_pitch_deg", None)
+    if target_pitch is None:
+        return 0.0
+    return _wrap_to_180(float(target_pitch) - _annotation_current_pitch_deg(annotation))
+
+
 def _annotation_planned_heading_deg(annotation: dict[str, Any]) -> float:
     return _wrap_to_180(
-        _safe_float(annotation.get("waist_heading_deg", 0.0)) + _annotation_planned_delta_deg(annotation)
+        _annotation_current_heading_deg(annotation) + _annotation_planned_delta_deg(annotation)
     )
+
+
+def _annotation_planned_pitch_deg(annotation: dict[str, Any]) -> float:
+    return _wrap_to_180(_annotation_current_pitch_deg(annotation) + _annotation_planned_pitch_delta_deg(annotation))
 
 
 def _decode_jpeg_array(payload: bytes) -> np.ndarray:
@@ -163,20 +188,29 @@ def _make_memory_slot(
     action_chunk_pad_count: int = 0,
 ) -> MemorySlot:
     planned_delta_deg = 0.0 if "stage3_chunk" in roles else _annotation_planned_delta_deg(annotation)
+    planned_pitch_delta_deg = 0.0 if "stage3_chunk" in roles else _annotation_planned_pitch_delta_deg(annotation)
+    current_pitch_deg = _annotation_current_pitch_deg(annotation)
     return MemorySlot(
         slot_idx=int(slot_idx),
         frame_idx=int(annotation.get("frame_idx", slot_idx)),
         subtask_id=int(annotation.get("subtask", 0) or 0),
         stage=int(annotation.get("stage", 0) or 0),
         current_annotation=dict(annotation),
-        current_heading_deg=_safe_float(annotation.get("waist_heading_deg", 0.0)),
+        current_heading_deg=_annotation_current_heading_deg(annotation),
         planned_delta_deg=float(planned_delta_deg),
         planned_heading_deg=(
-            _safe_float(annotation.get("waist_heading_deg", 0.0))
+            _annotation_current_heading_deg(annotation)
             if "stage3_chunk" in roles
             else _annotation_planned_heading_deg(annotation)
         ),
         roles=list(roles),
+        current_pitch_deg=float(current_pitch_deg),
+        planned_pitch_delta_deg=float(planned_pitch_delta_deg),
+        planned_pitch_deg=(
+            float(current_pitch_deg)
+            if "stage3_chunk" in roles
+            else _annotation_planned_pitch_deg(annotation)
+        ),
         action_chunk_frame_indices=[] if action_chunk_frame_indices is None else [int(idx) for idx in action_chunk_frame_indices],
         action_chunk_actual_size=int(action_chunk_actual_size),
         action_chunk_pad_count=int(action_chunk_pad_count),
@@ -281,7 +315,7 @@ def _make_snapshot(current_slot: MemorySlot, prompt_slots: list[MemorySlot]) -> 
     prompt_planned_actions = [
         (
             int(round(_wrap_to_180(float(next_slot.current_heading_deg) - float(prev_slot.current_heading_deg)))),
-            0,
+            int(round(_wrap_to_180(float(next_slot.current_pitch_deg) - float(prev_slot.current_pitch_deg)))),
         )
         for prev_slot, next_slot in zip(prompt_sequence[:-1], prompt_sequence[1:])
     ]
@@ -318,11 +352,23 @@ def _slot_coverage_indices(
     half_fov_deg: float = DEFAULT_MEMORY_FOV_HALF_DEG,
 ) -> set[int]:
     diffs = np.abs(np.vectorize(_wrap_to_180)(grid - float(slot.current_heading_deg)))
-    return {int(idx) for idx, diff in enumerate(diffs.tolist()) if float(diff) <= float(half_fov_deg) + 1e-6}
+    pitch_bin = int(round(float(getattr(slot, "current_pitch_deg", 0.0)) / 10.0))
+    pitch_offset = (pitch_bin + 180) * int(len(grid))
+    return {
+        int(pitch_offset + idx)
+        for idx, diff in enumerate(diffs.tolist())
+        if float(diff) <= float(half_fov_deg) + 1e-6
+    }
 
 
 def _is_zero_rotate_slot(slot: MemorySlot) -> bool:
-    return bool("stage3_chunk" in slot.roles or abs(float(slot.planned_delta_deg)) <= ZERO_ROTATE_EPS_DEG)
+    return bool(
+        "stage3_chunk" in slot.roles
+        or (
+            abs(float(slot.planned_delta_deg)) <= ZERO_ROTATE_EPS_DEG
+            and abs(float(getattr(slot, "planned_pitch_delta_deg", 0.0))) <= ZERO_ROTATE_EPS_DEG
+        )
+    )
 
 
 def _merge_rotate_zero_blocks(slots: list[MemorySlot]) -> list[MemorySlot]:

@@ -55,6 +55,8 @@ def main():
             "Defaults to ROBOTWIN_VLM_EXPORT_WORKERS or min(8, cpu_count)."
         ),
     )
+    parser.add_argument("--episode-indices", nargs="*", type=int, default=None)
+    parser.add_argument("--max-episodes", type=int, default=None)
     args = parser.parse_args()
 
     summary = export_task_vlm_dataset(
@@ -64,6 +66,8 @@ def main():
         action_chunk_size=args.action_chunk_size,
         task_types=args.task_types,
         num_workers=args.num_workers,
+        episode_indices=args.episode_indices,
+        max_episodes=args.max_episodes,
     )
     paths_text = ", ".join(f"{task_type}={path}" for task_type, path in summary.get("samples_paths", {}).items())
     worker_count = int(summary.get("worker_count", args.num_workers or min(8, int(os.cpu_count() or 1))))

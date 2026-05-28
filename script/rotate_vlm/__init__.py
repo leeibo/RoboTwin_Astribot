@@ -237,12 +237,19 @@ def _rotation_difference_pair(from_heading_deg: float, to_heading_deg: float) ->
     return (int(round(_wrap_to_180(float(to_heading_deg) - float(from_heading_deg)))), 0)
 
 
+def _view_difference_pair(from_slot: MemorySlot, to_slot: MemorySlot) -> tuple[int, int]:
+    return (
+        int(round(_wrap_to_180(float(to_slot.current_heading_deg) - float(from_slot.current_heading_deg)))),
+        int(round(_wrap_to_180(float(getattr(to_slot, "current_pitch_deg", 0.0)) - float(getattr(from_slot, "current_pitch_deg", 0.0))))),
+    )
+
+
 def _to_vqa_rotation_pair(rotation: tuple[int, int] | list[int] | tuple[float, float]) -> tuple[int, int]:
     return (-int(round(float(rotation[0]))), int(round(float(rotation[1]))))
 
 
 def _slot_view_delta(previous_slot: MemorySlot, current_slot: MemorySlot) -> tuple[int, int]:
-    return _rotation_difference_pair(previous_slot.current_heading_deg, current_slot.current_heading_deg)
+    return _view_difference_pair(previous_slot, current_slot)
 
 
 def _slot_sequence_view_deltas(slots: list[MemorySlot]) -> list[tuple[int, int]]:
@@ -316,14 +323,24 @@ def _memory_slot_by_frame(slots: list[MemorySlot], frame_idx: int | None) -> Mem
 
 
 def _search_camera_delta(snapshot: EpisodeSnapshot) -> int:
+    return int(_search_camera_delta_pair(snapshot)[0])
+
+
+def _search_camera_delta_pair(snapshot: EpisodeSnapshot) -> tuple[int, int]:
     current_slot = snapshot.current_slot
     if "stage3_chunk" in current_slot.roles:
-        return 0
+        return (0, 0)
     if snapshot.evidence_from_history and snapshot.evidence_frame_idx is not None:
         evidence_slot = _memory_slot_by_frame(snapshot.prompt_slots, snapshot.evidence_frame_idx)
         if evidence_slot is not None:
-            return int(round(_wrap_to_180(evidence_slot.current_heading_deg - current_slot.current_heading_deg)))
-    return int(round(float(current_slot.planned_delta_deg)))
+            return (
+                int(round(_wrap_to_180(evidence_slot.current_heading_deg - current_slot.current_heading_deg))),
+                int(round(_wrap_to_180(float(getattr(evidence_slot, "current_pitch_deg", 0.0)) - float(getattr(current_slot, "current_pitch_deg", 0.0))))),
+            )
+    return (
+        int(round(float(current_slot.planned_delta_deg))),
+        int(round(float(getattr(current_slot, "planned_pitch_delta_deg", 0.0)))),
+    )
 
 
 def _search_info_complete(snapshot: EpisodeSnapshot) -> bool:
@@ -362,12 +379,13 @@ def _render_object_search_response(metadata: dict[str, Any], snapshot: EpisodeSn
     current_slot = snapshot.current_slot
     task_clause = _task_subtask_think_clause(metadata, current_slot.subtask_id)
     phrase = _resolve_search_phrase(metadata, current_slot)
-    camera_rotation = (_search_camera_delta(snapshot), 0)
+    camera_rotation = _search_camera_delta_pair(snapshot)
     info_complete = _search_info_complete(snapshot)
     has_evidence_frame = snapshot.evidence_prompt_index is not None and snapshot.evidence_uv_norm is not None
     primary_arm = _infer_primary_arm(metadata)
     memory_summary = _object_search_memory_summary(snapshot)
     camera_field = _format_rotate_text(camera_rotation)
+    past_action_summary = _format_rotation_pairs(snapshot.prompt_planned_actions)
 
     if info_complete and has_evidence_frame and snapshot.evidence_from_history:
         evidence_text = f"The {phrase} was found in frame {int(snapshot.evidence_prompt_index)} at {_format_uv_1000(snapshot.evidence_uv_norm)}."
@@ -391,6 +409,7 @@ def _render_object_search_response(metadata: dict[str, Any], snapshot: EpisodeSn
     info_text = "Info sufficient." if info_complete else "Info incomplete."
     think = (
         f"{memory_summary} "
+        f"Past actions: {past_action_summary}. "
         f"{task_clause} "
         f"The target object is the {phrase}. "
         f"{evidence_text} "
@@ -487,6 +506,7 @@ def _build_object_search_sample(
             "evidence_prompt_index": snapshot.evidence_prompt_index,
             "evidence_uv_norm": snapshot.evidence_uv_norm,
             "camera_delta_deg": int(_to_vqa_rotation_pair((_search_camera_delta(snapshot), 0))[0]),
+            "camera_delta_pair": _metadata_action_pairs([_search_camera_delta_pair(snapshot)])[0],
             "action_chunk_size": int(context.action_chunk_size),
             "action_chunk_actual_size": int(snapshot.current_slot.action_chunk_actual_size),
             "action_chunk_pad_count": int(snapshot.current_slot.action_chunk_pad_count),
@@ -509,9 +529,12 @@ def _build_angle_delta_user_prompt(metadata: dict[str, Any], previous_slot: Memo
 
 def _render_angle_delta_response(rotation_difference: tuple[int, int]) -> str:
     vqa_rotation_difference = _to_vqa_rotation_pair(rotation_difference)
+    axis_text = "rotation difference"
+    if int(vqa_rotation_difference[1]) != 0:
+        axis_text = "horizontal/vertical rotation difference"
     think = (
         "Frames: 2 total (1 history + current). "
-        f"From frame 1 to frame 2, the rotation difference is ({int(vqa_rotation_difference[0])}, {int(vqa_rotation_difference[1])})."
+        f"From frame 1 to frame 2, the {axis_text} is ({int(vqa_rotation_difference[0])}, {int(vqa_rotation_difference[1])})."
     )
     return f"<think>{think}</think><camera>{_format_rotate_text(rotation_difference)}</camera>"
 
@@ -830,6 +853,7 @@ def _render_memory_compression_response(
     object_phrase = _resolve_target_phrase(metadata, latest_slot, with_articles=True)
     think = (
         f"{_format_frame_summary(len(sample_slots))} "
+        f"Past actions: {_format_rotation_pairs(past_actions)}. "
         f"{task_clause} "
         f"{_compression_sequence_sentence(sample_slots, kept_positions, past_actions)} "
         f"Spatially, keep frames {_format_frame_field(kept_positions)} for distinct coverage. "
@@ -902,6 +926,20 @@ def _collect_episode_pairs(save_dir: Path) -> list[tuple[int, Path, Path]]:
         if hdf5_path.exists():
             pairs.append((episode_idx, metadata_path, hdf5_path))
     return pairs
+
+
+def _filter_episode_pairs(
+    episode_pairs: list[tuple[int, Path, Path]],
+    episode_indices: list[int] | None = None,
+    max_episodes: int | None = None,
+) -> list[tuple[int, Path, Path]]:
+    result = list(episode_pairs)
+    if episode_indices:
+        allowed = {int(idx) for idx in episode_indices}
+        result = [pair for pair in result if int(pair[0]) in allowed]
+    if max_episodes is not None:
+        result = result[: max(int(max_episodes), 0)]
+    return result
 
 
 def _resolve_export_workers(num_workers: int | None, episode_count: int) -> int:
@@ -993,6 +1031,8 @@ def export_task_vlm_dataset(
     action_chunk_size: int = DEFAULT_ACTION_CHUNK_SIZE,
     task_types: list[str] | None = None,
     num_workers: int | None = None,
+    episode_indices: list[int] | None = None,
+    max_episodes: int | None = None,
 ) -> dict[str, Any]:
     save_path = Path(save_dir)
     task_types = list(REGISTERED_TASK_TYPES if task_types is None else task_types)
@@ -1009,7 +1049,11 @@ def export_task_vlm_dataset(
     episode_count = 0
     annotated_video_count = 0
     annotated_video_frame_count = 0
-    episode_pairs = _collect_episode_pairs(save_path)
+    episode_pairs = _filter_episode_pairs(
+        _collect_episode_pairs(save_path),
+        episode_indices=episode_indices,
+        max_episodes=max_episodes,
+    )
     worker_count = _resolve_export_workers(num_workers, len(episode_pairs))
     job_args = [
         (
@@ -1058,6 +1102,8 @@ def export_task_vlm_dataset(
         "annotated_video_frame_count": int(annotated_video_frame_count),
         "action_chunk_size": int(action_chunk_size),
         "max_context_frames": int(max_context_frames),
+        "episode_indices": None if episode_indices is None else [int(idx) for idx in episode_indices],
+        "max_episodes": max_episodes,
     }
     _write_json(output_dir / "manifest.json", manifest)
 

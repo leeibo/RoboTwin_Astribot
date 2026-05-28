@@ -224,7 +224,7 @@ def _annotation_planned_delta_deg(annotation: dict[str, Any]) -> float:
     if target_theta is None:
         return 0.0
     try:
-        current_heading = float(annotation.get("waist_heading_deg", 0.0) or 0.0)
+        current_heading = _frame_heading_deg(annotation)
         return _wrap_to_180(math.degrees(float(target_theta)) - current_heading)
     except (TypeError, ValueError):
         return 0.0
@@ -232,6 +232,8 @@ def _annotation_planned_delta_deg(annotation: dict[str, Any]) -> float:
 
 def _frame_heading_deg(annotation: dict[str, Any]) -> float:
     try:
+        if annotation.get("camera_heading_deg", None) is not None:
+            return float(annotation.get("camera_heading_deg", 0.0) or 0.0)
         return float(annotation.get("waist_heading_deg", 0.0) or 0.0)
     except (TypeError, ValueError):
         return 0.0
