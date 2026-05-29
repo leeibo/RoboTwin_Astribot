@@ -3,69 +3,11 @@ from ._base_task import Base_Task
 from .utils import *
 import sapien
 import math
+import numpy as np
+import transforms3d as t3d
 
 
-class _click_bell(Base_Task):
-
-    def setup_demo(self, **kwags):
-        super()._init_task_env_(**kwags)
-
-    def load_actors(self):
-        rand_pos = rand_pose(
-            xlim=[-0.25, 0.25],
-            ylim=[-0.2, 0.0],
-            qpos=[0.5, 0.5, 0.5, 0.5],
-        )
-        while abs(rand_pos.p[0]) < 0.05:
-            rand_pos = rand_pose(
-                xlim=[-0.25, 0.25],
-                ylim=[-0.2, 0.0],
-                qpos=[0.5, 0.5, 0.5, 0.5],
-            )
-
-        self.bell_id = np.random.choice([0, 1], 1)[0]
-        self.bell = create_actor(
-            scene=self,
-            pose=rand_pos,
-            modelname="050_bell",
-            convex=True,
-            model_id=self.bell_id,
-            is_static=True,
-        )
-
-        self.add_prohibit_area(self.bell, padding=0.07)
-        self.check_arm_function = self.is_left_gripper_close if self.bell.get_pose().p[0] < 0 else self.is_right_gripper_close
-
-    def play_once(self):
-        # Choose the arm to use: right arm if the bell is on the right side (positive x), left otherwise
-        arm_tag = ArmTag("right" if self.bell.get_pose().p[0] > 0 else "left")
-
-        # Move the gripper above the top center of the bell and close the gripper to simulate a click
-        # Note: grasp_actor here is not used to grasp the bell, but to simulate a touch/click action
-        # You must use the same pre_grasp_dis and grasp_dis values as in the _click_bell task
-        self.move(self.grasp_actor(
-            self.bell,
-            arm_tag=arm_tag,
-            pre_grasp_dis=0.1,
-            grasp_dis=0.1,
-            contact_point_id=0,  # Targeting the bell's top center
-        ))
-
-        # Move the gripper downward to touch the top center of the bell
-        self.move(self.move_by_displacement(arm_tag, z=-0.045))
-
-        # Check whether the simulated click action was successful
-        self.check_success()
-
-        # Move the gripper back up to the original position (no need to lift or grasp the bell)
-        self.move(self.move_by_displacement(arm_tag, z=0.045))
-
-        # Check success again if needed (optional, based on your task logic)
-        self.check_success()
-
-        # Record which bell and arm were used in the info dictionary
-        self.info["info"] = {"{A}": f"050_bell/base{self.bell_id}", "{a}": str(arm_tag)}
-        return self.info
+class click_bell_rotate_view(Base_Task):
 
 
     def check_success(self):
@@ -81,14 +23,6 @@ class _click_bell(Base_Task):
                 self.stage_success_tag = True
                 return True
         return False
-
-
-from .utils import *
-import numpy as np
-import transforms3d as t3d
-
-
-class click_bell_rotate_view(_click_bell):
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -119,7 +53,7 @@ class click_bell_rotate_view(_click_bell):
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
         kwags = init_rotate_theta_bounds(self, kwags)
-        super().setup_demo(**kwags)
+        super()._init_task_env_(**kwags)
 
     def _get_robot_root_xy_yaw(self):
         root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()

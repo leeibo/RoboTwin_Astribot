@@ -1,46 +1,11 @@
 from ._base_task import Base_Task
 from .utils import *
 from ._GLOBAL_CONFIGS import *
+import numpy as np
+import transforms3d as t3d
 
 
-class _press_stapler(Base_Task):
-
-    def setup_demo(self, **kwags):
-        super()._init_task_env_(**kwags)
-
-    def load_actors(self):
-        rand_pos = rand_pose(
-            xlim=[-0.2, 0.2],
-            ylim=[-0.1, 0.05],
-            qpos=[0.5, 0.5, 0.5, 0.5],
-            rotate_rand=True,
-            rotate_lim=[0, np.pi, 0],
-        )
-
-        self.stapler_id = np.random.choice([0, 1, 2, 3, 4, 5, 6], 1)[0]
-        self.stapler = create_actor(self,
-                                    pose=rand_pos,
-                                    modelname="048_stapler",
-                                    convex=True,
-                                    model_id=self.stapler_id,
-                                    is_static=True)
-
-        self.add_prohibit_area(self.stapler, padding=0.05)
-
-    def play_once(self):
-        # Determine which arm to use based on stapler's position (left if negative x, right otherwise)
-        arm_tag = ArmTag("left" if self.stapler.get_pose().p[0] < 0 else "right")
-
-        # Move arm to the overhead position of the stapler and close the gripper
-        self.move(self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=0.1, contact_point_id=2))
-        self.move(self.close_gripper(arm_tag=arm_tag))
-
-        # Move the stapler down slightly to press it
-        self.move(
-            self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.02, grasp_dis=0.02, contact_point_id=2))
-
-        self.info["info"] = {"{A}": f"048_stapler/base{self.stapler_id}", "{a}": str(arm_tag)}
-        return self.info
+class press_stapler_rotate_view(Base_Task):
 
     def check_success(self):
         if self.stage_success_tag:
@@ -53,14 +18,6 @@ class _press_stapler(Base_Task):
                 self.stage_success_tag = True
                 return True
         return False
-
-
-from .utils import *
-import numpy as np
-import transforms3d as t3d
-
-
-class press_stapler_rotate_view(_press_stapler):
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -91,7 +48,7 @@ class press_stapler_rotate_view(_press_stapler):
         kwags.setdefault("fan_angle_deg", 220)
         kwags.setdefault("fan_center_deg", 90)
         kwags = init_rotate_theta_bounds(self, kwags)
-        super().setup_demo(**kwags)
+        super()._init_task_env_(**kwags)
 
     def _get_robot_root_xy_yaw(self):
         root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()

@@ -4,16 +4,8 @@ import numpy as np
 import sapien
 import transforms3d as t3d
 
-# 回退到原始版本
 
-class _PutBlockTargetFanDoubleBase(Base_Task):
-    # 坐标约定：
-    # 这里的 cyl 参数都使用机器人根部为圆心的柱坐标。
-    # r 表示水平半径，theta_deg=0 表示机器人初始正前方，z 表示世界坐标高度。
-    #
-    # block 生成参数：
-    # BLOCK_COUNT 手动控制生成 1/2/3 个 block。
-    # BLOCK_LAYER_SEQUENCE 显式决定每个 block 的层，长度必须等于 BLOCK_COUNT。
+class put_block_breadbasket_fan_double(Base_Task):
     BLOCK_COUNT = 2
     BLOCK_LAYER_SEQUENCE = ("lower","lower")
     BLOCK_SIZE_RANGE = (0.015, 0.025)
@@ -148,38 +140,6 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
     KNOWN_FIXED_TARGET_KEYS = ()
     SUCCESS_EPS = np.array([0.08, 0.08, 0.08], dtype=np.float64)
 
-    def setup_demo(self, **kwargs):
-        kwargs.setdefault("table_shape", "fan_double")
-        kwargs.setdefault("fan_center_on_robot", True)
-        kwargs.setdefault("fan_double_lower_outer_radius", 0.9)
-        kwargs.setdefault("fan_double_lower_inner_radius", 0.3)
-        kwargs.setdefault("fan_double_upper_outer_radius", 0.8)
-        kwargs.setdefault("fan_double_upper_inner_radius", 0.6)
-        kwargs.setdefault("fan_double_layer_gap", 0.35)
-        kwargs.setdefault("fan_double_upper_theta_start_deg", -30.0)
-        kwargs.setdefault("fan_double_upper_theta_end_deg", 30.0)
-        kwargs.setdefault("fan_double_support_theta_deg", -40.0)
-        kwargs.setdefault("fan_angle_deg", 150)
-        kwargs.setdefault("fan_center_deg", 90)
-        self.fixed_layer_head_joint2_only = bool(
-            kwargs.get(
-                "fixed_layer_head_joint2_only",
-                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
-            )
-        )
-        if "place_plate_upper_head_joint2_target" in kwargs:
-            self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_plate_upper_head_joint2_target"])
-        if "place_plate_lower_head_joint2_target" in kwargs:
-            lower_target = kwargs["place_plate_lower_head_joint2_target"]
-            self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
-        if "place_target_upper_head_joint2_target" in kwargs:
-            self.PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_target_upper_head_joint2_target"])
-        if "place_target_lower_head_joint2_target" in kwargs:
-            lower_target = kwargs["place_target_lower_head_joint2_target"]
-            self.PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
-        kwargs = init_rotate_theta_bounds(self, kwargs)
-        super()._init_task_env_(**kwargs)
-
     def _get_block_count(self):
         block_count = int(self.BLOCK_COUNT)
         if block_count not in (1, 2, 3):
@@ -202,9 +162,6 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
             )
         return layers
 
-    def _get_plate_layer(self):
-        return self._normalize_layer(self.PLATE_LAYER)
-
     def _sample_block_colors(self, block_count):
         palette = [tuple(float(channel) for channel in color) for color in self.BLOCK_COLOR_CANDIDATES]
         if len(palette) == 0:
@@ -220,31 +177,6 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
         if target_object is not None:
             return target_object
         return getattr(self, "plate", None)
-
-    def _get_target_layer(self):
-        return self._get_plate_layer()
-
-    def _get_target_layer_spec(self, layer_name=None):
-        return self._get_plate_layer_spec(layer_name)
-
-    def _get_target_anchor_pose(self, layer_name=None):
-        return self._get_plate_anchor_pose(layer_name)
-
-    def _create_target_anchor(self):
-        self._create_plate_anchor()
-        self.target_object = self.plate
-        self.target_layer = self.plate_layer
-        self.target_place_pose = list(self.plate_target_pose)
-        return self.target_object
-
-    def _get_target_place_target_pose(self, block_key=None):
-        return self._get_plate_place_target_pose(block_key)
-
-    def _get_task_instruction(self):
-        return "Put the block into {B}." if len(self.block_keys) == 1 else "Put all blocks into {B}."
-
-    def _get_target_padding(self):
-        return 0.08
 
     def _configure_rotate_subtask_plan(self):
         object_registry = {key: block for key, block in zip(self.block_keys, self.blocks)}
@@ -738,61 +670,12 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
                     return candidate_pose
         return fallback_pose
 
-    def _get_plate_layer_spec(self, layer_name=None):
-        layer_name = self._get_plate_layer() if layer_name is None else self._normalize_layer(layer_name)
-        plate_spec = dict(self.PLATE_LAYER_SPECS.get(layer_name, {}))
-        if len(plate_spec) == 0:
-            raise ValueError(f"Missing PLATE_LAYER_SPECS entry for layer: {layer_name}")
-        layer_spec = self._get_layer_spec(layer_name)
-        return {
-            "layer": layer_name,
-            "r": float(plate_spec.get("r", 0.70 if layer_name == "upper" else 0.55)),
-            "theta_deg": float(plate_spec.get("theta_deg", 0.0)),
-            "z": float(layer_spec["top_z"]) + float(plate_spec.get("z_offset", 0.0)),
-            "qpos": list(plate_spec.get("qpos", [0.5, 0.5, 0.5, 0.5])),
-            "scale": list(plate_spec.get("scale", [0.025, 0.025, 0.025])),
-        }
-
-    def _get_plate_anchor_pose(self, layer_name=None):
-        plate_spec = self._get_plate_layer_spec(layer_name)
-        return place_pose_cyl(
-            [
-                float(plate_spec["r"]),
-                float(np.deg2rad(float(plate_spec["theta_deg"]))),
-                float(plate_spec["z"]),
-            ] + list(plate_spec["qpos"]),
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            ret="pose",
-        )
-
     def _get_block_spawn_avoid_pose_lst(self, layer_name):
         layer_name = self._normalize_layer(layer_name)
         target_layer = self._get_target_layer()
         if layer_name != target_layer:
             return []
         return [self._get_target_anchor_pose(target_layer)]
-
-    def _create_plate_anchor(self):
-        self.plate_layer = self._get_plate_layer()
-        plate_spec = self._get_plate_layer_spec(self.plate_layer)
-        self.plate_cyl_r = float(plate_spec["r"])
-        self.plate_cyl_theta_deg = float(plate_spec["theta_deg"])
-        self.plate_z = float(plate_spec["z"])
-        self.plate_qpos = list(plate_spec["qpos"])
-        self.plate_scale = list(plate_spec["scale"])
-
-        plate_pose = self._get_plate_anchor_pose(self.plate_layer)
-        self.plate = create_actor(
-            self,
-            pose=plate_pose,
-            modelname="003_plate",
-            model_id=self.PLATE_MODEL_ID,
-            scale=self.plate_scale,
-            is_static=True,
-            convex=True,
-        )
-        self.plate_target_pose = self.plate.get_functional_point(0)
 
     def _get_plate_place_slot_offsets(self):
         slot_offset_map = dict(getattr(self, "PLATE_PLACE_SLOT_OFFSETS", {}) or {})
@@ -832,34 +715,6 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
             )
         assignments[key] = int(next_idx)
         return int(next_idx)
-
-    def _get_plate_place_target_pose(self, block_key=None):
-        plate = self.object_registry.get("B", None)
-        if plate is not None:
-            try:
-                plate_pose = plate.get_functional_point(0, "pose")
-                target_pose = plate_pose.p.tolist() + plate_pose.q.tolist()
-            except Exception:
-                target_pose = list(self.plate_target_pose)
-        else:
-            target_pose = list(self.plate_target_pose)
-
-        target_pose = np.array(target_pose, dtype=np.float64).reshape(-1)
-        slot_offsets = self._get_plate_place_slot_offsets()
-        slot_idx = 0 if block_key is None else self._get_plate_place_slot_index(block_key)
-        radial_offset, tangential_offset = slot_offsets[int(slot_idx) % len(slot_offsets)]
-
-        try:
-            target_cyl = world_to_robot(target_pose[:3].tolist(), self.robot_root_xy, self.robot_yaw)
-            target_theta = float(target_cyl[1])
-        except Exception:
-            target_theta = float(np.deg2rad(getattr(self, "plate_cyl_theta_deg", 0.0)))
-
-        world_theta = float(self.robot_yaw) + target_theta
-        radial_xy = np.array([np.cos(world_theta), np.sin(world_theta)], dtype=np.float64)
-        tangential_xy = np.array([-np.sin(world_theta), np.cos(world_theta)], dtype=np.float64)
-        target_pose[:2] += radial_offset * radial_xy + tangential_offset * tangential_xy
-        return target_pose.tolist()
 
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
@@ -1658,16 +1513,6 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
             return
         self.complete_rotate_subtask(subtask_idx, carried_after=[])
 
-    def _place_block_into_target(self, arm_tag, subtask_idx, block_key, focus_object_key):
-        return self._place_block_into_plate(arm_tag, subtask_idx, block_key, focus_object_key)
-
-    def _build_info(self, arm_tag):
-        return {
-            "{A}": "block" if len(getattr(self, "block_keys", [])) <= 1 else "blocks",
-            "{B}": f"003_plate/base{self.PLATE_MODEL_ID}",
-            "{a}": str(arm_tag),
-        }
-
     def play_once(self):
         scan_z = float(self.SCAN_Z_BIAS + self.table_z_bias)
         last_arm_tag = ArmTag("left")
@@ -1727,25 +1572,6 @@ class _PutBlockTargetFanDoubleBase(Base_Task):
         self.info["info"] = self._build_info(last_arm_tag)
         return self.info
 
-    def check_success(self):
-        plate_pose = np.array(self.plate.get_functional_point(0, "pose").p, dtype=np.float64).reshape(3)
-        gripper_open = self.is_left_gripper_open() and self.is_right_gripper_open()
-        blocks = getattr(self, "blocks", None)
-        if blocks is None:
-            blocks = [self.block]
-        blocks_in_plate = all(
-            np.all(
-                np.abs(
-                    np.array(block.get_functional_point(0, "pose").p, dtype=np.float64).reshape(3) - plate_pose
-                )
-                < self.SUCCESS_EPS
-            )
-            for block in blocks
-        )
-        return bool(blocks_in_plate and gripper_open)
-
-
-class _PutSingleBlockTargetFanDoubleBase(_PutBlockTargetFanDoubleBase):
     BLOCK_COUNT = 1
     BLOCK_LAYER_SEQUENCE = ("lower",)
     BLOCK_SIZE_RANGE = (0.018, 0.022)
@@ -1804,22 +1630,6 @@ class _PutSingleBlockTargetFanDoubleBase(_PutBlockTargetFanDoubleBase):
     def _get_target_layer(self):
         return self._get_plate_layer()
 
-    def _get_plate_layer_spec(self, layer_name=None):
-        layer_name = self._get_plate_layer() if layer_name is None else self._normalize_layer(layer_name)
-        layer_specs = dict(getattr(self, "TARGET_LAYER_SPECS", {}) or {})
-        target_spec = dict(layer_specs.get(layer_name, {}))
-        if len(target_spec) == 0:
-            raise ValueError(f"Missing TARGET_LAYER_SPECS entry for layer: {layer_name}")
-        layer_spec = self._get_layer_spec(layer_name)
-        return {
-            "layer": layer_name,
-            "r": float(target_spec.get("r", 0.48 if layer_name == "lower" else 0.68)),
-            "theta_deg": float(target_spec.get("theta_deg", 0.0)),
-            "z": float(layer_spec["top_z"]) + float(target_spec.get("z_offset", 0.0)),
-            "qpos": list(target_spec.get("qpos", [0.5, 0.5, 0.5, 0.5])),
-            "scale": target_spec.get("scale", None),
-        }
-
     def _get_target_layer_spec(self, layer_name=None):
         return self._get_plate_layer_spec(layer_name)
 
@@ -1876,7 +1686,7 @@ class _PutSingleBlockTargetFanDoubleBase(_PutBlockTargetFanDoubleBase):
         return self.plate
 
     def _create_target_anchor(self):
-        return super()._create_target_anchor()
+        return self._create_plate_anchor()
 
     def _get_plate_place_target_pose(self, block_key=None):
         plate = self.object_registry.get("B", None)
@@ -1913,7 +1723,7 @@ class _PutSingleBlockTargetFanDoubleBase(_PutBlockTargetFanDoubleBase):
         return self._get_plate_place_target_pose(block_key)
 
     def _place_block_into_target(self, arm_tag, subtask_idx, block_key, focus_object_key):
-        return super()._place_block_into_target(arm_tag, subtask_idx, block_key, focus_object_key)
+        return self._place_block_into_plate(arm_tag, subtask_idx, block_key, focus_object_key)
 
     def _build_info(self, arm_tag):
         return {
@@ -1939,11 +1749,6 @@ class _PutSingleBlockTargetFanDoubleBase(_PutBlockTargetFanDoubleBase):
         on_target = self.check_actors_contact(block.get_name(), target_object.get_name())
         return bool(gripper_open and xy_ok and z_ok and on_target)
 
-
-import numpy as np
-
-
-class put_block_breadbasket_fan_double(_PutSingleBlockTargetFanDoubleBase):
     TARGET_THETA_JITTER_DEG = 5.0
     TARGET_MODEL_NAME = "076_breadbasket"
     TARGET_MODEL_ID = 0
@@ -1971,10 +1776,52 @@ class put_block_breadbasket_fan_double(_PutSingleBlockTargetFanDoubleBase):
 
     def setup_demo(self, **kwargs):
         self._target_theta_deg_jitter_cache = {}
-        super().setup_demo(**kwargs)
+        kwargs.setdefault("table_shape", "fan_double")
+        kwargs.setdefault("fan_center_on_robot", True)
+        kwargs.setdefault("fan_double_lower_outer_radius", 0.9)
+        kwargs.setdefault("fan_double_lower_inner_radius", 0.3)
+        kwargs.setdefault("fan_double_upper_outer_radius", 0.8)
+        kwargs.setdefault("fan_double_upper_inner_radius", 0.6)
+        kwargs.setdefault("fan_double_layer_gap", 0.35)
+        kwargs.setdefault("fan_double_upper_theta_start_deg", -30.0)
+        kwargs.setdefault("fan_double_upper_theta_end_deg", 30.0)
+        kwargs.setdefault("fan_double_support_theta_deg", -40.0)
+        kwargs.setdefault("fan_angle_deg", 150)
+        kwargs.setdefault("fan_center_deg", 90)
+        self.fixed_layer_head_joint2_only = bool(
+            kwargs.get(
+                "fixed_layer_head_joint2_only",
+                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
+            )
+        )
+        if "place_plate_upper_head_joint2_target" in kwargs:
+            self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_plate_upper_head_joint2_target"])
+        if "place_plate_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_plate_lower_head_joint2_target"]
+            self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        if "place_target_upper_head_joint2_target" in kwargs:
+            self.PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_target_upper_head_joint2_target"])
+        if "place_target_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_target_lower_head_joint2_target"]
+            self.PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        kwargs = init_rotate_theta_bounds(self, kwargs)
+        super()._init_task_env_(**kwargs)
 
     def _get_plate_layer_spec(self, layer_name=None):
-        target_spec = dict(super()._get_plate_layer_spec(layer_name))
+        layer_name = self._get_plate_layer() if layer_name is None else self._normalize_layer(layer_name)
+        layer_specs = dict(getattr(self, "TARGET_LAYER_SPECS", {}) or {})
+        target_spec = dict(layer_specs.get(layer_name, {}))
+        if len(target_spec) == 0:
+            raise ValueError(f"Missing TARGET_LAYER_SPECS entry for layer: {layer_name}")
+        layer_spec = self._get_layer_spec(layer_name)
+        target_spec = {
+            "layer": layer_name,
+            "r": float(target_spec.get("r", 0.48 if layer_name == "lower" else 0.68)),
+            "theta_deg": float(target_spec.get("theta_deg", 0.0)),
+            "z": float(layer_spec["top_z"]) + float(target_spec.get("z_offset", 0.0)),
+            "qpos": list(target_spec.get("qpos", [0.5, 0.5, 0.5, 0.5])),
+            "scale": target_spec.get("scale", None),
+        }
         theta_cache = getattr(self, "_target_theta_deg_jitter_cache", None)
         if not isinstance(theta_cache, dict):
             theta_cache = {}

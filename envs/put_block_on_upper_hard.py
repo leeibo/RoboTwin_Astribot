@@ -4,16 +4,8 @@ import numpy as np
 import sapien
 import transforms3d as t3d
 
-# 回退到原始版本
 
-class _put_block_on(Base_Task):
-    # 坐标约定：
-    # 这里的 cyl 参数都使用机器人根部为圆心的柱坐标。
-    # r 表示水平半径，theta_deg=0 表示机器人初始正前方，z 表示世界坐标高度。
-    #
-    # block 生成参数：
-    # BLOCK_COUNT 手动控制生成 1/2/3 个 block。
-    # BLOCK_LAYER_SEQUENCE 显式决定每个 block 的层，长度必须等于 BLOCK_COUNT。
+class put_block_on_upper_hard(Base_Task):
     BLOCK_COUNT = 2
     BLOCK_LAYER_SEQUENCE = ("upper","lower")
     BLOCK_SIZE_RANGE = (0.015, 0.025)
@@ -1571,8 +1563,6 @@ class _put_block_on(Base_Task):
         )
         return bool(blocks_in_plate and gripper_open)
 
-
-class put_block_on_upper_hard(_put_block_on):
     PLATE_LAYER = "upper"
     BLOCK_COUNT = 3
     BLOCK_LAYER_SEQUENCE = ("lower", "lower", "upper")
