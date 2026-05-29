@@ -152,7 +152,15 @@ class move_pillbottle_pad_rotate_view(Base_Task):
 
         arm_tag = ArmTag("right" if self.pillbottle.get_pose().p[0] > 0 else "left")
         self.enter_rotate_action_stage(1, focus_object_key=(bottle_key or "A"))
-        self.move(self.grasp_actor(self.pillbottle, arm_tag=arm_tag, pre_grasp_dis=0.12, gripper_pos=0.3,grasp_dis=-0.02))
+        self.move(
+            self.grasp_actor(
+                self.pillbottle,
+                arm_tag=arm_tag,
+                pre_grasp_dis=0.12,
+                gripper_pos=0.3,
+                grasp_dis=-0.02,
+            )
+        )
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.05))
         self.complete_rotate_subtask(1, carried_after=["A"])

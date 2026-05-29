@@ -1222,7 +1222,12 @@ class put_block_breadbasket_fan_double(Base_Task):
         return self._return_both_arms_to_initial_pose()
 
     def _retreat_then_return_both_arms_to_initial_pose(self, arm_tag):
-        if not self.move(self.move_by_displacement(arm_tag=arm_tag, z=self.DIRECT_RELEASE_RETREAT_Z, move_axis="world")):
+        retreat_action = self.move_by_displacement(
+            arm_tag=arm_tag,
+            z=self.DIRECT_RELEASE_RETREAT_Z,
+            move_axis="world",
+        )
+        if not self.move(retreat_action):
             return False
         plate_layer = getattr(self, "object_layers", {}).get("B", None)
         if plate_layer is None:
@@ -1414,7 +1419,11 @@ class put_block_breadbasket_fan_double(Base_Task):
         block_layer = getattr(self, "object_layers", {}).get(str(block_key), None)
         if plate_layer == "lower":
             if block_layer == "upper":
-                return self._place_upper_picked_block_into_lower_plate_with_drop_release(arm_tag, subtask_idx, block_key)
+                return self._place_upper_picked_block_into_lower_plate_with_drop_release(
+                    arm_tag,
+                    subtask_idx,
+                    block_key,
+                )
             return self._place_block_into_lower_plate_with_place_actor(arm_tag, subtask_idx, block_key)
         return self._place_block_into_upper_plate_with_direct_release(arm_tag, subtask_idx, block_key)
 

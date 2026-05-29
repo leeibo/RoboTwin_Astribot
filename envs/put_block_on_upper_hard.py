@@ -37,7 +37,8 @@ class put_block_on_upper_hard(Base_Task):
     # plate anchor 参数：
     # plate 的 z 由对应桌面 top_z + z_offset 计算，避免和 fan_double_layer_gap 不一致。
 
-    # 注意：这里的 theta_deg 只是占位/回退值，不能在这个表里调盘子角度；实际 lower 角度在 _get_plate_theta_deg() 里从 {-60, 20, 20, -60} 采样，upper 角度跟随 fan_double_support_theta_deg。
+    # 注意：这里的 theta_deg 只是占位/回退值，不能在这个表里调盘子角度；
+    # 实际 lower 角度在 _get_plate_theta_deg() 里采样，upper 角度跟随 fan_double_support_theta_deg。
     PLATE_MODEL_ID = 0
     PLATE_LAYER = "upper"
     PLATE_LAYER_SPECS = {
@@ -1212,7 +1213,12 @@ class put_block_on_upper_hard(Base_Task):
         return self._return_both_arms_to_initial_pose()
 
     def _retreat_then_return_both_arms_to_initial_pose(self, arm_tag):
-        if not self.move(self.move_by_displacement(arm_tag=arm_tag, z=self.DIRECT_RELEASE_RETREAT_Z, move_axis="world")):
+        retreat_action = self.move_by_displacement(
+            arm_tag=arm_tag,
+            z=self.DIRECT_RELEASE_RETREAT_Z,
+            move_axis="world",
+        )
+        if not self.move(retreat_action):
             return False
         plate_layer = getattr(self, "object_layers", {}).get("B", None)
         if plate_layer is None:
@@ -1275,7 +1281,11 @@ class put_block_on_upper_hard(Base_Task):
             lower_target = self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET
             if lower_target is None:
                 head_home = np.array(getattr(self.robot, "head_homestate", []), dtype=np.float64).reshape(-1)
-                lower_target = head_home[head_joint2_idx] if head_home.shape[0] > head_joint2_idx else head_now[head_joint2_idx]
+                lower_target = (
+                    head_home[head_joint2_idx]
+                    if head_home.shape[0] > head_joint2_idx
+                    else head_now[head_joint2_idx]
+                )
             target_joint2 = float(lower_target)
         if solve_res is not None:
             solved_head_target = np.array(solve_res.get("target", []), dtype=np.float64).reshape(-1)
@@ -1383,7 +1393,11 @@ class put_block_on_upper_hard(Base_Task):
         block_layer = getattr(self, "object_layers", {}).get(str(block_key), None)
         if plate_layer == "lower":
             if block_layer == "upper":
-                return self._place_upper_picked_block_into_lower_plate_with_drop_release(arm_tag, subtask_idx, block_key)
+                return self._place_upper_picked_block_into_lower_plate_with_drop_release(
+                    arm_tag,
+                    subtask_idx,
+                    block_key,
+                )
             return self._place_block_into_lower_plate_with_place_actor(arm_tag, subtask_idx, block_key)
         return self._place_block_into_upper_plate_with_direct_release(arm_tag, subtask_idx, block_key)
 

@@ -106,7 +106,11 @@ class click_bell_rotate_view(Base_Task):
         )
 
         self.add_prohibit_area(self.bell, padding=0.07)
-        self.check_arm_function = self.is_left_gripper_close if self.bell.get_pose().p[0] < 0 else self.is_right_gripper_close
+        self.check_arm_function = (
+            self.is_left_gripper_close
+            if self.bell.get_pose().p[0] < 0
+            else self.is_right_gripper_close
+        )
         self._configure_rotate_subtask_plan()
 
     def play_once(self):

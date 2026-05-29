@@ -174,7 +174,8 @@ class blocks_ranking_rgb_rotate_view(Base_Task):
             if not self._far_from_target_band(pose, avoid_xy_lst):
                 continue
             return pose
-        fallback_theta = float(np.clip(-0.35 * rotate_theta_half(self), -rotate_theta_half(self), rotate_theta_half(self)))
+        theta_half = rotate_theta_half(self)
+        fallback_theta = float(np.clip(-0.35 * theta_half, -theta_half, theta_half))
         return rand_pose_cyl(
             rlim=[0.5, 0.5],
             thetalim=[fallback_theta, fallback_theta],
@@ -207,7 +208,13 @@ class blocks_ranking_rgb_rotate_view(Base_Task):
         ]
         block_pose_lst = [anchor_pose]
         while len(block_pose_lst) < 3:
-            block_pose_lst.append(self._sample_block_pose(size=size, existing_pose_lst=block_pose_lst, avoid_xy_lst=target_xy_lst))
+            block_pose_lst.append(
+                self._sample_block_pose(
+                    size=size,
+                    existing_pose_lst=block_pose_lst,
+                    avoid_xy_lst=target_xy_lst,
+                )
+            )
 
         half_size = (size, size, size)
         self.block1 = create_box(
@@ -341,7 +348,6 @@ class blocks_ranking_rgb_rotate_view(Base_Task):
         return self.info
 
     def pick_and_place_block(self, block, target_pose):
-     
         block_cyl = world_to_robot(block.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
         arm_tag = ArmTag("left" if block_cyl[1] >= 0 else "right")
 

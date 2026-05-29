@@ -173,7 +173,8 @@ class blocks_ranking_size_rotate_view(Base_Task):
             if not self._far_from_target_band(pose, avoid_xy_lst):
                 continue
             return pose
-        fallback_theta = float(np.clip(-0.35 * rotate_theta_half(self), -rotate_theta_half(self), rotate_theta_half(self)))
+        theta_half = rotate_theta_half(self)
+        fallback_theta = float(np.clip(-0.35 * theta_half, -theta_half, theta_half))
         return rand_pose_cyl(
             rlim=[0.5, 0.5],
             thetalim=[fallback_theta, fallback_theta],

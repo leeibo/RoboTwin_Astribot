@@ -1,8 +1,9 @@
+from ._base_task import Base_Task
+from .utils import *
+
 import numpy as np
 import sapien
 import transforms3d as t3d
-
-from .utils import *
 
 
 def setup_fan_double_defaults(task, kwargs):
@@ -537,8 +538,13 @@ def release_object_at_point(task, arm_tag, target_world_point, target_layer):
 
 
 def get_current_body_facing_yaw(task):
+    joint_name = getattr(
+        task,
+        "UPPER_PLACE_BODY_JOINT_NAME",
+        getattr(task, "SCAN_JOINT_NAME", "astribot_torso_joint_2"),
+    )
     joint_idx = task._get_preferred_torso_joint_index(
-        joint_name_prefer=getattr(task, "UPPER_PLACE_BODY_JOINT_NAME", getattr(task, "SCAN_JOINT_NAME", "astribot_torso_joint_2"))
+        joint_name_prefer=joint_name
     )
     torso_joints = list(getattr(task.robot, "torso_joints", []) or [])
     if joint_idx is not None and 0 <= joint_idx < len(torso_joints):
@@ -795,13 +801,6 @@ def pose_list_from_point(point, quat=None):
         quat = [0, 1, 0, 0]
     point = np.array(point, dtype=np.float64).reshape(3)
     return point.tolist() + list(quat)
-
-
-from ._base_task import Base_Task
-from .utils import *
-import numpy as np
-import sapien
-
 
 class blocks_ranking_size_fan_double(Base_Task):
     FIXED_LAYER_HEAD_JOINT2_ONLY = True
