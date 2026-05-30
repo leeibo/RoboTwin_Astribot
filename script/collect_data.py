@@ -71,6 +71,38 @@ def infer_difficulty_tag(args):
     return f"{level}_fan{fan_angle_int}"
 
 
+def apply_task_table_config(task, args):
+    """Expand the task-selected table profile into the runtime config."""
+    args = dict(args)
+    has_task_table_shape = hasattr(task, "ROTATE_TABLE_SHAPE")
+    table_shape = str(getattr(task, "ROTATE_TABLE_SHAPE", args.get("table_shape", "rect"))).lower()
+    profile_key = str(getattr(task, "ROTATE_TABLE_CONFIG_KEY", table_shape))
+    table_configs = args.get("task_table_configs", {}) or {}
+    if not isinstance(table_configs, dict):
+        raise TypeError("task_table_configs must be a mapping")
+
+    table_config = table_configs.get(profile_key)
+    if table_config is None and table_configs and has_task_table_shape:
+        task_name = getattr(task, "task_name", None) or getattr(task, "__name__", task.__class__.__name__)
+        raise KeyError(f"Missing task_table_configs.{profile_key} for {task_name}")
+    if table_config is None:
+        table_config = {}
+    if not isinstance(table_config, dict):
+        raise TypeError(f"task_table_configs.{profile_key} must be a mapping")
+
+    config_shape = table_config.get("table_shape", None)
+    if config_shape is not None and str(config_shape).lower() != table_shape:
+        raise ValueError(
+            f"task_table_configs.{profile_key}.table_shape={config_shape!r} "
+            f"does not match task table shape {table_shape!r}"
+        )
+
+    args.update(table_config)
+    args["table_shape"] = table_shape
+    args["task_table_config_key"] = profile_key
+    return args
+
+
 def resolve_max_seed_tries(args):
     raw_value = os.environ.get("ROBOTWIN_MAX_SEED_TRIES", args.get("max_seed_tries", DEFAULT_MAX_SEED_TRIES))
     if raw_value is None:
@@ -143,6 +175,7 @@ def main(task_name=None, task_config=None):
         args = yaml.load(f.read(), Loader=yaml.FullLoader)
 
     args['task_name'] = task_name
+    args = apply_task_table_config(task, args)
 
     embodiment_type = args.get("embodiment")
     embodiment_config_path = os.path.join(CONFIGS_PATH, "_embodiment_config.yml")

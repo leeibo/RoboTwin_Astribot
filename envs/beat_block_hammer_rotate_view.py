@@ -7,6 +7,7 @@ import transforms3d as t3d
 
 
 class beat_block_hammer_rotate_view(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan"
 
     def check_success(self):
         hammer_target_pose = self.hammer.get_functional_point(0, "pose").p
@@ -50,13 +51,7 @@ class beat_block_hammer_rotate_view(Base_Task):
         )
 
     def setup_demo(self, **kwags):
-        kwags.setdefault("table_shape", "fan")
-        kwags.setdefault("fan_center_on_robot", True)
-        kwags.setdefault("fan_outer_radius", 0.9)
-        kwags.setdefault("fan_inner_radius", 0.3)
-        kwags.setdefault("fan_angle_deg", 220)
-        kwags.setdefault("fan_center_deg", 90)
-        kwags = init_rotate_theta_bounds(self, kwags)
+        kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(**kwags)
 
     def _get_robot_root_xy_yaw(self):

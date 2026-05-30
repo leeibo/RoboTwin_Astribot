@@ -6,23 +6,6 @@ import sapien
 import transforms3d as t3d
 
 
-def setup_fan_double_defaults(task, kwargs):
-    kwargs.setdefault("table_shape", "fan_double")
-    kwargs.setdefault("fan_center_on_robot", True)
-    kwargs.setdefault("fan_double_lower_outer_radius", 0.9)
-    kwargs.setdefault("fan_double_lower_inner_radius", 0.3)
-    kwargs.setdefault("fan_double_upper_outer_radius", 0.8)
-    kwargs.setdefault("fan_double_upper_inner_radius", 0.6)
-    kwargs.setdefault("fan_double_layer_gap", 0.35)
-    kwargs.setdefault("fan_double_upper_theta_start_deg", -20.0)
-    kwargs.setdefault("fan_double_upper_theta_end_deg", 20.0)
-    kwargs.setdefault("fan_double_support_theta_deg", 0.0)
-    kwargs.setdefault("fan_angle_deg", 220)
-    kwargs.setdefault("fan_center_deg", 90)
-    kwargs.setdefault("rotate_theta_reference_fan_angle_deg", 220)
-    kwargs.setdefault("rotate_theta_shared_ratio", 1.0)
-    return init_rotate_theta_bounds(task, kwargs)
-
 
 def get_robot_root_xy_yaw(task):
     root_xy = task.robot.left_entity_origion_pose.p[:2].tolist()
@@ -802,7 +785,10 @@ def pose_list_from_point(point, quat=None):
     point = np.array(point, dtype=np.float64).reshape(3)
     return point.tolist() + list(quat)
 
+
 class blocks_ranking_size_fan_double(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan_double"
+    ROTATE_TABLE_CONFIG_KEY = "fan_double_centered"
     FIXED_LAYER_HEAD_JOINT2_ONLY = True
     LAYER_SPECS = {
         "lower": {
@@ -880,14 +866,13 @@ class blocks_ranking_size_fan_double(Base_Task):
     SUCCESS_Z_TOL = 0.08
 
     def setup_demo(self, **kwargs):
-        kwargs = dict(kwargs)
+        kwargs = prepare_rotate_task_kwargs(self, kwargs)
         self.fixed_layer_head_joint2_only = bool(
             kwargs.get(
                 "fixed_layer_head_joint2_only",
                 getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", False),
             )
         )
-        kwargs = setup_fan_double_defaults(self, kwargs)
         super()._init_task_env_(**kwargs)
 
     def _get_subtask_search_target_keys(self, subtask_idx):

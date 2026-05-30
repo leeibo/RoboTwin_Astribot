@@ -5,6 +5,7 @@ import transforms3d as t3d
 
 
 class turn_switch_rotate_view(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan"
 
     def check_success(self):
         limit = self.switch.get_qlimits()[0]
@@ -32,13 +33,7 @@ class turn_switch_rotate_view(Base_Task):
         )
 
     def setup_demo(self, is_test=False, **kwargs):
-        kwargs.setdefault("table_shape", "fan")
-        kwargs.setdefault("fan_center_on_robot", True)
-        kwargs.setdefault("fan_outer_radius", 0.9)
-        kwargs.setdefault("fan_inner_radius", 0.3)
-        kwargs.setdefault("fan_angle_deg", 220)
-        kwargs.setdefault("fan_center_deg", 90)
-        kwargs = init_rotate_theta_bounds(self, kwargs)
+        kwargs = prepare_rotate_task_kwargs(self, kwargs)
         super()._init_task_env_(is_test=is_test, **kwargs)
 
     def _get_robot_root_xy_yaw(self):

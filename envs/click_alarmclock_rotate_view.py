@@ -9,6 +9,7 @@ from ._GLOBAL_CONFIGS import GRASP_DIRECTION_DIC
 
 
 class click_alarmclock_rotate_view(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan"
 
     def _resolve_alarm_press_pose(self, arm_tag: ArmTag, pre_dis: float = 0.1):
         contact_point = self.alarm.get_contact_point(0, "list")
@@ -70,13 +71,7 @@ class click_alarmclock_rotate_view(Base_Task):
         )
 
     def setup_demo(self, **kwags):
-        kwags.setdefault("table_shape", "fan")
-        kwags.setdefault("fan_center_on_robot", True)
-        kwags.setdefault("fan_outer_radius", 0.9)
-        kwags.setdefault("fan_inner_radius", 0.3)
-        kwags.setdefault("fan_angle_deg", 220)
-        kwags.setdefault("fan_center_deg", 90)
-        kwags = init_rotate_theta_bounds(self, kwags)
+        kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(**kwags)
 
     def _get_robot_root_xy_yaw(self):

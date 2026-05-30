@@ -21,6 +21,58 @@ DEFAULT_STAGE1_THETA_UNIT_DEG = 45.0
 DEFAULT_STAGE2_MAX_THETA_STEP_DEG = 30.0
 DEFAULT_STAGE2_CENTER_TOL_DEG = 3.0
 
+ROTATE_TABLE_CONFIG_REQUIRED_KEYS = {
+    "fan": (
+        "fan_center_on_robot",
+        "fan_outer_radius",
+        "fan_inner_radius",
+        "fan_angle_deg",
+        "fan_center_deg",
+        "rotate_object_margin_deg",
+        "rotate_theta_reference_fan_angle_deg",
+        "rotate_theta_shared_ratio",
+    ),
+    "fan_double": (
+        "fan_center_on_robot",
+        "fan_outer_radius",
+        "fan_inner_radius",
+        "fan_angle_deg",
+        "fan_center_deg",
+        "fan_double_lower_outer_radius",
+        "fan_double_lower_inner_radius",
+        "fan_double_upper_outer_radius",
+        "fan_double_upper_inner_radius",
+        "fan_double_layer_gap",
+        "fan_double_upper_theta_start_deg",
+        "fan_double_upper_theta_end_deg",
+        "fan_double_support_theta_deg",
+        "fan_double_upper_theta_offset_deg",
+        "fan_double_upper_collision_under_padding",
+        "rotate_object_margin_deg",
+        "rotate_theta_reference_fan_angle_deg",
+        "rotate_theta_shared_ratio",
+    ),
+}
+
+
+def prepare_rotate_task_kwargs(task, kwargs):
+    """Apply the task-selected table shape and validate YAML-provided geometry config."""
+    kwargs = dict(kwargs)
+    table_shape = str(getattr(task, "ROTATE_TABLE_SHAPE", kwargs.get("table_shape", "fan"))).lower()
+    kwargs["table_shape"] = table_shape
+
+    required_keys = ROTATE_TABLE_CONFIG_REQUIRED_KEYS.get(table_shape, ())
+    missing_keys = [key for key in required_keys if key not in kwargs]
+    if missing_keys and bool(kwargs.get("validate_rotate_table_config", True)):
+        task_name = getattr(task, "task_name", None) or task.__class__.__name__
+        profile = kwargs.get("task_table_config_key", getattr(task, "ROTATE_TABLE_CONFIG_KEY", table_shape))
+        raise KeyError(
+            f"Missing rotate table config for {task_name} ({profile}): "
+            f"{', '.join(missing_keys)}"
+        )
+
+    return init_rotate_theta_bounds(task, kwargs)
+
 
 def _normalize_theta_range(theta_lim):
     arr = np.array(theta_lim, dtype=np.float64).reshape(-1)

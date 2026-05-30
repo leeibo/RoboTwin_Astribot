@@ -10,6 +10,7 @@ from .utils import *
 
 
 class search_object(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan"
     CABINET_MODEL_ID = 46653
     OBJECT_LABEL = "small block"
     OBJECT_HALF_SIZE = 0.018
@@ -89,13 +90,7 @@ class search_object(Base_Task):
     SUCCESS_LIFT_Z = 0.03
 
     def setup_demo(self, **kwargs):
-        kwargs = dict(kwargs)
-        kwargs.setdefault("table_shape", "fan")
-        kwargs.setdefault("fan_center_on_robot", True)
-        kwargs.setdefault("fan_outer_radius", 0.9)
-        kwargs.setdefault("fan_inner_radius", 0.3)
-        kwargs.setdefault("fan_angle_deg", 150)
-        kwargs.setdefault("fan_center_deg", 90)
+        kwargs = prepare_rotate_task_kwargs(self, kwargs)
         # Legacy compatibility only. Final behavior is selected by cabinet side at runtime.
         kwargs.pop("right_arm_rotate_lim", self.RIGHT_ARM_ROTATE_LIM)
         cabinet_theta_sign_choices = kwargs.pop(
@@ -115,7 +110,6 @@ class search_object(Base_Task):
                 cfg["homestate"] = deepcopy(self.TASK_HOMESTATE)
                 kwargs[cfg_key] = cfg
 
-        kwargs = init_rotate_theta_bounds(self, kwargs)
         super()._init_task_env_(**kwargs)
 
     def _get_robot_root_xy_yaw(self):

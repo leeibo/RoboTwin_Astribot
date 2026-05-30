@@ -7,6 +7,7 @@ import transforms3d as t3d
 
 
 class place_shoe_rotate_view(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan"
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -43,13 +44,7 @@ class place_shoe_rotate_view(Base_Task):
         )
 
     def setup_demo(self, is_test=False, **kwags):
-        kwags.setdefault("table_shape", "fan")
-        kwags.setdefault("fan_center_on_robot", True)
-        kwags.setdefault("fan_outer_radius", 0.9)
-        kwags.setdefault("fan_inner_radius", 0.3)
-        kwags.setdefault("fan_angle_deg", 220)
-        kwags.setdefault("fan_center_deg", 90)
-        kwags = init_rotate_theta_bounds(self, kwags)
+        kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(is_test=is_test, **kwags)
 
     def _get_robot_root_xy_yaw(self):

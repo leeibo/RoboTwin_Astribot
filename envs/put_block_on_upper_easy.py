@@ -6,8 +6,10 @@ import transforms3d as t3d
 
 
 class put_block_on_upper_easy(Base_Task):
+    ROTATE_TABLE_SHAPE = "fan_double"
+    ROTATE_TABLE_CONFIG_KEY = "fan_double_left_support"
     BLOCK_COUNT = 2
-    BLOCK_LAYER_SEQUENCE = ("upper","lower")
+    BLOCK_LAYER_SEQUENCE = ("upper", "lower")
     BLOCK_SIZE_RANGE = (0.015, 0.025)
     BLOCK_COLOR = (0.10, 0.80, 0.20)
     BLOCK_COLOR_CANDIDATES = (
@@ -144,19 +146,7 @@ class put_block_on_upper_easy(Base_Task):
     SUCCESS_EPS = np.array([0.08, 0.08, 0.08], dtype=np.float64)
 
     def setup_demo(self, **kwargs):
-        kwargs["table_shape"] = "fan_double"
-        kwargs.setdefault("fan_center_on_robot", True)
-        kwargs.setdefault("fan_double_lower_outer_radius", 0.9)
-        kwargs.setdefault("fan_double_lower_inner_radius", 0.3)
-        kwargs.setdefault("fan_double_upper_outer_radius", 0.8)
-        kwargs.setdefault("fan_double_upper_inner_radius", 0.6)
-        kwargs.setdefault("fan_double_layer_gap", 0.35)
-        kwargs.setdefault("fan_double_upper_theta_start_deg", -30.0)
-        kwargs.setdefault("fan_double_upper_theta_end_deg", 30.0)
-        kwargs.setdefault("fan_double_support_theta_deg", -40.0)
-        kwargs.setdefault("fan_angle_deg", 150)
-        kwargs.setdefault("fan_center_deg", 90)
-        kwargs = init_rotate_theta_bounds(self, kwargs)
+        kwargs = prepare_rotate_task_kwargs(self, kwargs)
         super()._init_task_env_(**kwargs)
 
     def _get_block_count(self):
