@@ -6,7 +6,6 @@ import sapien
 import transforms3d as t3d
 
 
-
 def get_robot_root_xy_yaw(task):
     root_xy = task.robot.left_entity_origion_pose.p[:2].tolist()
     root_q = np.asarray(task.robot.left_entity_origion_pose.q, dtype=np.float64)
@@ -893,15 +892,6 @@ class blocks_ranking_rgb_fan_double(Base_Task):
 
     def _prepare_subtask_rotate_search(self, subtask_idx):
         prepare_subtask_rotate_search(self, subtask_idx)
-
-    def _should_enforce_rotate_stage1_search_order(self, subtask_idx, subtask_def=None):
-        return bool(self._should_search_lower_before_upper_for_subtask(subtask_idx))
-
-    def _should_skip_rotate_head_home_reset(self, subtask_idx, prev_subtask_idx=None):
-        return bool(
-            self._should_search_lower_before_upper_for_subtask(subtask_idx)
-            and self._has_unfinished_lower_search_phase()
-        )
 
     def _after_rotate_visibility_refresh(self, visibility_map):
         if int(getattr(self, "current_stage", 0)) != 1:

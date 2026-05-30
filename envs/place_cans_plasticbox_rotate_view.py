@@ -5,7 +5,6 @@ import math
 from ._GLOBAL_CONFIGS import *
 from copy import deepcopy
 import numpy as np
-import transforms3d as t3d
 
 
 class place_cans_plasticbox_rotate_view(Base_Task):
@@ -83,28 +82,6 @@ class place_cans_plasticbox_rotate_view(Base_Task):
     def setup_demo(self, **kwags):
         kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(**kwags)
-
-    def _get_robot_root_xy_yaw(self):
-        root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()
-        yaw = float(t3d.euler.quat2euler(self.robot.left_entity_origion_pose.q)[2])
-        return root_xy, yaw
-
-    def _scan_scene_two_views(self, object_list=None):
-        scan_r = 0.62
-        scan_z = 0.88 + self.table_z_bias
-        for theta in self._get_scan_thetas_from_object_list(object_list, fallback_thetas=[0.95, -0.95]):
-            scan_point = place_point_cyl(
-                [scan_r, theta, scan_z],
-                robot_root_xy=self.robot_root_xy,
-                robot_yaw_rad=self.robot_yaw,
-                ret="list",
-            )
-            self.face_world_point_with_torso(
-                scan_point,
-                max_iter=35,
-                tol_yaw_rad=2e-3,
-                joint_name_prefer="astribot_torso_joint_2",
-            )
 
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()

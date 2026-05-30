@@ -6,7 +6,6 @@ import sapien
 import transforms3d as t3d
 
 
-
 def get_robot_root_xy_yaw(task):
     root_xy = task.robot.left_entity_origion_pose.p[:2].tolist()
     root_q = np.asarray(task.robot.left_entity_origion_pose.q, dtype=np.float64)

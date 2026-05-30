@@ -3,11 +3,13 @@ from .utils import *
 import sapien
 import math
 import numpy as np
-import transforms3d as t3d
 
 
 class stack_blocks_two_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
+    ROTATE_SCAN_SCENE_R = 0.64
+    ROTATE_SCAN_SCENE_Z_BIAS = 0.90
+    ROTATE_SCAN_SCENE_FALLBACK_THETAS = (1.00, -1.00)
 
     def check_success(self):
         block1_pose = self.block1.get_pose().p
@@ -54,28 +56,6 @@ class stack_blocks_two_rotate_view(Base_Task):
     def setup_demo(self, **kwags):
         kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(**kwags)
-
-    def _get_robot_root_xy_yaw(self):
-        root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()
-        yaw = float(t3d.euler.quat2euler(self.robot.left_entity_origion_pose.q)[2])
-        return root_xy, yaw
-
-    def _scan_scene_two_views(self, object_list=None):
-        scan_r = 0.64
-        scan_z = 0.9 + self.table_z_bias
-        for theta in self._get_scan_thetas_from_object_list(object_list, fallback_thetas=[1.0, -1.0]):
-            scan_point = place_point_cyl(
-                [scan_r, theta, scan_z],
-                robot_root_xy=self.robot_root_xy,
-                robot_yaw_rad=self.robot_yaw,
-                ret="list",
-            )
-            self.face_world_point_with_torso(
-                scan_point,
-                max_iter=35,
-                tol_yaw_rad=2e-3,
-                joint_name_prefer="astribot_torso_joint_2",
-            )
 
     @staticmethod
     def _valid_spacing(new_pose, existing_pose_lst, min_dist_sq=0.01):

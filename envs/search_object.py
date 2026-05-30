@@ -73,7 +73,7 @@ class search_object(Base_Task):
     UPPER_PLACE_BODY_JOINT_NAME = "astribot_torso_joint_2"
 
     OBJECT_Z_BIAS = OBJECT_HALF_SIZE + 0.002
-    OBJECT_OUTER_EDGE_OFFSET = 0.01 
+    OBJECT_OUTER_EDGE_OFFSET = 0.01
     # Keep cabinet-opening behavior local to this task instead of inheriting open_cabinet.
     DRAWER_OPEN_SUCCESS_DIS = 0.08
     DRAWER_PULL_TOTAL_DIS = 0.20
@@ -111,12 +111,6 @@ class search_object(Base_Task):
                 kwargs[cfg_key] = cfg
 
         super()._init_task_env_(**kwargs)
-
-    def _get_robot_root_xy_yaw(self):
-        root_xy = self.robot.left_entity_origion_pose.p[:2].tolist()
-        root_q = np.asarray(self.robot.left_entity_origion_pose.q, dtype=np.float64)
-        yaw = float(t3d.euler.quat2euler(root_q)[2])
-        return root_xy, yaw
 
     @staticmethod
     def _quat_from_yaw(yaw_rad):
@@ -330,38 +324,6 @@ class search_object(Base_Task):
         direction = self._get_drawer_outward_dir_xy()
         step_dis = float(self.DRAWER_PULL_TOTAL_DIS) / float(max(int(self.DRAWER_PULL_STEPS), 1))
         return (direction * step_dis).tolist()
-
-    def _get_current_body_facing_yaw(self):
-        joint_idx = self._get_preferred_torso_joint_index(
-            joint_name_prefer=getattr(self, "UPPER_PLACE_BODY_JOINT_NAME", self.SCAN_JOINT_NAME)
-        )
-        torso_joints = list(getattr(self.robot, "torso_joints", []) or [])
-        if joint_idx is not None and 0 <= joint_idx < len(torso_joints):
-            joint = torso_joints[joint_idx]
-            body_link = None if joint is None else getattr(joint, "child_link", None)
-            if body_link is not None:
-                facing_yaw, _ = self._compute_link_planar_facing_yaw(body_link)
-                if facing_yaw is not None and np.isfinite(float(facing_yaw)):
-                    return float(facing_yaw)
-        return float(self.robot_yaw)
-
-    def _get_upper_place_lateral_escape_xy(self, arm_tag):
-        lateral_dis = float(getattr(self, "UPPER_PLACE_LATERAL_ESCAPE_DIS", 0.0))
-        if lateral_dis <= 1e-9:
-            return None
-
-        body_yaw = self._get_current_body_facing_yaw()
-        leftward_xy = np.array(
-            [-np.sin(body_yaw), np.cos(body_yaw)],
-            dtype=np.float64,
-        )
-        norm = float(np.linalg.norm(leftward_xy))
-        if norm <= 1e-9:
-            return None
-        leftward_xy /= norm
-        if ArmTag(arm_tag) == "right":
-            leftward_xy = -leftward_xy
-        return (leftward_xy * lateral_dis).tolist()
 
     def _retreat_cabinet_arm_after_open(self):
         if self.cabinet_arm_tag is None:
