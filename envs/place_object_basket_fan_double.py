@@ -805,7 +805,7 @@ class place_object_basket_fan_double(Base_Task):
     }
 
     OBJECT_LAYER = "lower"
-    BASKET_LAYER = "upper"
+    BASKET_LAYER = "lower"
     OBJECT_CANDIDATES = {
         "081_playingcards": [0, 1, 2],
         "057_toycar": [0, 1, 2, 3, 4, 5],
