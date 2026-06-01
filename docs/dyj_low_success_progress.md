@@ -12,9 +12,10 @@ export PYTHONWARNINGS=ignore::UserWarning
   --tasks <task_name> --start 0 --end <exclusive_seed_bound> --stop-on-success
 ```
 
-Add `--trace-moves` to include `move_count` and the first failed `move(...)` call in
-each JSON result. This is useful for separating sampling/search failures from
-action-pose failures without generating full data artifacts.
+Add `--trace-moves` to include `move_count`, the first failed `move(...)` call,
+and the current/final rotate subtask/search state in each JSON result. This is
+useful for separating sampling/search failures from action-pose failures without
+generating full data artifacts.
 
 ## Improvements verified during this branch
 
@@ -37,6 +38,15 @@ action-pose failures without generating full data artifacts.
 - `click_alarmclock_rotate_view`: deeper press distance did not improve first success; only the `None` press-pose fallback was retained.
 - `stack_blocks_three_rotate_view`: increasing stack-place pre/final vertical offset still failed seeds 0..5, so it was reverted.
 - `place_cans_plasticbox_rotate_view`: raising the box placement targets by 0.045 m still failed seed 0 at the first can placement, so it was reverted.
+- `place_cans_plasticbox_rotate_view`: preserving the grasp pose and moving to a
+  simple drop pose above the plastic box regressed seed 0 to a single-pose move
+  failure, so it was reverted.
+- `place_cans_plasticbox_rotate_view`: sampling box and both cans on the left
+  side and using the left arm for both cans caused unstable/failed early grasp
+  seeds and no success in 0..7, so it was reverted.
+- `blocks_ranking_rgb_fan_double` / `blocks_ranking_size_fan_double`: moving the
+  lower target row inward (`r=0.45`, `theta=28`, `gap=10`) still yielded no
+  success in seeds 0..7, so it was reverted.
 
 ## Current action-level diagnostic observations
 

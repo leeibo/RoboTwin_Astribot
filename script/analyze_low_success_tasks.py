@@ -60,6 +60,16 @@ def _summarize_actions(actions_by_arm):
     }
 
 
+def _summarize_env_state(env):
+    state = {
+        "current_subtask_idx": getattr(env, "current_subtask_idx", None),
+        "current_stage": getattr(env, "current_stage", None),
+        "search_cursor_state_index": getattr(env, "search_cursor_state_index", None),
+        "search_cursor_layer": getattr(env, "search_cursor_layer", None),
+    }
+    return {key: value for key, value in state.items() if value is not None}
+
+
 def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=False):
     cls = _task_class(task_name)
     env = cls()
@@ -75,6 +85,7 @@ def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=Fa
         "info": None,
         "move_count": 0,
         "first_failed_move": None,
+        "final_state": None,
     }
     try:
         env.setup_demo(now_ep_num=0, seed=int(seed), **args)
@@ -95,6 +106,7 @@ def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=Fa
                         "move_result": bool(move_result),
                         "actions_by_arm1": _summarize_actions(actions_by_arm1),
                         "actions_by_arm2": _summarize_actions(actions_by_arm2),
+                        "env_state": _summarize_env_state(env),
                     }
                 return move_result
 
@@ -104,6 +116,8 @@ def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=Fa
         result["check_success"] = bool(env.check_success()) if result["plan_success"] else False
         result["ok"] = bool(result["plan_success"] and result["check_success"])
         result["info"] = info.get("info", None) if isinstance(info, dict) else None
+        if trace_moves and not result["ok"]:
+            result["final_state"] = _summarize_env_state(env)
     except Exception as exc:  # noqa: BLE001 - diagnostic script must record all failure modes.
         result["exception_type"] = type(exc).__name__
         result["exception_message"] = str(exc)
