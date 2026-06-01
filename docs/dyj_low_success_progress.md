@@ -13,9 +13,11 @@ export PYTHONWARNINGS=ignore::UserWarning
 ```
 
 Add `--trace-moves` to include `move_count`, the first failed `move(...)` call,
-and the current/final rotate subtask/search state in each JSON result. This is
-useful for separating sampling/search failures from action-pose failures without
-generating full data artifacts.
+and the current/final rotate subtask/search state in each JSON result. Add
+`--trace-objects` to include object-registry world poses, robot cylindrical
+coordinates, and declared layer labels. This is useful for separating
+sampling/search failures from action-pose failures without generating full data
+artifacts.
 
 ## Improvements verified during this branch
 
@@ -59,6 +61,15 @@ With `--trace-moves` on seed 0:
 
 This reinforces that the remaining tasks need placement-pose/action changes
 rather than only spawn-side/layer sampling changes.
+
+With `--trace-moves --trace-objects` on seed 1:
+
+- `blocks_ranking_rgb_fan_double` and `blocks_ranking_size_fan_double` both fail
+  before any arm move (`move_count=0`) while searching the upper layer for `B`.
+  The object summary shows `B` is declared as `layer="upper"` but has lower-table
+  z (`~0.76`) after setup. This means at least some upper-layer block samples
+  fall to the lower table/ground while the search logic still scans the upper
+  layer, causing deterministic no-move failures for those seeds.
 
 ## Remaining high-priority tasks
 

@@ -70,7 +70,46 @@ def _summarize_env_state(env):
     return {key: value for key, value in state.items() if value is not None}
 
 
-def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=False):
+def _safe_pose_xyz(actor):
+    try:
+        return [float(value) for value in actor.get_pose().p[:3].tolist()]
+    except Exception:
+        return None
+
+
+def _safe_robot_cyl(env, xyz):
+    if xyz is None:
+        return None
+    try:
+        from envs.utils import world_to_robot
+
+        return [
+            float(value)
+            for value in world_to_robot(
+                xyz,
+                getattr(env, "robot_root_xy", [0.0, 0.0]),
+                getattr(env, "robot_yaw", 0.0),
+            )
+        ]
+    except Exception:
+        return None
+
+
+def _summarize_objects(env):
+    object_registry = getattr(env, "object_registry", {}) or {}
+    object_layers = getattr(env, "object_layers", {}) or {}
+    result = {}
+    for key, actor in object_registry.items():
+        xyz = _safe_pose_xyz(actor)
+        result[str(key)] = {
+            "layer": object_layers.get(str(key), None),
+            "xyz": xyz,
+            "robot_cyl": _safe_robot_cyl(env, xyz),
+        }
+    return result
+
+
+def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=False, trace_objects=False):
     cls = _task_class(task_name)
     env = cls()
     args = _load_args(task_name, task_config, env)
@@ -86,6 +125,7 @@ def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=Fa
         "move_count": 0,
         "first_failed_move": None,
         "final_state": None,
+        "objects": None,
     }
     try:
         env.setup_demo(now_ep_num=0, seed=int(seed), **args)
@@ -118,6 +158,8 @@ def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=Fa
         result["info"] = info.get("info", None) if isinstance(info, dict) else None
         if trace_moves and not result["ok"]:
             result["final_state"] = _summarize_env_state(env)
+        if trace_objects:
+            result["objects"] = _summarize_objects(env)
     except Exception as exc:  # noqa: BLE001 - diagnostic script must record all failure modes.
         result["exception_type"] = type(exc).__name__
         result["exception_message"] = str(exc)
@@ -141,6 +183,7 @@ def main():
     parser.add_argument("--stop-on-success", action="store_true")
     parser.add_argument("--verbose-failure", action="store_true")
     parser.add_argument("--trace-moves", action="store_true", help="record move count and the first failed move")
+    parser.add_argument("--trace-objects", action="store_true", help="record object registry poses and declared layers")
     args = parser.parse_args()
 
     for task_name in args.tasks:
@@ -153,6 +196,7 @@ def main():
                 seed,
                 verbose_failure=args.verbose_failure,
                 trace_moves=args.trace_moves,
+                trace_objects=args.trace_objects,
             )
             attempts += 1
             print(json.dumps(result, ensure_ascii=False), flush=True)
