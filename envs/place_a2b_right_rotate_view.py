@@ -130,8 +130,8 @@ class place_a2b_right_rotate_view(Base_Task):
             tgt_theta = float(self._pose_to_cyl(target_rand_pose)[1])
             theta_gap = float(self._wrap_to_pi(tgt_theta - obj_theta))
 
-            # For right task, source starts at the left side (larger theta), then moves to target-right.
-            if distance > 0.19 and theta_gap < -0.12:
+            # Keep both poses on the right-arm side while preserving ordering.
+            if distance > 0.19 and theta_gap < -0.12 and obj_theta < -0.03:
                 break
 
         if try_num > try_lim:
@@ -179,8 +179,7 @@ class place_a2b_right_rotate_view(Base_Task):
             joint_name_prefer="astribot_torso_joint_2",
         )
 
-        object_theta = float(self._pose_to_cyl(self.object.get_pose())[1])
-        arm_tag = ArmTag("left" if object_theta >= 0.0 else "right")
+        arm_tag = ArmTag("right")
         self.enter_rotate_action_stage(1, focus_object_key=(source_key or "A"))
         self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
         self._set_carried_object_keys(["A"])

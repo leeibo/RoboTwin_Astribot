@@ -66,6 +66,11 @@ def get_layer_spec(task, layer_name, spec_attr="LAYER_SPECS"):
             theta_half = float(getattr(task, "rotate_object_theta_half_rad", np.deg2rad(45.0))) * theta_shrink
         thetalim = [-theta_half, theta_half]
 
+    if "theta_min_deg" in local_spec or "theta_max_deg" in local_spec:
+        theta_min = float(local_spec.get("theta_min_deg", np.rad2deg(thetalim[0])))
+        theta_max = float(local_spec.get("theta_max_deg", np.rad2deg(thetalim[1])))
+        thetalim = [float(np.deg2rad(theta_min)), float(np.deg2rad(theta_max))]
+
     return {
         "layer": layer_name,
         "inner_radius": inner_radius,
@@ -795,12 +800,19 @@ class blocks_ranking_rgb_fan_double(Base_Task):
             "outer_margin": 0.16,
             "max_cyl_r": 0.5,
             "theta_shrink": 0.90,
+            # Keep movable blocks on the same (left-arm) side as the target row.
+            # Randomly spawning them on the opposite side made many seeds fail
+            # during cross-body place attempts.
+            "theta_min_deg": 2.0,
+            "theta_max_deg": 38.0,
         },
         "upper": {
             "inner_margin": 0.05,
             "outer_margin": 0.07,
             "max_cyl_r": 0.68,
             "theta_shrink": 0.96,
+            "theta_min_deg": 2.0,
+            "theta_max_deg": 38.0,
         },
     }
     BLOCK_SIZE_RANGE = (0.020, 0.026)

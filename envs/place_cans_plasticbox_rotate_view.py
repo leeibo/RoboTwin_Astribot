@@ -112,11 +112,11 @@ class place_cans_plasticbox_rotate_view(Base_Task):
             rlim=[0.4, 0.5],
             thetalim=rotate_theta_side(self, side=1),
 
-            zlim=[0.741, 0.741],
+            zlim=[0.755, 0.755],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
-            qpos=[0.5, 0.5, 0.5, 0.5],
-            rotate_rand=True,
+            qpos=[1, 0, 0, 0],
+            rotate_rand=False,
             rotate_lim=[0, 0, 0],
         )
         self.object1_id = int(np.random.choice([0, 1, 2, 3, 5, 6], 1)[0])
@@ -133,11 +133,11 @@ class place_cans_plasticbox_rotate_view(Base_Task):
             rlim=[0.4, 0.5],
             thetalim=rotate_theta_side(self, side=-1),
 
-            zlim=[0.741, 0.741],
+            zlim=[0.755, 0.755],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
-            qpos=[0.5, 0.5, 0.5, 0.5],
-            rotate_rand=True,
+            qpos=[1, 0, 0, 0],
+            rotate_rand=False,
             rotate_lim=[0, 0, 0],
         )
         self.object2_id = int(np.random.choice([0, 1, 2, 3, 5, 6], 1)[0])
