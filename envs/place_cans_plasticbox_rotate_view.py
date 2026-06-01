@@ -115,7 +115,7 @@ class place_cans_plasticbox_rotate_view(Base_Task):
             zlim=[0.755, 0.755],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
-            qpos=[1, 0, 0, 0],
+            qpos=[0.5, 0.5, 0.5, 0.5],
             rotate_rand=False,
             rotate_lim=[0, 0, 0],
         )
@@ -136,7 +136,7 @@ class place_cans_plasticbox_rotate_view(Base_Task):
             zlim=[0.755, 0.755],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
-            qpos=[1, 0, 0, 0],
+            qpos=[0.5, 0.5, 0.5, 0.5],
             rotate_rand=False,
             rotate_lim=[0, 0, 0],
         )
