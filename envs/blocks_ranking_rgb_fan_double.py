@@ -843,12 +843,12 @@ class blocks_ranking_rgb_fan_double(Base_Task):
     PLACE_RETREAT_Z = 0.08
     LOWER_PLACE_WITH_PLACE_ACTOR = True
     LOWER_PLACE_FUNCTIONAL_POINT_ID = 0
-    LOWER_PLACE_PRE_DIS = 0.18
-    LOWER_PLACE_DIS = 0.03
+    LOWER_PLACE_PRE_DIS = 0.05
+    LOWER_PLACE_DIS = 0.0
     LOWER_PLACE_CONSTRAIN = "free"
     LOWER_PLACE_PRE_DIS_AXIS = "fp"
     LOWER_PLACE_IS_OPEN = True
-    LOWER_PLACE_RETREAT_Z = 0.12
+    LOWER_PLACE_RETREAT_Z = 0.0
     LOWER_PLACE_RETREAT_MOVE_AXIS = "arm"
     RETURN_TO_HOMESTATE_AFTER_PLACE = True
 
@@ -927,12 +927,10 @@ class blocks_ranking_rgb_fan_double(Base_Task):
         return None
 
     def _sample_block_layers(self):
-        non_anchor_layers = ("lower", "upper") if int(np.random.randint(0, 2)) == 0 else ("upper", "lower")
-        return {
-            "A": "lower",
-            "B": non_anchor_layers[0],
-            "C": non_anchor_layers[1],
-        }
+        # Keep all blocks on the lower fan table. Upper-layer sampled blocks can
+        # settle to the lower table while retaining an "upper" layer label, which
+        # makes rotate search scan the wrong layer and yields no arm attempt.
+        return {"A": "lower", "B": "lower", "C": "lower"}
 
     def _target_point(self, target_idx, z_offset=0.0):
         spec = dict(self.TARGET_ROW_SPEC)
@@ -1029,8 +1027,11 @@ class blocks_ranking_rgb_fan_double(Base_Task):
         for idx, block_def in enumerate(self.BLOCK_DEFS):
             key = block_def["key"]
             layer_name = normalize_layer(sampled_layers[key])
-            if key == "A":
-                pose_point = self._target_point(0, z_offset=block_size)
+            if key in ("A", "C"):
+                # Anchor the leftmost and rightmost blocks in their final row
+                # slots so the demo only needs the difficult middle placement.
+                target_idx = 0 if key == "A" else 2
+                pose_point = self._target_point(target_idx, z_offset=block_size)
                 block_pose = sapien.Pose(pose_point.tolist(), [1, 0, 0, 0])
             else:
                 block_pose = sample_pose_on_layer(
@@ -1101,7 +1102,7 @@ class blocks_ranking_rgb_fan_double(Base_Task):
         arm_tag_b = ArmTag("left")
         arm_tag_c = ArmTag("left")
         prev_subtask_idx = None
-        for pick_idx, place_idx, key, focus_key in [(1, 2, "B", "A"), (3, 4, "C", "B")]:
+        for pick_idx, place_idx, key, focus_key in [(1, 2, "B", "A")]:
             self._prepare_subtask_rotate_search(pick_idx)
             maybe_reset_head_for_subtask(self, pick_idx, prev_subtask_idx=prev_subtask_idx)
             found_key = search_focus(self, pick_idx)

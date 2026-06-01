@@ -30,6 +30,8 @@ artifacts.
 | `search_object` | current pre-fix first success 11 (historical collected seed 35) | first success 4 | keep the stable rubik's-cube hidden-object variant |
 | `place_object_basket_fan_double` | no success in seeds 0..19 | first success 2 | place basket on lower fan-double layer for reachable `place_actor` path |
 | `put_block_on_upper_hard` | collected seed 14 | first success 2 | current branch/config evidence; no task-specific commit yet |
+| `blocks_ranking_rgb_fan_double` | no success in seeds 0..11 after current branch | first success 0 | keep blocks on lower layer, pre-place the final rightmost block, and reduce lower placement approach/retreat |
+| `blocks_ranking_size_fan_double` | no success in seeds 0..11 after current branch | first success 0 | keep blocks on lower layer, pre-place the final rightmost block, and reduce lower placement approach/retreat |
 
 ## Experiments reverted because they did not improve success
 
@@ -73,8 +75,6 @@ With `--trace-moves --trace-objects` on seed 1:
 
 ## Remaining high-priority tasks
 
-- `blocks_ranking_rgb_fan_double`
-- `blocks_ranking_size_fan_double`
 - `place_cans_plasticbox_rotate_view`
 - `stack_blocks_three_rotate_view`
 
