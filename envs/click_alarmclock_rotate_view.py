@@ -122,16 +122,23 @@ class click_alarmclock_rotate_view(Base_Task):
         arm_tag = ArmTag("left" if alarm_cyl[1] >= 0 else "right")
 
         self.enter_rotate_action_stage(1, focus_object_key=(alarm_key or "A"))
+        grasp_pose = self.get_grasp_pose(self.alarm, pre_dis=0.1, contact_point_id=0, arm_tag=arm_tag)
+        if grasp_pose is None:
+            press_pose = self._resolve_alarm_press_pose(arm_tag, pre_dis=0.1)
+        else:
+            press_pose = grasp_pose[:3] + [0.5, -0.5, 0.5, 0.5]
+        if press_pose is None:
+            self.plan_success = False
+            self.info["info"] = {
+                "{A}": f"046_alarm-clock/base{self.alarmclock_id}",
+                "{a}": str(arm_tag),
+            }
+            return self.info
         self.move(
             (
                 ArmTag(arm_tag),
                 [
-                    Action(
-                        arm_tag,
-                        "move",
-                        self.get_grasp_pose(self.alarm, pre_dis=0.1, contact_point_id=0, arm_tag=arm_tag)[:3]
-                        + [0.5, -0.5, 0.5, 0.5],
-                    ),
+                    Action(arm_tag, "move", press_pose),
                     Action(arm_tag, "close", target_gripper_pos=-0.1),
                 ],
             )
