@@ -50,7 +50,17 @@ def _task_class(task_name):
     return getattr(module, task_name)
 
 
-def run_seed(task_name, task_config, seed, verbose_failure=False):
+def _summarize_actions(actions_by_arm):
+    if actions_by_arm is None:
+        return None
+    arm_tag, actions = actions_by_arm
+    return {
+        "arm": str(arm_tag),
+        "actions": [getattr(action, "action", None) for action in (actions or [])],
+    }
+
+
+def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=False):
     cls = _task_class(task_name)
     env = cls()
     args = _load_args(task_name, task_config, env)
@@ -63,9 +73,32 @@ def run_seed(task_name, task_config, seed, verbose_failure=False):
         "exception_type": None,
         "exception_message": None,
         "info": None,
+        "move_count": 0,
+        "first_failed_move": None,
     }
     try:
         env.setup_demo(now_ep_num=0, seed=int(seed), **args)
+        if trace_moves:
+            original_move = env.move
+
+            def traced_move(actions_by_arm1, actions_by_arm2=None, save_freq=-1):
+                result["move_count"] += 1
+                move_index = result["move_count"]
+                plan_before = bool(getattr(env, "plan_success", False))
+                move_result = original_move(actions_by_arm1, actions_by_arm2, save_freq=save_freq)
+                plan_after = bool(getattr(env, "plan_success", False))
+                if result["first_failed_move"] is None and (not move_result or not plan_after):
+                    result["first_failed_move"] = {
+                        "index": move_index,
+                        "plan_before": plan_before,
+                        "plan_after": plan_after,
+                        "move_result": bool(move_result),
+                        "actions_by_arm1": _summarize_actions(actions_by_arm1),
+                        "actions_by_arm2": _summarize_actions(actions_by_arm2),
+                    }
+                return move_result
+
+            env.move = traced_move
         info = env.play_once()
         result["plan_success"] = bool(getattr(env, "plan_success", False))
         result["check_success"] = bool(env.check_success()) if result["plan_success"] else False
@@ -93,13 +126,20 @@ def main():
     parser.add_argument("--end", type=int, default=20, help="exclusive upper seed bound")
     parser.add_argument("--stop-on-success", action="store_true")
     parser.add_argument("--verbose-failure", action="store_true")
+    parser.add_argument("--trace-moves", action="store_true", help="record move count and the first failed move")
     args = parser.parse_args()
 
     for task_name in args.tasks:
         first_success = None
         attempts = 0
         for seed in range(args.start, args.end):
-            result = run_seed(task_name, args.config, seed, verbose_failure=args.verbose_failure)
+            result = run_seed(
+                task_name,
+                args.config,
+                seed,
+                verbose_failure=args.verbose_failure,
+                trace_moves=args.trace_moves,
+            )
             attempts += 1
             print(json.dumps(result, ensure_ascii=False), flush=True)
             if result["ok"]:

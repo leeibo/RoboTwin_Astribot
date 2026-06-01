@@ -12,6 +12,10 @@ export PYTHONWARNINGS=ignore::UserWarning
   --tasks <task_name> --start 0 --end <exclusive_seed_bound> --stop-on-success
 ```
 
+Add `--trace-moves` to include `move_count` and the first failed `move(...)` call in
+each JSON result. This is useful for separating sampling/search failures from
+action-pose failures without generating full data artifacts.
+
 ## Improvements verified during this branch
 
 | Task | Baseline evidence | Current evidence | Main change |
@@ -31,6 +35,20 @@ export PYTHONWARNINGS=ignore::UserWarning
 - `place_cans_plasticbox_rotate_view`: forcing fixed can/plasticbox model ids yielded no success in seeds 0..7.
 - `search_object`: lowering drawer-open threshold from 0.08 to 0.04 regressed the previously successful seed 11, so it was reverted.
 - `click_alarmclock_rotate_view`: deeper press distance did not improve first success; only the `None` press-pose fallback was retained.
+- `stack_blocks_three_rotate_view`: increasing stack-place pre/final vertical offset still failed seeds 0..5, so it was reverted.
+- `place_cans_plasticbox_rotate_view`: raising the box placement targets by 0.045 m still failed seed 0 at the first can placement, so it was reverted.
+
+## Current action-level diagnostic observations
+
+With `--trace-moves` on seed 0:
+
+- `stack_blocks_three_rotate_view` fails at move 3: the first stack placement of
+  the green block on the red block (`right` arm, actions `move, move, gripper`).
+- `place_cans_plasticbox_rotate_view` fails at move 3: the first can placement
+  into the plastic box (`left` arm, actions `move, move, gripper`).
+
+This reinforces that the remaining tasks need placement-pose/action changes
+rather than only spawn-side/layer sampling changes.
 
 ## Remaining high-priority tasks
 
