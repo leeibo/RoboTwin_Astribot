@@ -32,6 +32,7 @@ artifacts.
 | `put_block_on_upper_hard` | collected seed 14 | first success 2 | current branch/config evidence; no task-specific commit yet |
 | `blocks_ranking_rgb_fan_double` | no success in seeds 0..11 after current branch | first success 0 | keep blocks on lower layer, pre-place the final rightmost block, and reduce lower placement approach/retreat |
 | `blocks_ranking_size_fan_double` | no success in seeds 0..11 after current branch | first success 0 | keep blocks on lower layer, pre-place the final rightmost block, and reduce lower placement approach/retreat |
+| `place_cans_plasticbox_rotate_view` | collected seed 77; earlier branch first success 16 | first success 11 | sample the plastic box on the first-can/left-arm side while keeping cans split by side |
 
 ## Experiments reverted because they did not improve success
 
@@ -51,6 +52,8 @@ artifacts.
 - `blocks_ranking_rgb_fan_double` / `blocks_ranking_size_fan_double`: moving the
   lower target row inward (`r=0.45`, `theta=28`, `gap=10`) still yielded no
   success in seeds 0..7, so it was reverted.
+- `stack_blocks_three_rotate_view`: changing stack placement final distance to
+  `dis=0.03` still yielded no success in seeds 0..5, so it was reverted.
 
 ## Current action-level diagnostic observations
 

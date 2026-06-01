@@ -88,7 +88,7 @@ class place_cans_plasticbox_rotate_view(Base_Task):
 
         box_pose = rand_pose_cyl(
             rlim=[0.4, 0.5],
-            thetalim=rotate_theta_center(self),
+            thetalim=rotate_theta_side(self, side=1),
 
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
