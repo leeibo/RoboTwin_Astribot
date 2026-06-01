@@ -82,7 +82,7 @@ class move_stapler_pad_rotate_view(Base_Task):
         while True:
             target_rand_pose = rand_pose_cyl(
                 rlim=[0.48, 0.5],
-                thetalim=rotate_theta_side(self, side=-same_side),
+                thetalim=rotate_theta_side(self, side=same_side),
 
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
