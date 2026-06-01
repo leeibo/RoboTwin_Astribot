@@ -25,22 +25,6 @@ class search_object(Base_Task):
     OBJECT_MASS = 0.03
     OBJECT_VARIANTS = (
         {
-            "kind": "block",
-            "label": OBJECT_LABEL,
-            "outward_offset": 0.03,
-            "surface_z_offset": OBJECT_HALF_SIZE + 0.002,
-            "mass": OBJECT_MASS,
-        },
-        {
-            "kind": "asset",
-            "modelname": "057_toycar",
-            "label": "toy car",
-            "base_q": (0.7071068, 0.7071068, 0.0, 0.0),
-            "outward_offset": 0.02,
-            "surface_z_offset": 0.0,
-            "mass": OBJECT_MASS,
-        },
-        {
             "kind": "asset",
             "modelname": "073_rubikscube",
             "label": "rubik's cube",
