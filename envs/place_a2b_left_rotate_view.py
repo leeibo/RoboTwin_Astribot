@@ -14,6 +14,14 @@ class place_a2b_left_rotate_view(Base_Task):
     A2B_RLIM = (0.40, 0.50)
     A2B_MIN_DISTANCE = 0.19
     A2B_MIN_THETA_GAP = 0.12
+    A2B_PLACE_ARC_DIS = 0.13
+    A2B_PLACE_R_BIAS = 0.0
+    A2B_PLACE_TANGENT_BIAS = 0.0
+    A2B_PLACE_Z_BIAS = 0.0
+    A2B_PLACE_PRE_DIS = 0.10
+    A2B_PLACE_DIS = 0.02
+    A2B_PLACE_PRE_DIS_AXIS = "grasp"
+    A2B_PLACE_CONSTRAIN = "free"
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -57,13 +65,25 @@ class place_a2b_left_rotate_view(Base_Task):
         world_p = pose.p.tolist() if hasattr(pose, "p") else np.array(pose, dtype=np.float64).reshape(-1)[:3].tolist()
         return world_to_robot(world_p, self.robot_root_xy, self.robot_yaw)
 
-    def _side_place_pose(self, target_pose, arc_dis=0.13, to_left=True):
+    def _side_place_pose(
+        self,
+        target_pose,
+        arc_dis=None,
+        to_left=True,
+        r_bias=None,
+        tangent_bias=None,
+        z_bias=None,
+    ):
         target_cyl = self._pose_to_cyl(target_pose)
-        r = max(float(target_cyl[0]), 1e-6)
+        arc_dis = float(self.A2B_PLACE_ARC_DIS if arc_dis is None else arc_dis)
+        r_bias = float(self.A2B_PLACE_R_BIAS if r_bias is None else r_bias)
+        tangent_bias = float(self.A2B_PLACE_TANGENT_BIAS if tangent_bias is None else tangent_bias)
+        z_bias = float(self.A2B_PLACE_Z_BIAS if z_bias is None else z_bias)
+        r = max(float(target_cyl[0]) + r_bias, 1e-6)
         sign = 1.0 if to_left else -1.0
-        theta = float(target_cyl[1]) + sign * float(arc_dis) / r
+        theta = float(target_cyl[1]) + sign * (arc_dis + tangent_bias) / r
         return place_point_cyl(
-            [r, theta, float(target_cyl[2])],
+            [r, theta, float(target_cyl[2]) + z_bias],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="list",
@@ -196,9 +216,19 @@ class place_a2b_left_rotate_view(Base_Task):
             scan_z=0.88 + self.table_z_bias,
             joint_name_prefer="astribot_torso_joint_2",
         )
-        target_pose = self._side_place_pose(self.target_object.get_pose(), arc_dis=0.13, to_left=True)
+        target_pose = self._side_place_pose(self.target_object.get_pose(), to_left=True)
         self.enter_rotate_action_stage(2, focus_object_key=(target_key or "B"))
-        self.move(self.place_actor(self.object, arm_tag=arm_tag, target_pose=target_pose, constrain="free"))
+        self.move(
+            self.place_actor(
+                self.object,
+                arm_tag=arm_tag,
+                target_pose=target_pose,
+                pre_dis=float(self.A2B_PLACE_PRE_DIS),
+                dis=float(self.A2B_PLACE_DIS),
+                pre_dis_axis=self.A2B_PLACE_PRE_DIS_AXIS,
+                constrain=self.A2B_PLACE_CONSTRAIN,
+            )
+        )
         self._set_carried_object_keys([])
         self.complete_rotate_subtask(2, carried_after=[])
 

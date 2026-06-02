@@ -13,6 +13,10 @@ class move_stapler_pad_rotate_view(Base_Task):
     PAD_RLIM = (0.32, 0.42)
     STAPLER_MIN_ABS_THETA = 0.2
     PAD_MIN_DISTANCE = 0.1
+    STAPLER_PLACE_PRE_DIS = 0.10
+    STAPLER_PLACE_DIS = 0.0
+    STAPLER_PLACE_PRE_DIS_AXIS = "grasp"
+    STAPLER_PLACE_CONSTRAIN = "free"
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -153,9 +157,10 @@ class move_stapler_pad_rotate_view(Base_Task):
                 self.stapler,
                 target_pose=self.pad_pose,
                 arm_tag=arm_tag,
-                pre_dis=0.1,
-                dis=0.0,
-                constrain="free",  # Success check requires orientation consistency on the pad.
+                pre_dis=float(self.STAPLER_PLACE_PRE_DIS),
+                dis=float(self.STAPLER_PLACE_DIS),
+                pre_dis_axis=self.STAPLER_PLACE_PRE_DIS_AXIS,
+                constrain=self.STAPLER_PLACE_CONSTRAIN,  # Success check requires orientation consistency on the pad.
             )
         )
         self._set_carried_object_keys([])
