@@ -176,17 +176,24 @@ def run_sweep(args):
     output = {
         "config": args.config,
         "seed": int(args.seed),
+        "table_height_bias": float(args.table_height_bias),
         "rows": [],
         "summary": {},
     }
     try:
         env_args = _load_args(args.config, env)
-        env.setup_demo(now_ep_num=0, seed=int(args.seed), **env_args)
+        env.setup_demo(
+            now_ep_num=0,
+            seed=int(args.seed),
+            table_height_bias=float(args.table_height_bias),
+            **env_args,
+        )
         env.robot.move_to_homestate()
         env.robot.set_origin_endpose()
         env.robot_root_xy, env.robot_yaw = env._get_robot_root_xy_yaw()
 
         table_top_z = float(getattr(env, "rotate_table_top_z", 0.74))
+        output["table_top_z"] = table_top_z
         r_values = _float_list(args.r_values)
         theta_deg_values = _float_list(args.theta_deg_values)
         z_offsets = _float_list(args.z_offsets)
@@ -278,6 +285,12 @@ def main():
     parser = argparse.ArgumentParser(description="Sweep cuRobo reachability on a clean table.")
     parser.add_argument("--config", default="demo_clean")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--table-height-bias",
+        type=float,
+        default=0.0,
+        help="additive bias to the default table top height 0.74m; e.g. -0.04 tests top_z=0.70",
+    )
     parser.add_argument("--arms", default="left,right")
     parser.add_argument(
         "--orientation-modes",

@@ -161,3 +161,119 @@ preferred TCP target height:          table_top_z + 0.12..0.20
 Note that this is a pure planner result.  Real task success can still be lower
 because grasp choice, carried-object geometry, release height, collisions, and
 `check_success()` physics are not included in this clean-table sweep.
+
+## Table-height sweep
+
+A separate branch `measure/clean-table-height-workspace` measured the same
+clean-table workspace under different table top heights.  The script option is:
+
+```bash
+--table-height-bias=<bias>
+```
+
+where the actual fan table top is:
+
+```text
+table_top_z = 0.74 + table_height_bias
+```
+
+### Height sweep command
+
+All heights used the same grid:
+
+```text
+arms:        left,right
+orientations: home,horizontal_outward,topdown_y_radial,topdown_y_inward
+r:           0.30,0.35,0.40,0.45,0.50,0.55
+theta_deg:   -40,-20,0,20,40
+z_offset:    0.08,0.12,0.16,0.20
+```
+
+That is `960` cuRobo planning queries per height.
+
+Example invocation:
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+export PYTHONWARNINGS=ignore::UserWarning
+/home/admin1/yibo/conda/envs/robotwin/bin/python script/explore_clean_table_curobo_workspace.py \
+  --config=demo_clean \
+  --table-height-bias=0.02 \
+  --arms=left,right \
+  --orientation-modes=home,horizontal_outward,topdown_y_radial,topdown_y_inward \
+  --r-values=0.30,0.35,0.40,0.45,0.50,0.55 \
+  --theta-deg-values=-40,-20,0,20,40 \
+  --z-offsets=0.08,0.12,0.16,0.20 \
+  --progress-every=0 \
+  --top-k=50
+```
+
+Two coverage metrics are reported:
+
+- `success_rate`: raw cuRobo success over all 960 queries.
+- `robust_bins`: number of `(r, theta, z_offset)` bins where all tested
+  arm/orientation combinations succeed.
+
+### Height sweep results
+
+| table_top_z | bias | Success / 960 | Rate | Robust bins / 120 | Recommended-region rate |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.62 | -0.12 | 193 | 20.10% | 11 | 35.65% |
+| 0.66 | -0.08 | 368 | 38.33% | 24 | 68.52% |
+| 0.70 | -0.04 | 549 | 57.19% | 37 | 98.15% |
+| 0.72 | -0.02 | 621 | 64.69% | 39 | 100.00% |
+| 0.74 | +0.00 | 709 | 73.85% | 50 | 100.00% |
+| 0.76 | +0.02 | 718 | 74.79% | 52 | 100.00% |
+| 0.78 | +0.04 | 717 | 74.69% | 49 | 99.54% |
+| 0.80 | +0.06 | 709 | 73.85% | 45 | 97.69% |
+| 0.82 | +0.08 | 701 | 73.02% | 43 | 96.30% |
+| 0.84 | +0.10 | 680 | 70.83% | 35 | 91.20% |
+| 0.86 | +0.12 | 653 | 68.02% | 31 | 88.43% |
+
+The recommended-region rate above is evaluated on:
+
+```text
+r:          0.35–0.45
+theta:      |theta| <= 20°
+z_offset:   0.12–0.20 m
+orientations: home,horizontal_outward,topdown_y_radial,topdown_y_inward
+arms:       left,right
+```
+
+### Best height
+
+The widest clean-table cuRobo coverage is at:
+
+```text
+table_top_z ≈ 0.76 m
+table_height_bias ≈ +0.02 m
+```
+
+Evidence:
+
+- Highest raw coverage: `718/960 = 74.79%`.
+- Highest robust-bin coverage: `52/120` position bins where every tested
+  arm/orientation combination succeeds.
+- The task-friendly recommended region remains perfect: `216/216 = 100%`.
+
+There is a broad plateau around `0.74–0.80 m`; however, very low tables are much
+worse, and very high tables start losing coverage:
+
+- `0.62–0.66 m`: poor coverage; low `z_offset` queries are especially bad.
+- `0.74–0.78 m`: best plateau.
+- `0.82–0.86 m`: still usable but progressively less broad.
+
+### Height-specific recommended range
+
+For the current DYJ clean-table setup, if table height can be adjusted, prefer:
+
+```text
+table_top_z: 0.76 m
+sampling r:  0.35–0.45, with core at 0.35–0.40
+theta:       -20°..20°
+z_offset:    0.12–0.20 m above table top
+pose modes:  horizontal_outward first; topdown_y_radial/inward are also good
+```
+
+This result is planner-only, so task-level checks should still validate object
+release, collision with carried geometry, and success conditions.
