@@ -1,4 +1,5 @@
 import argparse
+import ast
 import importlib
 import json
 import os
@@ -48,6 +49,25 @@ def _load_args(task_name, task_config, env):
 def _task_class(task_name):
     module = importlib.import_module(f"envs.{task_name}")
     return getattr(module, task_name)
+
+
+def _parse_attr_override(text):
+    if "=" not in text:
+        raise ValueError(f"Attribute override must be NAME=VALUE, got: {text}")
+    name, value_text = text.split("=", 1)
+    name = name.strip()
+    if not name:
+        raise ValueError(f"Attribute override has empty name: {text}")
+    try:
+        value = ast.literal_eval(value_text)
+    except Exception:
+        value = value_text
+    return name, value
+
+
+def _apply_attr_overrides(cls, attr_overrides):
+    for attr_name, attr_value in attr_overrides or []:
+        setattr(cls, attr_name, attr_value)
 
 
 def _summarize_actions(actions_by_arm):
@@ -109,8 +129,17 @@ def _summarize_objects(env):
     return result
 
 
-def run_seed(task_name, task_config, seed, verbose_failure=False, trace_moves=False, trace_objects=False):
+def run_seed(
+    task_name,
+    task_config,
+    seed,
+    verbose_failure=False,
+    trace_moves=False,
+    trace_objects=False,
+    attr_overrides=None,
+):
     cls = _task_class(task_name)
+    _apply_attr_overrides(cls, attr_overrides)
     env = cls()
     args = _load_args(task_name, task_config, env)
     result = {
@@ -184,7 +213,14 @@ def main():
     parser.add_argument("--verbose-failure", action="store_true")
     parser.add_argument("--trace-moves", action="store_true", help="record move count and the first failed move")
     parser.add_argument("--trace-objects", action="store_true", help="record object registry poses and declared layers")
+    parser.add_argument(
+        "--set-attr",
+        action="append",
+        default=[],
+        help="temporarily set task class attribute, e.g. --set-attr A2B_RLIM='(0.35, 0.45)'",
+    )
     args = parser.parse_args()
+    attr_overrides = [_parse_attr_override(item) for item in args.set_attr]
 
     for task_name in args.tasks:
         first_success = None
@@ -197,6 +233,7 @@ def main():
                 verbose_failure=args.verbose_failure,
                 trace_moves=args.trace_moves,
                 trace_objects=args.trace_objects,
+                attr_overrides=attr_overrides,
             )
             attempts += 1
             print(json.dumps(result, ensure_ascii=False), flush=True)

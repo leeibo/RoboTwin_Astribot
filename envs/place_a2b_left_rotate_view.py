@@ -11,6 +11,9 @@ import os
 
 class place_a2b_left_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
+    A2B_RLIM = (0.40, 0.50)
+    A2B_MIN_DISTANCE = 0.19
+    A2B_MIN_THETA_GAP = 0.12
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -101,7 +104,7 @@ class place_a2b_left_rotate_view(Base_Task):
         try_num, try_lim = 0, 120
         while try_num <= try_lim:
             rand_pos = rand_pose_cyl(
-                rlim=[0.35, 0.45],
+                rlim=list(self.A2B_RLIM),
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -112,7 +115,7 @@ class place_a2b_left_rotate_view(Base_Task):
                 rotate_lim=[0, 3.14, 0],
             )
             target_rand_pose = rand_pose_cyl(
-                rlim=[0.35, 0.45],
+                rlim=list(self.A2B_RLIM),
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -132,7 +135,7 @@ class place_a2b_left_rotate_view(Base_Task):
             # Preserve the original ordering difficulty and do not collapse the
             # task to same-side sampling; improve cuRobo reachability by keeping
             # both objects in a closer radial band.
-            if distance > 0.19 and theta_gap > 0.12:
+            if distance > float(self.A2B_MIN_DISTANCE) and theta_gap > float(self.A2B_MIN_THETA_GAP):
                 break
 
         if try_num > try_lim:

@@ -9,6 +9,10 @@ import numpy as np
 
 class move_stapler_pad_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
+    STAPLER_RLIM = (0.42, 0.50)
+    PAD_RLIM = (0.32, 0.42)
+    STAPLER_MIN_ABS_THETA = 0.2
+    PAD_MIN_DISTANCE = 0.1
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -53,7 +57,7 @@ class move_stapler_pad_rotate_view(Base_Task):
 
         while True:
             rand_pos = rand_pose_cyl(
-                rlim=[0.35, 0.45],
+                rlim=list(self.STAPLER_RLIM),
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -64,7 +68,7 @@ class move_stapler_pad_rotate_view(Base_Task):
                 rotate_lim=[0, 3.14, 0],
             )
             cyl = world_to_robot(rand_pos.p.tolist(), self.robot_root_xy, self.robot_yaw)
-            if abs(cyl[1]) < 0.2:
+            if abs(cyl[1]) < float(self.STAPLER_MIN_ABS_THETA):
                 continue
             break
 
@@ -81,7 +85,7 @@ class move_stapler_pad_rotate_view(Base_Task):
         same_side = 1.0 if stapler_cyl[1] >= 0 else -1.0
         while True:
             target_rand_pose = rand_pose_cyl(
-                rlim=[0.35, 0.45],
+                rlim=list(self.PAD_RLIM),
                 thetalim=rotate_theta_side(self, side=-same_side),
 
                 zlim=[0.741, 0.741],
@@ -90,7 +94,7 @@ class move_stapler_pad_rotate_view(Base_Task):
                 qpos=[1, 0, 0, 0],
                 rotate_rand=False,
             )
-            if np.linalg.norm(target_rand_pose.p[:2] - rand_pos.p[:2]) < 0.1:
+            if np.linalg.norm(target_rand_pose.p[:2] - rand_pos.p[:2]) < float(self.PAD_MIN_DISTANCE):
                 continue
             break
 

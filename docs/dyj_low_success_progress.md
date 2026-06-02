@@ -23,9 +23,9 @@ artifacts.
 
 | Task | Baseline evidence | Current evidence | Main change |
 | --- | ---: | ---: | --- |
-| `place_a2b_left_rotate_view` | collected seed 51 | first success 8 | preserve original ordering difficulty; use closer radial sampling (`r=0.35..0.45`) and choose arm from source side |
-| `place_a2b_right_rotate_view` | collected seed 30 | first success 1 | preserve original ordering difficulty; use closer radial sampling (`r=0.35..0.45`) and choose arm from source side |
-| `move_stapler_pad_rotate_view` | collected seed 10 | first success 0 | keep stapler/pad opposite-side; move pad into closer radial sampling (`r=0.35..0.45`) and choose arm from stapler side |
+| `place_a2b_left_rotate_view` | collected seed 51 | first success 5 in 0..11 sweep | preserve original ordering difficulty; tune radial sampling to `r=0.40..0.50` and choose arm from source side |
+| `place_a2b_right_rotate_view` | collected seed 30 | first success 1 in 0..11 sweep | preserve original ordering difficulty; tune radial sampling to `r=0.32..0.42` and choose arm from source side |
+| `move_stapler_pad_rotate_view` | collected seed 10 | first success 0; 6/10 successes in 0..9 sweep | keep stapler/pad opposite-side; tune stapler to `r=0.42..0.50` and pad to `r=0.32..0.42`, choose arm from stapler side |
 | `place_shoe_rotate_view` | collected seed 34 | first success 0 | improved by branch context; verify with diagnostic before changing further |
 | `search_object` | current pre-fix first success 11 (historical collected seed 35) | first success 4 | keep the stable rubik's-cube hidden-object variant |
 | `place_object_basket_fan_double` | no success in seeds 0..19 | first success 2 | place basket on lower fan-double layer for reachable `place_actor` path |
@@ -55,6 +55,55 @@ artifacts.
   success in seeds 0..7, so it was reverted.
 - `stack_blocks_three_rotate_view`: changing stack placement final distance to
   `dis=0.03` still yielded no success in seeds 0..5, so it was reverted.
+
+## Cross-side reachability parameter sweep
+
+The first three low-success tasks were rechecked after the user clarified that
+same-side sampling should not be used.  The sweep below only changes radial
+sampling parameters; `place_a2b_left/right` still preserve their original
+left/right ordering relation, and `move_stapler_pad_rotate_view` still samples
+the pad on the opposite side from the stapler.
+
+Command shape:
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+export PYTHONWARNINGS=ignore::UserWarning
+/home/admin1/yibo/conda/envs/robotwin/bin/python script/analyze_low_success_tasks.py \
+  --tasks <task_name> --start 0 --end <N> --trace-moves \
+  --set-attr NAME='(lo, hi)'
+```
+
+Summary from `logs/sweep_reach_params_v2.log`:
+
+| Task | Candidate | First success | OK / attempts | Plan / attempts |
+| --- | --- | ---: | ---: | ---: |
+| `place_a2b_left_rotate_view` | `A2B_RLIM=(0.32, 0.42)` | — | 0/12 | 0/12 |
+| `place_a2b_left_rotate_view` | `A2B_RLIM=(0.35, 0.45)` | 8 | 1/12 | 1/12 |
+| `place_a2b_left_rotate_view` | `A2B_RLIM=(0.38, 0.48)` | — | 0/12 | 0/12 |
+| `place_a2b_left_rotate_view` | `A2B_RLIM=(0.40, 0.50)` | 5 | 1/12 | 2/12 |
+| `place_a2b_left_rotate_view` | `A2B_RLIM=(0.42, 0.50)` | 5 | 1/12 | 2/12 |
+| `place_a2b_right_rotate_view` | `A2B_RLIM=(0.32, 0.42)` | 1 | 1/12 | 1/12 |
+| `place_a2b_right_rotate_view` | `A2B_RLIM=(0.35, 0.45)` | 1 | 1/12 | 1/12 |
+| `place_a2b_right_rotate_view` | `A2B_RLIM=(0.38, 0.48)` | — | 0/12 | 0/12 |
+| `place_a2b_right_rotate_view` | `A2B_RLIM=(0.40, 0.50)` | — | 0/12 | 0/12 |
+| `place_a2b_right_rotate_view` | `A2B_RLIM=(0.42, 0.50)` | — | 0/12 | 0/12 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.32, 0.42), PAD_RLIM=(0.32, 0.42)` | 0 | 5/10 | 5/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.32, 0.42), PAD_RLIM=(0.35, 0.45)` | 0 | 4/10 | 4/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.32, 0.42), PAD_RLIM=(0.42, 0.50)` | 0 | 1/10 | 1/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.35, 0.45), PAD_RLIM=(0.32, 0.42)` | 2 | 4/10 | 4/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.35, 0.45), PAD_RLIM=(0.35, 0.45)` | 0 | 3/10 | 3/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.35, 0.45), PAD_RLIM=(0.42, 0.50)` | 2 | 1/10 | 1/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.42, 0.50), PAD_RLIM=(0.32, 0.42)` | 0 | 6/10 | 6/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.42, 0.50), PAD_RLIM=(0.35, 0.45)` | 0 | 5/10 | 5/10 |
+| `move_stapler_pad_rotate_view` | `STAPLER_RLIM=(0.42, 0.50), PAD_RLIM=(0.42, 0.50)` | 0 | 3/10 | 3/10 |
+
+Chosen defaults from this sweep:
+
+- `place_a2b_left_rotate_view`: `A2B_RLIM=(0.40, 0.50)`.
+- `place_a2b_right_rotate_view`: `A2B_RLIM=(0.32, 0.42)`.
+- `move_stapler_pad_rotate_view`: `STAPLER_RLIM=(0.42, 0.50)`,
+  `PAD_RLIM=(0.32, 0.42)`.
 
 ## Current action-level diagnostic observations
 
