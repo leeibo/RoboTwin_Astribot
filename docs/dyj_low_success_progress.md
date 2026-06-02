@@ -23,9 +23,9 @@ artifacts.
 
 | Task | Baseline evidence | Current evidence | Main change |
 | --- | ---: | ---: | --- |
-| `place_a2b_left_rotate_view` | collected seed 51 | first success 0 | constrain source/target to left-arm side and use left arm |
-| `place_a2b_right_rotate_view` | collected seed 30 | first success 2 | constrain source/target to right-arm side and use right arm |
-| `move_stapler_pad_rotate_view` | collected seed 10 | first success 0 | sample pad on same side as stapler |
+| `place_a2b_left_rotate_view` | collected seed 51 | first success 8 | preserve original ordering difficulty; use closer radial sampling (`r=0.35..0.45`) and choose arm from source side |
+| `place_a2b_right_rotate_view` | collected seed 30 | first success 1 | preserve original ordering difficulty; use closer radial sampling (`r=0.35..0.45`) and choose arm from source side |
+| `move_stapler_pad_rotate_view` | collected seed 10 | first success 0 | keep stapler/pad opposite-side; move pad into closer radial sampling (`r=0.35..0.45`) and choose arm from stapler side |
 | `place_shoe_rotate_view` | collected seed 34 | first success 0 | improved by branch context; verify with diagnostic before changing further |
 | `search_object` | current pre-fix first success 11 (historical collected seed 35) | first success 4 | keep the stable rubik's-cube hidden-object variant |
 | `place_object_basket_fan_double` | no success in seeds 0..19 | first success 2 | place basket on lower fan-double layer for reachable `place_actor` path |
@@ -37,6 +37,7 @@ artifacts.
 ## Experiments reverted because they did not improve success
 
 - `blocks_ranking_rgb_fan_double` / `blocks_ranking_size_fan_double`: forcing all blocks to lower layer still yielded no success in seeds 0..7.
+- `place_a2b_left_rotate_view` / `place_a2b_right_rotate_view` / `move_stapler_pad_rotate_view`: same-side sampling or fixed same-side arms improved first-success seeds but reduced task difficulty; these changes were replaced with closer-radial sampling that preserves the original ordering/opposite-side difficulty.
 - `stack_blocks_three_rotate_view`: deterministic same-side placement and target-z experiments yielded no success in seeds 0..5.
 - `place_cans_plasticbox_rotate_view`: forcing fixed can/plasticbox model ids yielded no success in seeds 0..7.
 - `search_object`: lowering drawer-open threshold from 0.08 to 0.04 regressed the previously successful seed 11, so it was reverted.

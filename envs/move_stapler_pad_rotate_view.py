@@ -81,8 +81,8 @@ class move_stapler_pad_rotate_view(Base_Task):
         same_side = 1.0 if stapler_cyl[1] >= 0 else -1.0
         while True:
             target_rand_pose = rand_pose_cyl(
-                rlim=[0.48, 0.5],
-                thetalim=rotate_theta_side(self, side=same_side),
+                rlim=[0.35, 0.45],
+                thetalim=rotate_theta_side(self, side=-same_side),
 
                 zlim=[0.741, 0.741],
                 robot_root_xy=self.robot_root_xy,
@@ -129,7 +129,8 @@ class move_stapler_pad_rotate_view(Base_Task):
             joint_name_prefer="astribot_torso_joint_2",
         )
 
-        arm_tag = ArmTag("right" if self.stapler.get_pose().p[0] > 0 else "left")
+        stapler_cyl = world_to_robot(self.stapler.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
+        arm_tag = ArmTag("left" if stapler_cyl[1] >= 0 else "right")
         self.enter_rotate_action_stage(1, focus_object_key=(stapler_key or "A"))
         self.move(self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.1))
         self._set_carried_object_keys(["A"])

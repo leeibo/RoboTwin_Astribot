@@ -101,7 +101,7 @@ class place_a2b_left_rotate_view(Base_Task):
         try_num, try_lim = 0, 120
         while try_num <= try_lim:
             rand_pos = rand_pose_cyl(
-                rlim=[0.44, 0.5],
+                rlim=[0.35, 0.45],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -112,7 +112,7 @@ class place_a2b_left_rotate_view(Base_Task):
                 rotate_lim=[0, 3.14, 0],
             )
             target_rand_pose = rand_pose_cyl(
-                rlim=[0.44, 0.5],
+                rlim=[0.35, 0.45],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -129,10 +129,10 @@ class place_a2b_left_rotate_view(Base_Task):
             tgt_theta = float(self._pose_to_cyl(target_rand_pose)[1])
             theta_gap = float(self._wrap_to_pi(tgt_theta - obj_theta))
 
-            # Keep both poses on the left-arm side while preserving ordering.
-            # Earlier sampling allowed cross-body transfers, producing many
-            # seeds that were geometrically valid but hard for the selected arm.
-            if distance > 0.19 and theta_gap > 0.12 and obj_theta > 0.03:
+            # Preserve the original ordering difficulty and do not collapse the
+            # task to same-side sampling; improve cuRobo reachability by keeping
+            # both objects in a closer radial band.
+            if distance > 0.19 and theta_gap > 0.12:
                 break
 
         if try_num > try_lim:
@@ -179,7 +179,8 @@ class place_a2b_left_rotate_view(Base_Task):
             joint_name_prefer="astribot_torso_joint_2",
         )
 
-        arm_tag = ArmTag("left")
+        object_theta = float(self._pose_to_cyl(self.object.get_pose())[1])
+        arm_tag = ArmTag("left" if object_theta >= 0.0 else "right")
         self.enter_rotate_action_stage(1, focus_object_key=(source_key or "A"))
         self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
         self._set_carried_object_keys(["A"])
