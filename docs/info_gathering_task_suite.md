@@ -54,15 +54,31 @@ PYTHONWARNINGS=ignore::UserWarning \
 
 ## Task 2: count target objects and collect exactly that many
 
-Planned task name: `count_target_collect_container`.
+Initial implementation: `envs/count_target_collect_container.py`.
 
 Requirements:
 
-- Scene contains a mixed set of target and distractor objects plus a container.
-- The robot first scans/counts target objects.
-- It must place exactly the target objects into the container.
+- Scene contains a mixed set of green target blocks, colored distractor blocks,
+  plus a collection bin container.
+- The robot first scans/counts the green target objects.
+- It must place exactly the target objects into the container and leave
+  distractors outside.
 - Success checks all targets are in/contacting the container and distractors are
   left outside.
+
+Acceptance demo:
+
+```bash
+ROBOTWIN_SKIP_RENDER_TEST=1 \
+ROBOTWIN_SKIP_ANNOTATED_VIDEO=1 \
+ROBOTWIN_SKIP_INSTRUCTIONS=1 \
+ROBOTWIN_START_SEED=0 \
+ROBOTWIN_MAX_SEED_TRIES=80 \
+CUDA_VISIBLE_DEVICES=0 \
+PYTHONWARNINGS=ignore::UserWarning \
+/home/admin1/yibo/conda/envs/robotwin/bin/python \
+  script/collect_data.py count_target_collect_container info_gathering_demo
+```
 
 ## Task 3: track a moved object out of view
 

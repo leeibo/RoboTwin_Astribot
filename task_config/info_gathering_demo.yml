@@ -81,5 +81,6 @@ clear_cache_freq: 5
 collect_data: true
 eval_video_log: true
 
-# Force x=3 in the public demo so the count-to-action mapping is visible.
+# Force multi-object demos so the count-to-action mapping is visible.
 count_target_count_override: 3
+count_collect_target_count_override: 2
