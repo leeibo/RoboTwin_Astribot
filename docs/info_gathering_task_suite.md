@@ -108,17 +108,32 @@ PYTHONWARNINGS=ignore::UserWarning \
 
 ## Task 4: open a container and identify contents
 
-Planned task name: `open_container_identify_object`.
+Initial implementation: `envs/open_container_identify_object.py`.
 
 Requirements:
 
-- A cabinet/box hides one object sampled from a small object set.
+- A cabinet hides one colored block sampled from a small object set.
 - Initial search should not reveal the object.
 - The robot opens the container and focuses on the revealed object.
 - Success checks the container is open and the inside object identity is known.
 
-Implementation note: `envs/search_object.py` already contains a robust cabinet
-open-then-find flow and should be reused instead of duplicating drawer logic.
+Implementation note: this task subclasses `envs/search_object.py` and reuses
+the robust cabinet open-then-find flow, but stops after identification instead
+of picking the object.
+
+Acceptance demo:
+
+```bash
+ROBOTWIN_SKIP_RENDER_TEST=1 \
+ROBOTWIN_SKIP_ANNOTATED_VIDEO=1 \
+ROBOTWIN_SKIP_INSTRUCTIONS=1 \
+ROBOTWIN_START_SEED=0 \
+ROBOTWIN_MAX_SEED_TRIES=80 \
+CUDA_VISIBLE_DEVICES=0 \
+PYTHONWARNINGS=ignore::UserWarning \
+/home/admin1/yibo/conda/envs/robotwin/bin/python \
+  script/collect_data.py open_container_identify_object info_gathering_demo
+```
 
 ## Task 5: action-acquired underside information
 
