@@ -41,6 +41,18 @@ if description_utils_directory not in sys.path:
 from instruction_template_utils import load_task_instructions, normalize_instruction_bank, resolve_instruction_bank
 
 
+def _parse_bool_config(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "none", ""}:
+            return False
+    return bool(value)
+
+
 class Base_Task(gym.Env):
 
     def __init__(self):
@@ -124,6 +136,59 @@ class Base_Task(gym.Env):
         self.eval_success = False
         self.table_z_bias = (np.random.uniform(low=-self.random_table_height, high=0) + table_height_bias)  # TODO
         self.need_plan = kwags.get("need_plan", True)
+        upper_place_return_with_curobo_default = getattr(self, "UPPER_PLACE_RETURN_WITH_CUROBO", False)
+        self.upper_place_return_with_curobo = _parse_bool_config(
+            kwags.get(
+                "upper_place_return_with_curobo",
+                kwags.get(
+                    "return_to_homestate_with_curobo_after_upper_place",
+                    upper_place_return_with_curobo_default,
+                ),
+            ),
+            default=upper_place_return_with_curobo_default,
+        )
+        upper_place_return_curobo_fallback_default = getattr(
+            self,
+            "UPPER_PLACE_RETURN_CUROBO_FALLBACK_TO_JOINT",
+            False,
+        )
+        self.upper_place_return_curobo_fallback_to_joint = _parse_bool_config(
+            kwags.get(
+                "upper_place_return_curobo_fallback_to_joint",
+                upper_place_return_curobo_fallback_default,
+            ),
+            default=upper_place_return_curobo_fallback_default,
+        )
+        upper_place_return_curobo_lateral_default = getattr(
+            self,
+            "UPPER_PLACE_RETURN_CUROBO_USE_LATERAL_ESCAPE",
+            False,
+        )
+        self.upper_place_return_curobo_use_lateral_escape = _parse_bool_config(
+            kwags.get(
+                "upper_place_return_curobo_use_lateral_escape",
+                upper_place_return_curobo_lateral_default,
+            ),
+            default=upper_place_return_curobo_lateral_default,
+        )
+        upper_place_return_curobo_reverse_default = getattr(
+            self,
+            "UPPER_PLACE_RETURN_CUROBO_REVERSE_RELEASE_PATH",
+            True,
+        )
+        self.upper_place_return_curobo_reverse_release_path = _parse_bool_config(
+            kwags.get(
+                "upper_place_return_curobo_reverse_release_path",
+                upper_place_return_curobo_reverse_default,
+            ),
+            default=upper_place_return_curobo_reverse_default,
+        )
+        self.upper_place_return_curobo_clear_z_offset = float(
+            kwags.get(
+                "upper_place_return_curobo_clear_z_offset",
+                getattr(self, "UPPER_PLACE_RETURN_CUROBO_CLEAR_Z_OFFSET", 0.18),
+            )
+        )
         self.gripper_hold_ratio = float(kwags.get("gripper_hold_ratio", 0.1))
         self.lock_arm_when_gripper_only = kwags.get("lock_arm_when_gripper_only", True)
         self.verbose_move_log = bool(kwags.get("verbose_move_log", False))
@@ -754,6 +819,8 @@ class Base_Task(gym.Env):
         self.rotate_fan_double_upper_theta_end_world_rad = None
         self.rotate_fan_double_support_theta_world_rad = None
         self.rotate_fan_double_upper_collision_under_padding = 0.0
+        self.rotate_fan_double_upper_collision_xy_padding = 0.0
+        self.rotate_fan_double_upper_collision_top_padding = 0.0
 
         if table_shape in ["fan", "fan_double", "sector", "arc"]:
             fan_center_on_robot = bool(kwargs.get("fan_center_on_robot", True))
@@ -818,6 +885,24 @@ class Base_Task(gym.Env):
                 )
                 self.rotate_fan_double_upper_collision_under_padding = max(
                     float(kwargs.get("fan_double_upper_collision_under_padding", 0.08)),
+                    0.0,
+                )
+                self.rotate_fan_double_upper_collision_xy_padding = max(
+                    float(
+                        kwargs.get(
+                            "fan_double_upper_collision_xy_padding",
+                            kwargs.get("rotate_fan_double_upper_collision_xy_padding", 0.0),
+                        )
+                    ),
+                    0.0,
+                )
+                self.rotate_fan_double_upper_collision_top_padding = max(
+                    float(
+                        kwargs.get(
+                            "fan_double_upper_collision_top_padding",
+                            kwargs.get("rotate_fan_double_upper_collision_top_padding", 0.0),
+                        )
+                    ),
                     0.0,
                 )
 
@@ -1168,11 +1253,15 @@ class Base_Task(gym.Env):
             theta_start=upper_theta_start,
             theta_end=upper_theta_end,
         )
+        xy_padding = max(float(getattr(self, "rotate_fan_double_upper_collision_xy_padding", 0.0)), 0.0)
+        top_padding = max(float(getattr(self, "rotate_fan_double_upper_collision_top_padding", 0.0)), 0.0)
         under_padding = max(float(getattr(self, "rotate_fan_double_upper_collision_under_padding", 0.0)), 0.0)
-        if under_padding > 1e-9:
+        if xy_padding > 1e-9 or top_padding > 1e-9 or under_padding > 1e-9:
             for cuboid in cuboids:
-                cuboid["dims"][2] = float(cuboid["dims"][2] + under_padding)
-                cuboid["pose"][2] = float(cuboid["pose"][2] - under_padding / 2.0)
+                cuboid["dims"][0] = float(cuboid["dims"][0] + 2.0 * xy_padding)
+                cuboid["dims"][1] = float(cuboid["dims"][1] + 2.0 * xy_padding)
+                cuboid["dims"][2] = float(cuboid["dims"][2] + under_padding + top_padding)
+                cuboid["pose"][2] = float(cuboid["pose"][2] + (top_padding - under_padding) / 2.0)
         if support_theta is None:
             support_theta = float(upper_theta_start) - np.deg2rad(10.0)
         support_radius = min(float(lower_outer), float(upper_outer)) - thickness / 2.0
@@ -6160,6 +6249,19 @@ class Base_Task(gym.Env):
 class PutBlockFanDoubleMixin:
     """Shared private helpers for fan-double block placement tasks."""
 
+    # Optional upper-layer return policy.  When enabled, after direct-release
+    # placement on the upper layer and the vertical lift, the active arm is
+    # returned to its initial EE pose through cuRobo-planned Cartesian moves
+    # instead of the old joint-space back_to_origin() shortcut.
+    UPPER_PLACE_RETURN_WITH_CUROBO = False
+    # Default to reversing through the already-planned release entry corridor.
+    # A pure side-step can keep the hand under/near the upper shelf and is not a
+    # safe top-layer exit by itself.
+    UPPER_PLACE_RETURN_CUROBO_USE_LATERAL_ESCAPE = False
+    UPPER_PLACE_RETURN_CUROBO_REVERSE_RELEASE_PATH = True
+    UPPER_PLACE_RETURN_CUROBO_CLEAR_Z_OFFSET = 0.18
+    UPPER_PLACE_RETURN_CUROBO_FALLBACK_TO_JOINT = False
+
     def _apply_task_initial_homestate(self):
         left_homestate = list(getattr(self.robot, "left_homestate", []))
         right_homestate = list(getattr(self.robot, "right_homestate", []))
@@ -6811,7 +6913,10 @@ class PutBlockFanDoubleMixin:
         if not self.move(self.open_gripper(arm_tag)):
             return
         self._set_carried_object_keys([])
-        if not self._retreat_then_return_both_arms_to_initial_pose(arm_tag):
+        if not self._retreat_then_return_both_arms_to_initial_pose(
+            arm_tag,
+            selected_release_candidate=selected_release_candidate,
+        ):
             return
         self.complete_rotate_subtask(subtask_idx, carried_after=[])
 
@@ -6948,7 +7053,150 @@ class PutBlockFanDoubleMixin:
             return True
         return self._return_both_arms_to_initial_pose()
 
-    def _retreat_then_return_both_arms_to_initial_pose(self, arm_tag):
+    def _get_arm_initial_ee_pose(self, arm_tag):
+        arm_tag = ArmTag(arm_tag)
+        attr_name = "left_original_pose" if arm_tag == "left" else "right_original_pose"
+        target_pose = getattr(self.robot, attr_name, None)
+        if target_pose is None:
+            return None
+        target_pose = np.array(target_pose, dtype=np.float64).reshape(-1)
+        if target_pose.shape[0] < 7:
+            return None
+        return target_pose[:7].tolist()
+
+    def _get_upper_layer_clear_z(self):
+        upper_top_z = float(getattr(self, "rotate_table_top_z", 0.74)) + float(
+            getattr(self, "rotate_fan_double_layer_gap", 0.35)
+        )
+        return float(upper_top_z + max(float(getattr(self, "upper_place_return_curobo_clear_z_offset", 0.18)), 0.0))
+
+    def _pose_with_min_z(self, pose, min_z):
+        if pose is None:
+            return None
+        pose_arr = np.array(pose, dtype=np.float64).reshape(-1)
+        if pose_arr.shape[0] < 7:
+            return None
+        pose_arr = pose_arr[:7].copy()
+        pose_arr[2] = max(float(pose_arr[2]), float(min_z))
+        return pose_arr.tolist()
+
+    def _append_unique_pose(self, pose_sequence, pose, pos_tol=1e-4, quat_tol=1e-4):
+        if pose is None:
+            return
+        pose_arr = np.array(pose, dtype=np.float64).reshape(-1)
+        if pose_arr.shape[0] < 7:
+            return
+        pose = pose_arr[:7].tolist()
+        if len(pose_sequence) > 0:
+            prev = np.array(pose_sequence[-1], dtype=np.float64).reshape(-1)
+            if prev.shape[0] >= 7:
+                pos_same = float(np.linalg.norm(prev[:3] - pose_arr[:3])) <= float(pos_tol)
+                quat_same = float(np.linalg.norm(prev[3:7] - pose_arr[3:7])) <= float(quat_tol)
+                quat_same = quat_same or float(np.linalg.norm(prev[3:7] + pose_arr[3:7])) <= float(quat_tol)
+                if pos_same and quat_same:
+                    return
+        pose_sequence.append(pose)
+
+    def _build_reverse_release_return_poses(self, selected_release_candidate):
+        if not bool(getattr(self, "upper_place_return_curobo_reverse_release_path", True)):
+            return []
+        if not isinstance(selected_release_candidate, dict):
+            return []
+
+        clear_z = self._get_upper_layer_clear_z()
+        poses = []
+        # After opening at the release pose, backtrack through the direct-release
+        # corridor: first lift near the release radius, then move inward to the
+        # entry pose.  The z clamp keeps both waypoints above the upper shelf.
+        for pose_key in ("approach_planner_pose", "entry_planner_pose"):
+            self._append_unique_pose(
+                poses,
+                self._pose_with_min_z(selected_release_candidate.get(pose_key, None), clear_z),
+            )
+        return poses
+
+    def _build_upper_place_curobo_return_pose_sequence(self, arm_tag, selected_release_candidate=None):
+        target_pose = self._get_arm_initial_ee_pose(arm_tag)
+        if target_pose is None:
+            return []
+
+        pose_sequence = []
+        for pose in self._build_reverse_release_return_poses(selected_release_candidate):
+            self._append_unique_pose(pose_sequence, pose)
+
+        if bool(getattr(self, "upper_place_return_curobo_use_lateral_escape", False)):
+            lateral_xy = self._get_upper_place_lateral_escape_xy(arm_tag)
+            if lateral_xy is not None and (
+                abs(float(lateral_xy[0])) > 1e-9 or abs(float(lateral_xy[1])) > 1e-9
+            ):
+                current_pose = np.array(self.get_arm_pose(arm_tag), dtype=np.float64).reshape(-1)
+                if current_pose.shape[0] >= 7:
+                    lateral_pose = current_pose[:7].copy()
+                    lateral_pose[0] += float(lateral_xy[0])
+                    lateral_pose[1] += float(lateral_xy[1])
+                    self._append_unique_pose(pose_sequence, lateral_pose.tolist())
+
+        self._append_unique_pose(pose_sequence, target_pose)
+        return pose_sequence
+
+    def _move_pose_sequence_with_curobo(self, arm_tag, pose_sequence):
+        pose_sequence = [pose for pose in pose_sequence if pose is not None]
+        if len(pose_sequence) == 0:
+            return False
+
+        candidate = {}
+        pose_keys = []
+        for idx, pose in enumerate(pose_sequence):
+            pose_key = f"return_pose_{idx}"
+            candidate[pose_key] = pose
+            pose_keys.append(pose_key)
+
+        selected = self._select_pose_sequence_candidate(
+            arm_tag,
+            [candidate],
+            tuple(pose_keys),
+        )
+        if selected is None:
+            return False
+
+        for pose_key in pose_keys:
+            if not self.move(self.move_to_pose(arm_tag=arm_tag, target_pose=selected[pose_key])):
+                return False
+        return True
+
+    def _return_after_upper_place_with_curobo(self, arm_tag, selected_release_candidate=None):
+        pose_sequence = self._build_upper_place_curobo_return_pose_sequence(
+            arm_tag,
+            selected_release_candidate=selected_release_candidate,
+        )
+        if self._move_pose_sequence_with_curobo(arm_tag, pose_sequence):
+            return True
+
+        if bool(getattr(self, "upper_place_return_curobo_fallback_to_joint", False)):
+            return self._return_after_upper_place_with_joint_home(arm_tag)
+
+        self.plan_success = False
+        return False
+
+    def _return_after_upper_place_with_joint_home(self, arm_tag):
+        lateral_xy = self._get_upper_place_lateral_escape_xy(arm_tag)
+        if lateral_xy is not None and (
+            abs(float(lateral_xy[0])) > 1e-9 or abs(float(lateral_xy[1])) > 1e-9
+        ):
+            if not self.move(
+                self.move_by_displacement(
+                    arm_tag=arm_tag,
+                    x=float(lateral_xy[0]),
+                    y=float(lateral_xy[1]),
+                    move_axis="world",
+                )
+            ):
+                return False
+        if not bool(self.RETURN_TO_HOMESTATE_AFTER_PLACE):
+            return True
+        return self._return_both_arms_to_initial_pose()
+
+    def _retreat_then_return_both_arms_to_initial_pose(self, arm_tag, selected_release_candidate=None):
         retreat_action = self.move_by_displacement(
             arm_tag=arm_tag,
             z=self.DIRECT_RELEASE_RETREAT_Z,
@@ -6960,19 +7208,15 @@ class PutBlockFanDoubleMixin:
         if plate_layer is None:
             plate_layer = getattr(self, "plate_layer", None)
         if plate_layer == "upper":
-            lateral_xy = self._get_upper_place_lateral_escape_xy(arm_tag)
-            if lateral_xy is not None and (
-                abs(float(lateral_xy[0])) > 1e-9 or abs(float(lateral_xy[1])) > 1e-9
+            self._sync_curobo_tabletop_collisions()
+            if bool(getattr(self, "upper_place_return_with_curobo", False)) and bool(
+                self.RETURN_TO_HOMESTATE_AFTER_PLACE
             ):
-                if not self.move(
-                    self.move_by_displacement(
-                        arm_tag=arm_tag,
-                        x=float(lateral_xy[0]),
-                        y=float(lateral_xy[1]),
-                        move_axis="world",
-                    )
-                ):
-                    return False
+                return self._return_after_upper_place_with_curobo(
+                    arm_tag,
+                    selected_release_candidate=selected_release_candidate,
+                )
+            return self._return_after_upper_place_with_joint_home(arm_tag)
         if not bool(self.RETURN_TO_HOMESTATE_AFTER_PLACE):
             return True
         return self._return_both_arms_to_initial_pose()
