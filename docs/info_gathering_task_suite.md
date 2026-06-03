@@ -82,15 +82,29 @@ PYTHONWARNINGS=ignore::UserWarning \
 
 ## Task 3: track a moved object out of view
 
-Planned task name: `track_moved_object_direction`.
+Initial implementation: `envs/track_moved_object_direction.py`.
 
 Requirements:
 
-- A target object starts visible, then is moved out of the current camera view
-  along a known left/right direction by scene dynamics or scripted motion.
+- A target object starts visible, then is moved leftward out of the current
+  camera view by scripted tabletop motion.
 - The robot must use the observed motion direction to search the correct side
   first and reacquire the object.
-- Success checks the object is found and optionally picked/lifted.
+- Success checks the moved object is reacquired and picked/lifted.
+
+Acceptance demo:
+
+```bash
+ROBOTWIN_SKIP_RENDER_TEST=1 \
+ROBOTWIN_SKIP_ANNOTATED_VIDEO=1 \
+ROBOTWIN_SKIP_INSTRUCTIONS=1 \
+ROBOTWIN_START_SEED=0 \
+ROBOTWIN_MAX_SEED_TRIES=80 \
+CUDA_VISIBLE_DEVICES=0 \
+PYTHONWARNINGS=ignore::UserWarning \
+/home/admin1/yibo/conda/envs/robotwin/bin/python \
+  script/collect_data.py track_moved_object_direction info_gathering_demo
+```
 
 ## Task 4: open a container and identify contents
 
