@@ -1,0 +1,51 @@
+{
+  "full_description": "Pick up the gray block, inspect the hidden colored inset on its underside, then place it on the sorting region with the same color.",
+  "schema": "{A} denotes the gray block with a hidden underside inset, {B} denotes the matching sorting region, {a} denotes the arm used to manipulate the block, {c} denotes the hidden underside color",
+  "preference": "Mention that the visible outer color is not enough and the robot must manipulate the block to inspect the underside before sorting.",
+  "seen": [
+    "Pick up {A}, inspect its hidden {c} underside inset, then place it on {B}.",
+    "Use {a} to lift the gray block, look at the underside color, and sort it to the matching region.",
+    "Manipulate {A} so the bottom inset is visible, identify {c}, then put it on {B}.",
+    "Do not sort by the gray outside; inspect the underside of {A} and use that color for sorting.",
+    "Flip the lifted block to reveal its underside marker, then place it in the {c} region."
+  ],
+  "unseen": [
+    "Inspect the block's hidden underside color and sort it accordingly.",
+    "Lift and turn the block to see its bottom marker before placing it.",
+    "Sort the gray block by the color hidden on its underside."
+  ],
+  "subtask_instruction_template_map": {
+    "1": {
+      "seen": [
+        "observe the outside of {A}; the underside color is still hidden"
+      ],
+      "unseen": [
+        "look at the gray block before manipulating it"
+      ]
+    },
+    "2": {
+      "seen": [
+        "pick up {A} with {a} to expose its underside"
+      ],
+      "unseen": [
+        "lift the block for inspection"
+      ]
+    },
+    "3": {
+      "seen": [
+        "turn {A} and identify the hidden underside marker: {c}"
+      ],
+      "unseen": [
+        "inspect the bottom inset color"
+      ]
+    },
+    "4": {
+      "seen": [
+        "place {A} on {B} after using the underside color"
+      ],
+      "unseen": [
+        "sort the block to the matching color region"
+      ]
+    }
+  }
+}

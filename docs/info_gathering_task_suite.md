@@ -137,7 +137,7 @@ PYTHONWARNINGS=ignore::UserWarning \
 
 ## Task 5: action-acquired underside information
 
-Planned task name: `inspect_underside_sort_block`.
+Initial implementation: `envs/inspect_underside_sort_block.py`.
 
 Requirements:
 
@@ -148,5 +148,21 @@ Requirements:
 - Success checks the block is in the region corresponding to the underside
   color, not the outer color.
 
-Implementation note: this requires either a small custom compound SAPIEN asset
-or a controlled block-flip/lift motion with a bottom marker attached.
+Implementation note: this prototype uses a dynamic collision block with an
+attached underside inset visual marker.  The expert lifts the block, rolls it
+to reveal the underside marker, records the inferred hidden color, then sorts
+to the matching colored region.
+
+Acceptance demo:
+
+```bash
+ROBOTWIN_SKIP_RENDER_TEST=1 \
+ROBOTWIN_SKIP_ANNOTATED_VIDEO=1 \
+ROBOTWIN_SKIP_INSTRUCTIONS=1 \
+ROBOTWIN_START_SEED=0 \
+ROBOTWIN_MAX_SEED_TRIES=80 \
+CUDA_VISIBLE_DEVICES=0 \
+PYTHONWARNINGS=ignore::UserWarning \
+/home/admin1/yibo/conda/envs/robotwin/bin/python \
+  script/collect_data.py inspect_underside_sort_block info_gathering_demo
+```

@@ -2,3 +2,4 @@
 - count_target_collect_container
 - track_moved_object_direction
 - open_container_identify_object
+- inspect_underside_sort_block
