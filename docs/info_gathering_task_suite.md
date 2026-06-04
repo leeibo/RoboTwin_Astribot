@@ -114,8 +114,10 @@ Requirements:
 
 - A cabinet hides one colored block sampled from a small object set.
 - Initial search should not reveal the object.
-- The robot opens the container and focuses on the revealed object.
-- Success checks the container is open and the inside object identity is known.
+- The robot opens the container, focuses on the revealed object, then takes it
+  out and lifts it for confirmation.
+- Success checks the container is open, the object identity is known, and the
+  object has been extracted/lifted.
 
 Implementation note: this task subclasses `envs/search_object.py` and reuses
 the robust cabinet open-then-find flow, but stops after identification instead

@@ -18,7 +18,10 @@ class inspect_underside_sort_block(Base_Task):
         ("yellow", (0.92, 0.74, 0.18)),
     )
     BLOCK_HALF_SIZE = 0.024
-    INSET_HALF_SIZE = (0.013, 0.013, 0.002)
+    # Make the hidden color patch large enough to be readable in the demo once
+    # the block is lifted and rolled toward the camera.  It is still fully on
+    # the underside, so it cannot be observed before manipulation.
+    INSET_HALF_SIZE = (0.024, 0.024, 0.003)
     BLOCK_CYL = (0.52, 0.02)
 
     PAD_SPECS = {
@@ -36,6 +39,12 @@ class inspect_underside_sort_block(Base_Task):
     PICK_PRE_GRASP_DIS = 0.08
     PICK_GRASP_DIS = 0.01
     LIFT_Z = 0.06
+    # Keep the presentation pose in the verified reachable workspace; the
+    # enlarged underside patch below is what makes the flip readable in the
+    # demo without making the scripted lift/sort fail.
+    INSPECT_CYL = (0.42, 0.0)
+    INSPECT_Z = 0.88
+    INSPECT_PRESENTATION_WORLD_OFFSET = (0.0, 0.075, 0.0)
     INSPECT_FLIP_STEPS = 14
     INSPECT_HOLD_STEPS = 8
     PLACE_RELEASE_Z = 0.80
@@ -305,18 +314,34 @@ class inspect_underside_sort_block(Base_Task):
         self.complete_rotate_subtask(2, carried_after=["A"])
         return True
 
-    def _set_block_orientation(self, roll_rad, save_freq=None):
-        pos = np.array(self.block.get_pose().p, dtype=np.float64).reshape(3)
+    def _set_block_orientation(self, roll_rad, save_freq=None, position=None):
+        if position is None:
+            pos = np.array(self.block.get_pose().p, dtype=np.float64).reshape(3)
+        else:
+            pos = np.array(position, dtype=np.float64).reshape(3)
         quat = t3d.euler.euler2quat(float(roll_rad), 0.0, 0.0)
         self.block.actor.set_pose(sapien.Pose(pos.tolist(), quat))
         self.delay(1, save_freq=save_freq)
 
     def _inspect_underside(self):
         self.begin_rotate_subtask(3)
-        self._focus_world_point(self.block.get_pose().p, subtask_idx=3, stage=1, info_complete=0)
-        # Roll the held block so the bottom inset faces the external/observer
-        # camera; this is the action-acquired information stage.
-        for roll in np.linspace(0.0, np.pi / 2.0, int(self.INSPECT_FLIP_STEPS)):
+        inspect_point = self._point_from_cyl(self.INSPECT_CYL, z=float(self.INSPECT_Z))
+        self._focus_world_point(inspect_point, subtask_idx=3, stage=1, info_complete=0)
+        # Move the lifted block to a centered, elevated "show to camera" pose.
+        # Then roll the held block so the bottom inset faces the external
+        # observer camera (+Y direction).  This scripted manipulation is the
+        # action-acquired information stage.
+        if not self._move_carried_block_center_to(inspect_point):
+            self.plan_success = False
+            return
+        presentation_point = inspect_point + np.array(
+            self.INSPECT_PRESENTATION_WORLD_OFFSET,
+            dtype=np.float64,
+        ).reshape(3)
+        flip_rolls = list(np.linspace(0.0, np.pi / 2.0, int(self.INSPECT_FLIP_STEPS)))
+        for step_idx, roll in enumerate(flip_rolls):
+            alpha = 0.0 if len(flip_rolls) <= 1 else float(step_idx) / float(len(flip_rolls) - 1)
+            show_point = (1.0 - alpha) * inspect_point + alpha * presentation_point
             self._set_rotate_subtask_state(
                 subtask_idx=3,
                 stage=1,
@@ -327,7 +352,7 @@ class inspect_underside_sort_block(Base_Task):
                 camera_mode=1,
                 camera_target_theta=self._target_theta(self.block.get_pose().p),
             )
-            self._set_block_orientation(float(roll), save_freq=1)
+            self._set_block_orientation(float(roll), save_freq=1, position=show_point)
         self.inspected_underside_color_label = str(self.underside_color_label)
         self._set_rotate_subtask_state(
             subtask_idx=3,
@@ -341,16 +366,13 @@ class inspect_underside_sort_block(Base_Task):
         )
         self.delay(int(self.INSPECT_HOLD_STEPS), save_freq=1)
         # Return the block upright before transport to keep placement robust.
-        for roll in np.linspace(np.pi / 2.0, 0.0, int(self.INSPECT_FLIP_STEPS)):
-            self._set_block_orientation(float(roll), save_freq=1)
-        # The inspection roll can loosen the grasp in simulation.  Release and
-        # let the block settle, then the sort subtask will re-grasp it for the
-        # final placement.  This still enforces that color information is only
-        # set after the manipulation/inspection stage above.
-        self.move(self.open_gripper(self.ARM))
-        self._set_carried_object_keys([])
-        self.delay(4)
-        self.complete_rotate_subtask(3, carried_after=[])
+        return_rolls = list(np.linspace(np.pi / 2.0, 0.0, int(self.INSPECT_FLIP_STEPS)))
+        for step_idx, roll in enumerate(return_rolls):
+            alpha = 0.0 if len(return_rolls) <= 1 else float(step_idx) / float(len(return_rolls) - 1)
+            show_point = (1.0 - alpha) * presentation_point + alpha * inspect_point
+            self._set_block_orientation(float(roll), save_freq=1, position=show_point)
+        self._set_carried_object_keys(["A"])
+        self.complete_rotate_subtask(3, carried_after=["A"])
 
     def _move_carried_block_center_to(self, target_center):
         target_center = np.array(target_center, dtype=np.float64).reshape(3)
@@ -365,21 +387,22 @@ class inspect_underside_sort_block(Base_Task):
         target_key = target_label.upper()
         self.enter_rotate_action_stage(4, focus_object_key=target_key)
 
-        self.face_object_with_torso(self.block, joint_name_prefer=self.SCAN_JOINT_NAME)
-        if not self.move(
-            self.grasp_actor(
-                self.block,
-                arm_tag=self.ARM,
-                pre_grasp_dis=float(self.PICK_PRE_GRASP_DIS),
-                grasp_dis=float(self.PICK_GRASP_DIS),
-            )
-        ):
-            self.plan_success = False
-            return False
-        self._set_carried_object_keys(["A"])
-        if not self.move(self.move_by_displacement(arm_tag=self.ARM, z=0.04)):
-            self.plan_success = False
-            return False
+        if self.is_left_gripper_open():
+            self.face_object_with_torso(self.block, joint_name_prefer=self.SCAN_JOINT_NAME)
+            if not self.move(
+                self.grasp_actor(
+                    self.block,
+                    arm_tag=self.ARM,
+                    pre_grasp_dis=float(self.PICK_PRE_GRASP_DIS),
+                    grasp_dis=float(self.PICK_GRASP_DIS),
+                )
+            ):
+                self.plan_success = False
+                return False
+            self._set_carried_object_keys(["A"])
+            if not self.move(self.move_by_displacement(arm_tag=self.ARM, z=0.04)):
+                self.plan_success = False
+                return False
 
         target_center = np.array(self.pad_centers[target_label], dtype=np.float64).reshape(3)
         target_center[2] = float(self.PLACE_RELEASE_Z)
@@ -397,7 +420,6 @@ class inspect_underside_sort_block(Base_Task):
             return False
         self._set_carried_object_keys([])
         self.delay(8)
-        self.move(self.move_by_displacement(arm_tag=self.ARM, z=float(self.PLACE_RETREAT_Z)))
         self.complete_rotate_subtask(4, carried_after=[])
         return True
 

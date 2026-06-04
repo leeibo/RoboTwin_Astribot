@@ -23,9 +23,11 @@ class count_target_press_button(RMBenchButtonMixin, Base_Task):
     SCAN_Z_BIAS = 0.88
     SCAN_JOINT_NAME = "astribot_torso_joint_2"
     ROTATE_SCAN_SCENE_FALLBACK_THETAS = (0.72, 0.24, -0.24, -0.72)
-    BUTTON_R = 0.40
-    BUTTON_THETA = 0.62
-    BUTTON_ARM = "left"
+    # Match the click_bell-style layout: put the press target in a reachable
+    # side band instead of the center line, then choose the arm by object side.
+    BUTTON_R = 0.47
+    BUTTON_THETA = 0.42
+    BUTTON_ARM = None
 
     def setup_demo(self, **kwargs):
         kwargs = prepare_rotate_task_kwargs(self, kwargs)
@@ -210,10 +212,22 @@ class count_target_press_button(RMBenchButtonMixin, Base_Task):
         self.complete_rotate_subtask(1, carried_after=[])
 
     def _press_count_button(self):
-        self.enter_rotate_action_stage(2, focus_object_key="BTN")
+        self._reset_head_to_home_pose(save_freq=None)
+        button_key = self.search_and_focus_rotate_subtask(
+            2,
+            scan_r=float(self.SCAN_R),
+            scan_z=float(self.SCAN_Z_BIAS) + float(self.table_z_bias),
+            joint_name_prefer=self.SCAN_JOINT_NAME,
+        )
+        button_cyl = world_to_robot(self.button.get_pose().p.tolist(), self.robot_root_xy, self.robot_yaw)
+        arm_tag = ArmTag("left" if float(button_cyl[1]) >= 0.0 else "right")
+        self.button_arm_tag = arm_tag
+
+        self.enter_rotate_action_stage(2, focus_object_key=(button_key or "BTN"))
+        self.face_object_with_torso(self.button, joint_name_prefer=self.SCAN_JOINT_NAME)
         if not self._grasp_button_for_press(
             self.button,
-            arm_tag=self.BUTTON_ARM,
+            arm_tag=arm_tag,
             language_annotation="Move to the red count button.",
         ):
             self.plan_success = False
@@ -221,15 +235,15 @@ class count_target_press_button(RMBenchButtonMixin, Base_Task):
         for press_idx in range(int(self.counted_target_count)):
             if not self._press_button_cycle_after_grasp(
                 self.button,
-                arm_tag=self.BUTTON_ARM,
+                arm_tag=arm_tag,
                 flag_attr="button_press_flag",
                 count_attr="button_press_count",
                 language_annotation=f"Press the red button for count {press_idx + 1}.",
             ):
                 self.plan_success = False
                 return
-        self.move(self.open_gripper(self.BUTTON_ARM))
-        self.move(self.back_to_origin(self.BUTTON_ARM))
+        self.move(self.open_gripper(arm_tag))
+        self.move(self.back_to_origin(arm_tag))
         self.complete_rotate_subtask(2, carried_after=[])
 
     def play_once(self):
@@ -245,7 +259,7 @@ class count_target_press_button(RMBenchButtonMixin, Base_Task):
         return {
             "{A}": "green target blocks",
             "{B}": "red button",
-            "{a}": str(self.BUTTON_ARM),
+            "{a}": str(getattr(self, "button_arm_tag", None) or self.BUTTON_ARM or "left"),
             "{x}": int(getattr(self, "target_count", 0)),
         }
 

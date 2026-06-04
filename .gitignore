@@ -12,6 +12,7 @@ viewer_show.*
 logs/
 imgs/
 eval_video/
+outputs/
 task_config/
 !task_config/
 task_config/*

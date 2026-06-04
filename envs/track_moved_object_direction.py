@@ -34,7 +34,7 @@ class track_moved_object_direction(Base_Task):
     PICK_PRE_GRASP_DIS = 0.09
     PICK_GRASP_DIS = 0.01
     PICK_LIFT_Z = 0.05
-    MOTION_STEPS = 24
+    MOTION_STEPS = 60
     MOTION_SETTLE_STEPS = 4
     SEARCH_STEPS = 3
     PICK_SUCCESS_Z_DELTA = 0.035
@@ -223,8 +223,10 @@ class track_moved_object_direction(Base_Task):
                 camera_mode=1,
                 camera_target_theta=self._target_theta(pos),
             )
-            self.delay(1)
-        self.delay(int(self.MOTION_SETTLE_STEPS))
+            # Save every scripted motion step during replay so the demo shows a
+            # continuous track rather than a before/after teleport.
+            self.delay(1, save_freq=1)
+        self.delay(int(self.MOTION_SETTLE_STEPS), save_freq=1)
         self._set_rotate_subtask_state(
             subtask_idx=2,
             stage=2,

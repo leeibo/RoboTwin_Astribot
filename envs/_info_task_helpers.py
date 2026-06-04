@@ -38,11 +38,14 @@ class RMBenchButtonMixin:
     BUTTON_JOINT_NAME = "button_joint"
     BUTTON_PRESS_THRESHOLD = -0.005
     BUTTON_RESET_THRESHOLD = -0.001
-    BUTTON_PRESS_DOWN_Z = -0.04
-    BUTTON_PRESS_UP_Z = 0.04
-    BUTTON_PRE_GRASP_DIS = 0.08
-    BUTTON_GRASP_DIS = 0.08
+    BUTTON_PRESS_DOWN_Z = -0.025
+    BUTTON_PRESS_UP_Z = 0.025
+    # Use the same top-down "hover then push" style as click_bell: the gripper
+    # closes above the cap, then the press is a short vertical displacement.
+    BUTTON_PRE_GRASP_DIS = 0.10
+    BUTTON_GRASP_DIS = 0.10
     BUTTON_CONTACT_POINT_ID = 0
+    BUTTON_GRIPPER_POS = -0.1
     BUTTON_CAP_MASS = 0.0001
 
     def _create_rmbench_button(
@@ -143,6 +146,7 @@ class RMBenchButtonMixin:
                 arm_tag=arm_tag,
                 pre_grasp_dis=float(self.BUTTON_PRE_GRASP_DIS),
                 grasp_dis=float(self.BUTTON_GRASP_DIS),
+                gripper_pos=float(self.BUTTON_GRIPPER_POS),
                 contact_point_id=int(self.BUTTON_CONTACT_POINT_ID),
             )
         )
