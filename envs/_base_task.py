@@ -324,6 +324,8 @@ class Base_Task(gym.Env):
         self.search_cursor_layer = None
         self.search_cursor_state_complete = False
         self.search_cursor_boundary_reached = False
+        self.rotate_active_head_layer = "lower"
+        self.rotate_search_cursor_subtask_idx = None
         self.last_pending_block_search_snapshot = None
 
     def _load_default_task_instruction_description(self):
@@ -515,6 +517,8 @@ class Base_Task(gym.Env):
         self.search_cursor_layer = None
         self.search_cursor_state_complete = False
         self.search_cursor_boundary_reached = False
+        self.rotate_active_head_layer = "lower"
+        self.rotate_search_cursor_subtask_idx = None
         self.last_pending_block_search_snapshot = None
 
     def _get_rotate_subtask_def(self, subtask_idx):
@@ -2276,6 +2280,11 @@ class Base_Task(gym.Env):
                         position_lst.append(point.position)
         return position_lst
 
+    def _call_after_dense_scene_step(self, phase="control", step_idx=0):
+        hook = getattr(self, "_after_dense_scene_step", None)
+        if callable(hook):
+            hook(phase=phase, step_idx=step_idx)
+
     def check_actors_contact(self, actor1, actor2):
         """
         Check if two actors are in contact.
@@ -2833,6 +2842,8 @@ class Base_Task(gym.Env):
         return True
 
     def move_head(self, delta_rad, settle_steps=None, save_freq=-1):
+        if self._rotate_lower_layer_keep_head_home():
+            return self._hold_head_home_pose_without_recording()
         # keep argument name for compatibility; it is treated as minimum number of interpolation steps
         head_plan = self._build_head_joint_plan(delta_rad, min_steps=settle_steps)
         if head_plan is None:
@@ -2840,7 +2851,9 @@ class Base_Task(gym.Env):
             return False
         return self._execute_head_plan(head_plan, save_freq=save_freq)
 
-    def move_head_to(self, target_rad, settle_steps=None, save_freq=-1):
+    def move_head_to(self, target_rad, settle_steps=None, save_freq=-1, enforce_lower_lock=True):
+        if bool(enforce_lower_lock) and self._rotate_lower_layer_keep_head_home():
+            return self._hold_head_home_pose_without_recording()
         # Absolute head motion, sharing the same profile with move_head(delta).
         head_now = self._get_head_joint_state_now()
         if head_now is None:
@@ -3563,36 +3576,16 @@ class Base_Task(gym.Env):
         table_shape = str(getattr(self, "rotate_table_shape", "")).lower()
         if table_shape == "fan_double":
             return [
-                {"name": "lower_center", "layer": "lower", "mode": "inspect", "target_theta": 0.0},
+                {"name": "lower_current", "layer": "lower", "mode": "inspect"},
                 {"name": "lower_left", "layer": "lower", "mode": "sweep_to_edge", "direction": "left"},
-                {
-                    "name": "lower_center_return",
-                    "layer": "lower",
-                    "mode": "move_to_anchor",
-                    "direction": "right",
-                    "target_theta": 0.0,
-                },
                 {"name": "lower_right", "layer": "lower", "mode": "sweep_to_edge", "direction": "right"},
-                {"name": "upper_right", "layer": "upper", "mode": "inspect"},
-                {
-                    "name": "upper_center_return",
-                    "layer": "upper",
-                    "mode": "move_to_anchor",
-                    "direction": "left",
-                    "target_theta": 0.0,
-                },
+                {"name": "upper_current", "layer": "upper", "mode": "inspect"},
                 {"name": "upper_left", "layer": "upper", "mode": "sweep_to_edge", "direction": "left"},
+                {"name": "upper_right", "layer": "upper", "mode": "sweep_to_edge", "direction": "right"},
             ]
         return [
-            {"name": "center", "layer": "lower", "mode": "inspect", "target_theta": 0.0},
+            {"name": "lower_current", "layer": "lower", "mode": "inspect"},
             {"name": "left", "layer": "lower", "mode": "sweep_to_edge", "direction": "left"},
-            {
-                "name": "center_return",
-                "layer": "lower",
-                "mode": "move_to_anchor",
-                "direction": "right",
-                "target_theta": 0.0,
-            },
             {"name": "right", "layer": "lower", "mode": "sweep_to_edge", "direction": "right"},
         ]
 
@@ -3774,7 +3767,7 @@ class Base_Task(gym.Env):
             tol_yaw_rad=tol_yaw_rad,
         ):
             return False
-        if not self._move_head_to_rotate_search_layer(layer_name, head_joint2_name=head_joint2_name):
+        if not self._ensure_rotate_search_head_layer(layer_name, head_joint2_name=head_joint2_name):
             return False
         self.search_cursor_state_complete = bool(snapshot.get("search_cursor_state_complete", False))
         self.search_cursor_boundary_reached = bool(snapshot.get("search_cursor_boundary_reached", False))
@@ -3796,6 +3789,11 @@ class Base_Task(gym.Env):
             return head_target
 
         layer_name = self._normalize_rotate_search_layer(layer_name)
+        if layer_name == "lower" and self._rotate_lower_layer_keep_head_home():
+            if head_now is None:
+                return head_target
+            clipped = self._clip_head_target_to_limits(head_target, default_now=head_now)
+            return head_target if clipped is None else clipped
         if layer_name == "upper":
             head_target[head_joint2_idx] = float(getattr(self, "rotate_stage1_upper_head_joint2_rad", 0.8))
         else:
@@ -3805,13 +3803,100 @@ class Base_Task(gym.Env):
         clipped = self._clip_head_target_to_limits(head_target, default_now=head_now)
         return head_target if clipped is None else clipped
 
+    def _rotate_lower_layer_keep_head_home(self):
+        """Whether lower-table search is allowed to use only the head home pose.
+
+        This is mainly used by first-table information-gathering tasks: the
+        robot may rotate/face with torso/waist, but the head should not perform
+        an extra "look up / look down" stage for lower-layer objects.
+        """
+        return bool(
+            getattr(
+                self,
+                "ROTATE_LOWER_LAYER_KEEP_HEAD_HOME",
+                getattr(self, "rotate_lower_layer_keep_head_home", False),
+            )
+        )
+
+    def _hold_head_home_pose_without_recording(self):
+        """Keep the head at homestate without generating a head-motion segment.
+
+        First-layer/lower-table tasks should use torso/waist motion for view
+        changes and keep the head itself at the configured homestate.  This
+        helper sets the head drive target (and, when available, synchronizes the
+        simulated qpos) directly to home, with zero velocity and no saved
+        intermediate frames.
+        """
+        head_target = self._get_head_home_target()
+        if head_target is None:
+            return False
+        head_target = np.array(head_target, dtype=np.float64).reshape(-1)
+        if head_target.shape[0] == 0:
+            return False
+        ok = bool(self.robot.set_head_joints(head_target, np.zeros_like(head_target)))
+        sync_fn = getattr(self.robot, "_sync_head_qpos_to_drive_target", None)
+        if callable(sync_fn):
+            sync_fn()
+        return ok
+
+    def _get_active_rotate_search_head_layer(self):
+        layer_name = getattr(self, "rotate_active_head_layer", None)
+        if layer_name is None:
+            layer_name = getattr(self, "search_cursor_layer", None)
+        return self._normalize_rotate_search_layer(layer_name or "lower")
+
+    def _set_active_rotate_search_head_layer(self, layer_name):
+        layer_name = self._normalize_rotate_search_layer(layer_name)
+        self.rotate_active_head_layer = layer_name
+        self.search_cursor_layer = layer_name
+        return layer_name
+
     def _move_head_to_rotate_search_layer(self, layer_name, head_joint2_name=None, settle_steps=None, save_freq=-1):
+        layer_name = self._normalize_rotate_search_layer(layer_name)
         head_target = self._get_rotate_search_head_target(layer_name, head_joint2_name=head_joint2_name)
         if head_target is None:
             return False
         if settle_steps is None:
             settle_steps = getattr(self, "rotate_stage1_head_settle_steps", 12)
-        return bool(self.move_head_to(head_target, settle_steps=settle_steps, save_freq=save_freq))
+        if layer_name == "lower" and self._rotate_lower_layer_keep_head_home():
+            # Lower-table demos must not insert a head-up/head-down search
+            # motion while already at the lower/home layer.  When returning
+            # from the upper layer, however, the transition back to home must
+            # be a normal recorded motion, not an instantaneous qpos sync.
+            head_now = self._get_head_joint_state_now()
+            if head_now is None:
+                return self._hold_head_home_pose_without_recording()
+            head_target_arr = np.array(head_target, dtype=np.float64).reshape(-1)
+            head_now_arr = np.array(head_now, dtype=np.float64).reshape(-1)
+            if head_target_arr.shape == head_now_arr.shape and self._joint_delta_is_noop(
+                head_target_arr - head_now_arr
+            ):
+                return self._hold_head_home_pose_without_recording()
+        return bool(self.move_head_to(head_target, settle_steps=settle_steps, save_freq=save_freq, enforce_lower_lock=False))
+
+    def _ensure_rotate_search_head_layer(self, layer_name, head_joint2_name=None, settle_steps=None, save_freq=-1):
+        """Move the head only when the search layer actually changes.
+
+        Same-layer focus/search must not trigger a redundant head command; a
+        lower<->upper transition is part of stage-1 search and should be
+        recorded with the regular head interpolation profile.
+        """
+        layer_name = self._normalize_rotate_search_layer(layer_name)
+        current_layer = self._get_active_rotate_search_head_layer()
+        if current_layer == layer_name:
+            self.search_cursor_layer = layer_name
+            return True
+        if not self._move_head_to_rotate_search_layer(
+            layer_name,
+            head_joint2_name=head_joint2_name,
+            settle_steps=settle_steps,
+            save_freq=save_freq,
+        ):
+            return False
+        self._set_active_rotate_search_head_layer(layer_name)
+        self._sync_rotate_search_cursor_from_current_view(layer_name=layer_name)
+        self._refresh_rotate_discovery_from_current_view()
+        return True
 
     def _get_head_joint2_index(self, head_joint2_name=None):
         if head_joint2_name is None:
@@ -3841,6 +3926,8 @@ class Base_Task(gym.Env):
             return False
         if settle_steps is None:
             settle_steps = getattr(self, "rotate_stage1_head_settle_steps", 12)
+        if self._rotate_lower_layer_keep_head_home():
+            return self._hold_head_home_pose_without_recording()
         return self.move_head_to(head_target, settle_steps=settle_steps, save_freq=save_freq)
 
     def _build_head_joint2_scan_targets(self, head_joint2_name=None):
@@ -4075,6 +4162,11 @@ class Base_Task(gym.Env):
             if obj is None:
                 return None
             world_point = self._resolve_object_world_point(obj=obj)
+        layer_name = self._get_rotate_object_layer(focus_key)
+        if not self._ensure_rotate_search_head_layer(layer_name, head_joint2_name=head_joint2_name):
+            self._refresh_rotate_discovery_from_current_view()
+            return None
+
         desired_theta = self._compute_rotate_target_theta_from_world_point(world_point)
         self._set_rotate_subtask_state(
             subtask_idx=subtask_idx,
@@ -4095,10 +4187,6 @@ class Base_Task(gym.Env):
             yaw_hysteresis_rad=0.0,
         )
         if not face_res:
-            self._refresh_rotate_discovery_from_current_view()
-            return None
-        layer_name = self._get_rotate_object_layer(focus_key)
-        if not self._move_head_to_rotate_search_layer(layer_name, head_joint2_name=head_joint2_name):
             self._refresh_rotate_discovery_from_current_view()
             return None
         self._sync_rotate_search_cursor_from_current_view(layer_name=layer_name)
@@ -4137,7 +4225,7 @@ class Base_Task(gym.Env):
             return None
 
         layer_name = self._normalize_rotate_search_layer(state.get("layer", self.search_cursor_layer or "lower"))
-        if not self._move_head_to_rotate_search_layer(layer_name, head_joint2_name=head_joint2_name):
+        if not self._ensure_rotate_search_head_layer(layer_name, head_joint2_name=head_joint2_name):
             return None
         self.search_cursor_layer = layer_name
         self.search_cursor_state_complete = False
@@ -4299,96 +4387,15 @@ class Base_Task(gym.Env):
         tol_yaw_rad=2e-3,
         head_joint2_name=None,
     ):
-        subtask_idx = int(subtask_idx)
-        subtask_def = self._get_rotate_subtask_def(subtask_idx)
-        if subtask_def is None:
-            raise ValueError(f"Unknown rotate subtask id: {subtask_idx}")
-        if self.current_subtask_idx != subtask_idx:
-            self.begin_rotate_subtask(subtask_idx)
-
-        target_keys = [str(k) for k in subtask_def.get("search_target_keys", [])]
-        action_target_keys = [str(k) for k in subtask_def.get("action_target_keys", [])]
-        if head_joint2_name is None:
-            head_joint2_name = getattr(self, "rotate_head_joint2_name", "astribot_head_joint_2")
-
-        self._ensure_rotate_search_cursor_initialized()
-        self._refresh_rotate_discovery_from_current_view()
-        force_stage1_order = bool(
-            self._should_enforce_rotate_stage1_search_order(
-                subtask_idx=subtask_idx,
-                subtask_def=subtask_def,
-            )
+        return self.search_and_focus_rotate_subtask(
+            subtask_idx=subtask_idx,
+            scan_r=scan_r,
+            scan_z=scan_z,
+            joint_name_prefer=joint_name_prefer,
+            max_iter=max_iter,
+            tol_yaw_rad=tol_yaw_rad,
+            head_joint2_name=head_joint2_name,
         )
-
-        if not force_stage1_order:
-            visible_key = self._get_rotate_target_key(target_keys, visible_only=True)
-            if visible_key is not None:
-                focused_key = self._focus_rotate_registry_target_with_fixed_head(
-                    visible_key,
-                    subtask_idx=subtask_idx,
-                    target_keys=target_keys,
-                    action_target_keys=action_target_keys,
-                    joint_name_prefer=joint_name_prefer,
-                    max_iter=max_iter,
-                    tol_yaw_rad=tol_yaw_rad,
-                    head_joint2_name=head_joint2_name,
-                    prefer_history_world_point=False,
-                )
-                if focused_key is not None:
-                    return focused_key
-
-            remembered_key = self._get_rotate_target_key(target_keys, visible_only=False)
-            if remembered_key is not None:
-                focused_key = self._focus_rotate_registry_target_with_fixed_head(
-                    remembered_key,
-                    subtask_idx=subtask_idx,
-                    target_keys=target_keys,
-                    action_target_keys=action_target_keys,
-                    joint_name_prefer=joint_name_prefer,
-                    max_iter=max_iter,
-                    tol_yaw_rad=tol_yaw_rad,
-                    head_joint2_name=head_joint2_name,
-                    prefer_history_world_point=True,
-                )
-                if focused_key is not None:
-                    return focused_key
-
-        while True:
-            state = self._ensure_rotate_search_cursor_initialized()
-            if state is None:
-                break
-            found_key = self._run_rotate_and_head_stage1_search_state(
-                state,
-                subtask_idx=subtask_idx,
-                target_keys=target_keys,
-                action_target_keys=action_target_keys,
-                scan_r=scan_r,
-                scan_z=scan_z,
-                joint_name_prefer=joint_name_prefer,
-                max_iter=max_iter,
-                tol_yaw_rad=tol_yaw_rad,
-                head_joint2_name=head_joint2_name,
-            )
-            if found_key is not None:
-                focused_key = self._focus_rotate_registry_target_with_fixed_head(
-                    found_key,
-                    subtask_idx=subtask_idx,
-                    target_keys=target_keys,
-                    action_target_keys=action_target_keys,
-                    joint_name_prefer=joint_name_prefer,
-                    max_iter=max_iter,
-                    tol_yaw_rad=tol_yaw_rad,
-                    head_joint2_name=head_joint2_name,
-                    prefer_history_world_point=False,
-                )
-                if focused_key is not None:
-                    return focused_key
-            if bool(self.search_cursor_state_complete):
-                self._advance_rotate_search_cursor()
-                continue
-            break
-
-        return None
 
     @staticmethod
     def _compute_pose_planar_facing_yaw(pose):
@@ -4776,6 +4783,7 @@ class Base_Task(gym.Env):
         joint_name_prefer="astribot_torso_joint_2",
         max_iter=35,
         tol_yaw_rad=2e-3,
+        head_joint2_name=None,
     ):
         subtask_idx = int(subtask_idx)
         subtask_def = self._get_rotate_subtask_def(subtask_idx)
@@ -4786,150 +4794,99 @@ class Base_Task(gym.Env):
 
         target_keys = [str(k) for k in subtask_def.get("search_target_keys", [])]
         action_target_keys = [str(k) for k in subtask_def.get("action_target_keys", [])]
+        if head_joint2_name is None:
+            head_joint2_name = getattr(self, "rotate_head_joint2_name", "astribot_head_joint_2")
 
+        # First use the current layer/view and any valid memory.  Same-layer
+        # memory focus keeps the head fixed; cross-layer memory focus performs
+        # the lower<->upper head transition before horizontal torso focus.
         self._refresh_rotate_discovery_from_current_view()
-        found_key = self._get_rotate_target_key(target_keys, visible_only=True)
-        if found_key is None:
-            remembered_key = self._get_rotate_target_key(target_keys, visible_only=False)
-            if remembered_key is not None:
-                found_key = self._reacquire_rotate_target_from_history(
-                    remembered_key,
+        visible_key = self._get_rotate_target_key(target_keys, visible_only=True)
+        if visible_key is not None:
+            focused_key = self._focus_rotate_registry_target_with_fixed_head(
+                visible_key,
+                subtask_idx=subtask_idx,
+                target_keys=target_keys,
+                action_target_keys=action_target_keys,
+                joint_name_prefer=joint_name_prefer,
+                max_iter=max_iter,
+                tol_yaw_rad=tol_yaw_rad,
+                head_joint2_name=head_joint2_name,
+                prefer_history_world_point=False,
+            )
+            if focused_key is not None:
+                return focused_key
+
+        remembered_key = self._get_rotate_target_key(target_keys, visible_only=False)
+        if remembered_key is not None:
+            focused_key = self._focus_rotate_registry_target_with_fixed_head(
+                remembered_key,
+                subtask_idx=subtask_idx,
+                target_keys=target_keys,
+                action_target_keys=action_target_keys,
+                joint_name_prefer=joint_name_prefer,
+                max_iter=max_iter,
+                tol_yaw_rad=tol_yaw_rad,
+                head_joint2_name=head_joint2_name,
+                prefer_history_world_point=True,
+            )
+            if focused_key is not None:
+                return focused_key
+
+        # No current-view or memory hit.  Start one unified search state
+        # machine from the lower layer.  For fan_double, exhausting lower-left
+        # and lower-right naturally advances to upper and records the head
+        # transition as part of this same stage-1 search.
+        cursor_subtask = getattr(self, "rotate_search_cursor_subtask_idx", None)
+        if cursor_subtask != subtask_idx or self.search_cursor_state_index is None:
+            current_theta = self._get_current_scan_camera_theta(camera_name="camera_head")
+            if current_theta is None:
+                current_theta = self._get_current_scan_camera_theta()
+            if current_theta is None or (not np.isfinite(float(current_theta))):
+                current_theta = 0.0
+            self._set_rotate_search_cursor(
+                state_idx=0,
+                theta=float(current_theta),
+                layer_name="lower",
+            )
+            self.rotate_search_cursor_subtask_idx = subtask_idx
+
+        while True:
+            state = self._ensure_rotate_search_cursor_initialized()
+            if state is None:
+                break
+            found_key = self._run_rotate_and_head_stage1_search_state(
+                state,
+                subtask_idx=subtask_idx,
+                target_keys=target_keys,
+                action_target_keys=action_target_keys,
+                scan_r=scan_r,
+                scan_z=scan_z,
+                joint_name_prefer=joint_name_prefer,
+                max_iter=max_iter,
+                tol_yaw_rad=tol_yaw_rad,
+                head_joint2_name=head_joint2_name,
+            )
+            if found_key is not None:
+                focused_key = self._focus_rotate_registry_target_with_fixed_head(
+                    found_key,
                     subtask_idx=subtask_idx,
                     target_keys=target_keys,
                     action_target_keys=action_target_keys,
-                    scan_r=scan_r,
-                    scan_z=scan_z,
                     joint_name_prefer=joint_name_prefer,
                     max_iter=max_iter,
                     tol_yaw_rad=tol_yaw_rad,
+                    head_joint2_name=head_joint2_name,
+                    prefer_history_world_point=False,
                 )
+                if focused_key is not None:
+                    return focused_key
+            if bool(self.search_cursor_state_complete):
+                self._advance_rotate_search_cursor()
+                continue
+            break
 
-        if found_key is None:
-            stage1_unit = float(getattr(self, "rotate_stage1_theta_unit_rad", 0.0))
-            if stage1_unit <= 1e-9:
-                stage1_unit = float(np.deg2rad(45.0))
-
-            scan_order = str(getattr(self, "rotate_scan_order", "left_to_right")).lower()
-            direction = -1.0 if scan_order in ("right_to_left", "right-left", "rtl") else 1.0
-            edge_limits = {
-                "left": float(self._get_rotate_table_edge_theta_limit("left")),
-                "right": float(self._get_rotate_table_edge_theta_limit("right")),
-            }
-            exhausted = {"left": False, "right": False}
-
-            camera_pose = self._get_scan_camera_pose()
-            camera_spec = self._get_scan_camera_runtime_spec()
-            for side in ["left", "right"]:
-                edge_visible, _ = self._is_rotate_table_edge_visible_in_current_view(
-                    side,
-                    camera_pose=camera_pose,
-                    camera_spec=camera_spec,
-                )
-                exhausted[side] = bool(edge_visible)
-
-            theta_span = max(
-                abs(edge_limits["left"] - edge_limits["right"]),
-                2.0 * float(getattr(self, "rotate_object_theta_half_rad", np.pi)),
-            )
-            max_stage1_steps = max(int(np.ceil(theta_span / stage1_unit)) * 2 + 4, 4)
-            pending_direction_switch = False
-
-            for _ in range(max_stage1_steps):
-                if exhausted["left"] and exhausted["right"]:
-                    break
-
-                side = "left" if direction > 0 else "right"
-                switched_direction = bool(pending_direction_switch)
-                pending_direction_switch = False
-                if exhausted[side]:
-                    other = "right" if side == "left" else "left"
-                    if exhausted[other]:
-                        break
-                    direction = -direction
-                    side = other
-                    switched_direction = True
-
-                current_theta = self._get_current_scan_camera_theta()
-                if current_theta is None:
-                    current_theta = 0.0
-                theta_limit = edge_limits[side]
-                move_direction = float(np.sign(direction) if abs(float(direction)) > 1e-8 else 1.0)
-                step_multiplier = 1
-                if switched_direction:
-                    step_multiplier = max(int(np.floor(abs(float(current_theta)) / stage1_unit + 1e-6)) + 1, 1)
-                    if abs(float(current_theta)) > 1e-8:
-                        move_direction = float(-np.sign(float(current_theta)))
-                target_theta = float(current_theta + move_direction * stage1_unit * step_multiplier)
-                if side == "left" and target_theta > theta_limit + 1e-8:
-                    exhausted["left"] = True
-                    direction = -1.0
-                    pending_direction_switch = True
-                    continue
-                if side == "right" and target_theta < theta_limit - 1e-8:
-                    exhausted["right"] = True
-                    direction = 1.0
-                    pending_direction_switch = True
-                    continue
-                direction = move_direction
-
-                self._set_rotate_subtask_state(
-                    subtask_idx=subtask_idx,
-                    stage=1,
-                    focus_object_key=None,
-                    search_target_keys=target_keys,
-                    action_target_keys=action_target_keys,
-                    info_complete=0,
-                    camera_mode=1,
-                    camera_target_theta=target_theta,
-                )
-                self._move_scan_camera_to_theta(
-                    target_theta,
-                    scan_r=scan_r,
-                    scan_z=scan_z,
-                    joint_name_prefer=joint_name_prefer,
-                    max_iter=max_iter,
-                    tol_yaw_rad=tol_yaw_rad,
-                )
-
-                self._refresh_rotate_discovery_from_current_view()
-                found_key = self._get_rotate_target_key(target_keys, visible_only=True)
-                if found_key is not None:
-                    break
-
-                camera_pose = self._get_scan_camera_pose()
-                camera_spec = self._get_scan_camera_runtime_spec()
-                current_theta = self._get_current_scan_camera_theta()
-                if current_theta is not None:
-                    exhausted["left"] = bool(exhausted["left"] or current_theta >= edge_limits["left"] - 1e-3)
-                    exhausted["right"] = bool(exhausted["right"] or current_theta <= edge_limits["right"] + 1e-3)
-                for edge_side in ["left", "right"]:
-                    edge_visible, _ = self._is_rotate_table_edge_visible_in_current_view(
-                        edge_side,
-                        camera_pose=camera_pose,
-                        camera_spec=camera_spec,
-                    )
-                    exhausted[edge_side] = bool(exhausted[edge_side] or edge_visible)
-
-                if exhausted[side]:
-                    other = "right" if side == "left" else "left"
-                    if not exhausted[other]:
-                        direction = -direction
-                        pending_direction_switch = True
-
-        if found_key is None:
-            return None
-
-        return self._fine_center_rotate_registry_target(
-            found_key,
-            subtask_idx=subtask_idx,
-            target_keys=target_keys,
-            action_target_keys=action_target_keys,
-            scan_r=scan_r,
-            scan_z=scan_z,
-            joint_name_prefer=joint_name_prefer,
-            max_iter=max_iter,
-            tol_yaw_rad=tol_yaw_rad,
-        )
+        return None
 
     def _build_rotate_frame_annotation_payload(self):
         visibility_map = self._refresh_rotate_discovery_from_current_view()
@@ -5867,6 +5824,7 @@ class Base_Task(gym.Env):
                 )  # TODO
 
             self.scene.step()
+            self._call_after_dense_scene_step(phase="control", step_idx=control_idx)
 
             if self.render_freq and control_idx % self.render_freq == 0:
                 self._update_render()
@@ -5891,6 +5849,7 @@ class Base_Task(gym.Env):
                 if right_final_joints is not None:
                     self.robot.set_arm_joints(right_final_joints, right_final_vel, "right")
                 self.scene.step()
+                self._call_after_dense_scene_step(phase="settle", step_idx=settle_idx)
                 if self.render_freq and settle_idx % self.render_freq == 0:
                     self._update_render()
                     self.viewer.render()
@@ -6249,6 +6208,133 @@ class Base_Task(gym.Env):
 class PutBlockFanDoubleMixin:
     """Shared private helpers for fan-double block placement tasks."""
 
+    BLOCK_COUNT = 1
+    BLOCK_LAYER_SEQUENCE = ("lower",)
+    BLOCK_SIZE_RANGE = (0.018, 0.022)
+    BLOCK_COLOR = (0.10, 0.80, 0.20)
+    BLOCK_COLOR_CANDIDATES = (
+        (0.90, 0.20, 0.20),
+        (0.15, 0.72, 0.25),
+        (0.20, 0.45, 0.92),
+        (0.92, 0.74, 0.18),
+        (0.88, 0.45, 0.16),
+    )
+    BLOCK_SPAWN_MIN_DIST_SQ = 0.01
+    PLATE_BLOCK_SPAWN_MIN_DIST_SQ = 0.0255
+    BLOCK_LAYER_SPECS = {
+        "lower": {
+            "inner_margin": 0.12,
+            "outer_margin": 0.18,
+            "max_cyl_r": 0.55,
+            "theta_shrink": 0.92,
+        },
+        "upper": {
+            "inner_margin": 0.04,
+            "outer_margin": 0.06,
+            "max_cyl_r": 0.64,
+            "theta_shrink": 0.92,
+        },
+    }
+
+    PLATE_MODEL_ID = 0
+    PLATE_LAYER = "upper"
+    PLATE_LAYER_SPECS = {
+        "lower": {
+            "r": 0.55,
+            "theta_deg": -60.0,
+            "z_offset": 0.0,
+            "qpos": [0.5, 0.5, 0.5, 0.5],
+            "scale": [0.025, 0.025, 0.025],
+        },
+        "upper": {
+            "r": 0.70,
+            "theta_deg": 0.0,
+            "z_offset": 0.0,
+            "qpos": [0.5, 0.5, 0.5, 0.5],
+            "scale": [0.025, 0.025, 0.025],
+        },
+    }
+    PLATE_PLACE_SLOT_OFFSETS = {
+        1: ((0.0, 0.0),),
+        2: ((0.0, -0.055), (0.0, 0.055)),
+        3: ((0.055, 0.0), (-0.028, 0.050), (-0.028, -0.050)),
+    }
+
+    TARGET_MODEL_NAME = None
+    TARGET_MODEL_ID = 0
+    TARGET_MODEL_IDS = ()
+    TARGET_LAYER = "upper"
+    TARGET_LAYER_SPECS = {}
+    TARGET_FUNCTIONAL_POINT_ID = 0
+    TARGET_MASS = 0.05
+    TARGET_IS_STATIC = True
+    TARGET_PADDING = 0.08
+    TARGET_TASK_PREPOSITION = "into"
+    TARGET_THETA_JITTER_DEG = 0.0
+
+    SCAN_R = 0.62
+    SCAN_Z_BIAS = 0.90
+    SCAN_JOINT_NAME = "astribot_torso_joint_2"
+    PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = 0.8
+    PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None
+    PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = 0.8
+    PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None
+    REQUIRE_PLATE_VISIBLE_BEFORE_PLACE = True
+    REQUIRE_TARGET_VISIBLE_BEFORE_PLACE = True
+    FIXED_LAYER_HEAD_JOINT2_ONLY = True
+    HEAD_RESET_SAVE_FREQ = None
+
+    PICK_PRE_GRASP_DIS = 0.09
+    PICK_GRASP_DIS = 0.01
+    PICK_LIFT_Z = 0.10
+    POST_GRASP_EXTRA_LIFT_Z = 0.04
+    LOCK_SELECTED_ARM_AFTER_FIRST_PICK = True
+
+    INITIAL_LEFT_ARM_JOINT1 = -0.110
+    INITIAL_RIGHT_ARM_JOINT1 = 0.110
+
+    DIRECT_RELEASE_TCP_BACKOFF = 0.12
+    DIRECT_RELEASE_ENTRY_TCP_CYL_R = None
+    DIRECT_RELEASE_ENTRY_R_MARGIN_FROM_UPPER_INNER = 0.08
+    DIRECT_RELEASE_TCP_Z_OFFSET = 0.06
+    DIRECT_RELEASE_ENTRY_TCP_Z_OFFSET = 0.10
+    DIRECT_RELEASE_APPROACH_TCP_Z_OFFSET = 0.10
+    DIRECT_RELEASE_RETREAT_Z = 0.06
+    DIRECT_RELEASE_R_OFFSETS = (0.0, -0.03, 0.03)
+    DIRECT_RELEASE_THETA_OFFSETS_DEG = (0.0, -3.0, 3.0)
+    DIRECT_RELEASE_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0)
+
+    LOWER_PLACE_FUNCTIONAL_POINT_ID = 0
+    LOWER_PLACE_PRE_DIS = 0.18
+    LOWER_PLACE_DIS = 0.03
+    LOWER_PLACE_CONSTRAIN = "free"
+    LOWER_PLACE_PRE_DIS_AXIS = "fp"
+    LOWER_PLACE_IS_OPEN = True
+    LOWER_PLACE_RETREAT_Z = 0.12
+    LOWER_PLACE_RETREAT_MOVE_AXIS = "arm"
+
+    UPPER_TO_LOWER_HOVER_Z_OFFSETS = (0.06, 0.08, 0.10)
+    UPPER_TO_LOWER_DROP_PLATE_INNER_MARGIN = 0.02
+    UPPER_TO_LOWER_DROP_YAW_OFFSETS_DEG = (0.0, 90.0, -90.0, 180.0)
+    UPPER_TO_LOWER_RELEASE_DELAY_STEPS = 15
+    UPPER_TO_LOWER_RELEASE_RETREAT_Z = 0.08
+
+    UPPER_PICK_ENTRY_Z_OFFSET = 0.10
+    UPPER_PICK_PRE_GRASP_DIS = 0.10
+    UPPER_PICK_GRASP_Z_BIAS = 0.02
+    UPPER_PICK_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0, 30.0, -30.0)
+    UPPER_PICK_GRIPPER_POS = -0.02
+
+    UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.18
+    UPPER_PLACE_BODY_JOINT_NAME = "astribot_torso_joint_2"
+
+    RETURN_TO_HOMESTATE_AFTER_PLACE = True
+    KNOWN_FIXED_TARGET_KEYS = ()
+    SUCCESS_EPS = np.array([0.08, 0.08, 0.08], dtype=np.float64)
+    SUCCESS_XY_TOL = 0.08
+    SUCCESS_Z_TOL = 0.06
+    EXTRA_ALIGN_TARGET_BEFORE_PLACE = False
+
     # Optional upper-layer return policy.  When enabled, after direct-release
     # placement on the upper layer and the vertical lift, the active arm is
     # returned to its initial EE pose through cuRobo-planned Cartesian moves
@@ -6262,6 +6348,29 @@ class PutBlockFanDoubleMixin:
     UPPER_PLACE_RETURN_CUROBO_CLEAR_Z_OFFSET = 0.18
     UPPER_PLACE_RETURN_CUROBO_FALLBACK_TO_JOINT = False
 
+    def setup_demo(self, **kwargs):
+        self._plate_theta_deg_cache = {}
+        self._target_theta_deg_jitter_cache = {}
+        self._locked_pick_arm_tag = None
+        kwargs = prepare_rotate_task_kwargs(self, kwargs)
+        self.fixed_layer_head_joint2_only = bool(
+            kwargs.get(
+                "fixed_layer_head_joint2_only",
+                getattr(self, "FIXED_LAYER_HEAD_JOINT2_ONLY", True),
+            )
+        )
+        if "place_plate_upper_head_joint2_target" in kwargs:
+            self.PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_plate_upper_head_joint2_target"])
+        if "place_plate_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_plate_lower_head_joint2_target"]
+            self.PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        if "place_target_upper_head_joint2_target" in kwargs:
+            self.PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET = float(kwargs["place_target_upper_head_joint2_target"])
+        if "place_target_lower_head_joint2_target" in kwargs:
+            lower_target = kwargs["place_target_lower_head_joint2_target"]
+            self.PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET = None if lower_target is None else float(lower_target)
+        super()._init_task_env_(**kwargs)
+
     def _apply_task_initial_homestate(self):
         left_homestate = list(getattr(self.robot, "left_homestate", []))
         right_homestate = list(getattr(self.robot, "right_homestate", []))
@@ -6271,6 +6380,638 @@ class PutBlockFanDoubleMixin:
         if len(right_homestate) > 0:
             right_homestate[0] = float(self.INITIAL_RIGHT_ARM_JOINT1)
             self.robot.right_homestate = right_homestate
+
+    def _uses_target_actor(self):
+        return bool(str(getattr(self, "TARGET_MODEL_NAME", "") or "").strip())
+
+    def _get_target_object_key(self):
+        return "B"
+
+    def _get_target_object(self):
+        target_object = getattr(self, "target_object", None)
+        if target_object is not None:
+            return target_object
+        return getattr(self, "plate", None)
+
+    def _sample_target_model_id(self):
+        model_ids = tuple(getattr(self, "TARGET_MODEL_IDS", ()) or ())
+        if len(model_ids) > 0:
+            return int(np.random.choice(list(model_ids)))
+        return int(getattr(self, "TARGET_MODEL_ID", 0))
+
+    def _get_task_instruction(self):
+        if self._uses_target_actor():
+            preposition = str(getattr(self, "TARGET_TASK_PREPOSITION", "into")).strip() or "into"
+            return f"Put the block {preposition} {{B}}."
+        return "Put the block into {B}." if self._get_block_count() == 1 else "Put all blocks into {B}."
+
+    def _get_plate_layer(self):
+        if self._uses_target_actor():
+            return self._normalize_layer(getattr(self, "TARGET_LAYER", "upper"))
+        return self._normalize_layer(getattr(self, "PLATE_LAYER", "upper"))
+
+    def _get_target_layer(self):
+        return self._get_plate_layer()
+
+    def _get_plate_theta_deg(self, layer_name, plate_spec):
+        layer_name = self._normalize_layer(layer_name)
+        theta_cache = getattr(self, "_plate_theta_deg_cache", None)
+        if not isinstance(theta_cache, dict):
+            theta_cache = {}
+            self._plate_theta_deg_cache = theta_cache
+        if layer_name in theta_cache:
+            return float(theta_cache[layer_name])
+
+        if layer_name == "lower":
+            theta_deg = float(np.random.choice((-55.0, 55.0)))
+        elif layer_name == "upper":
+            support_theta_world_rad = getattr(self, "rotate_fan_double_support_theta_world_rad", None)
+            if support_theta_world_rad is not None:
+                theta_deg = float(np.rad2deg(self._wrap_to_pi(float(support_theta_world_rad) - float(self.robot_yaw))))
+            else:
+                theta_deg = float(plate_spec.get("theta_deg", 0.0))
+        else:
+            theta_deg = float(plate_spec.get("theta_deg", 0.0))
+
+        theta_cache[layer_name] = float(theta_deg)
+        return float(theta_deg)
+
+    def _get_plate_layer_spec(self, layer_name=None):
+        layer_name = self._get_plate_layer() if layer_name is None else self._normalize_layer(layer_name)
+        spec_map_attr = "TARGET_LAYER_SPECS" if self._uses_target_actor() else "PLATE_LAYER_SPECS"
+        spec_map = dict(getattr(self, spec_map_attr, {}) or {})
+        raw_spec = dict(spec_map.get(layer_name, {}))
+        if len(raw_spec) == 0:
+            raise ValueError(f"Missing {spec_map_attr} entry for layer: {layer_name}")
+
+        layer_spec = self._get_layer_spec(layer_name)
+        default_r = 0.48 if self._uses_target_actor() and layer_name == "lower" else 0.68
+        if (not self._uses_target_actor()) and layer_name == "lower":
+            default_r = 0.55
+        theta_deg = float(raw_spec.get("theta_deg", 0.0))
+        if self._uses_target_actor():
+            theta_cache = getattr(self, "_target_theta_deg_jitter_cache", None)
+            if not isinstance(theta_cache, dict):
+                theta_cache = {}
+                self._target_theta_deg_jitter_cache = theta_cache
+            cache_key = str(layer_name)
+            if cache_key not in theta_cache:
+                theta_cache[cache_key] = theta_deg + float(
+                    np.random.uniform(
+                        -float(getattr(self, "TARGET_THETA_JITTER_DEG", 0.0)),
+                        float(getattr(self, "TARGET_THETA_JITTER_DEG", 0.0)),
+                    )
+                )
+            theta_deg = float(theta_cache[cache_key])
+            scale = raw_spec.get("scale", None)
+        else:
+            theta_deg = self._get_plate_theta_deg(layer_name, raw_spec)
+            scale = list(raw_spec.get("scale", [0.025, 0.025, 0.025]))
+
+        return {
+            "layer": layer_name,
+            "r": float(raw_spec.get("r", default_r)),
+            "theta_deg": float(theta_deg),
+            "z": float(layer_spec["top_z"]) + float(raw_spec.get("z_offset", 0.0)),
+            "qpos": list(raw_spec.get("qpos", [0.5, 0.5, 0.5, 0.5])),
+            "scale": scale,
+        }
+
+    def _get_target_layer_spec(self, layer_name=None):
+        return self._get_plate_layer_spec(layer_name)
+
+    def _get_target_anchor_pose(self, layer_name=None):
+        return self._get_plate_anchor_pose(layer_name)
+
+    def _get_target_padding(self):
+        if self._uses_target_actor():
+            return float(getattr(self, "TARGET_PADDING", 0.08))
+        return 0.08
+
+    def _create_plate_anchor(self):
+        self.plate_layer = self._get_plate_layer()
+        plate_spec = self._get_plate_layer_spec(self.plate_layer)
+        self.plate_cyl_r = float(plate_spec["r"])
+        self.plate_cyl_theta_deg = float(plate_spec["theta_deg"])
+        self.plate_z = float(plate_spec["z"])
+        self.plate_qpos = list(plate_spec["qpos"])
+        self.plate_scale = list(plate_spec["scale"])
+
+        self.plate = create_actor(
+            self,
+            pose=self._get_plate_anchor_pose(self.plate_layer),
+            modelname="003_plate",
+            model_id=int(getattr(self, "PLATE_MODEL_ID", 0)),
+            scale=self.plate_scale,
+            is_static=True,
+            convex=True,
+        )
+        self.plate_target_pose = self.plate.get_functional_point(0)
+        self.target_object = self.plate
+        self.target_layer = self.plate_layer
+        self.target_place_pose = list(self.plate_target_pose)
+        return self.plate
+
+    def _create_target_anchor(self):
+        if not self._uses_target_actor():
+            return self._create_plate_anchor()
+
+        self.plate_layer = self._get_plate_layer()
+        target_spec = self._get_plate_layer_spec(self.plate_layer)
+        self.target_name = str(getattr(self, "TARGET_MODEL_NAME", "")).strip()
+        self.target_id = self._sample_target_model_id()
+        self.plate_cyl_r = float(target_spec["r"])
+        self.plate_cyl_theta_deg = float(target_spec["theta_deg"])
+        self.plate_z = float(target_spec["z"])
+        self.plate_qpos = list(target_spec["qpos"])
+        self.plate_scale = None if target_spec.get("scale", None) is None else list(target_spec["scale"])
+
+        create_kwargs = {
+            "scene": self,
+            "pose": self._get_plate_anchor_pose(self.plate_layer),
+            "modelname": self.target_name,
+            "model_id": self.target_id,
+            "convex": True,
+            "is_static": bool(getattr(self, "TARGET_IS_STATIC", True)),
+        }
+        if self.plate_scale is not None:
+            create_kwargs["scale"] = self.plate_scale
+
+        self.plate = create_actor(**create_kwargs)
+        self.plate.set_mass(float(getattr(self, "TARGET_MASS", 0.05)))
+        self.plate_target_pose = self._get_plate_place_target_pose()
+        self.target_object = self.plate
+        self.target_layer = self.plate_layer
+        self.target_place_pose = list(self.plate_target_pose)
+        return self.plate
+
+    def _configure_rotate_subtask_plan(self):
+        object_registry = {key: block for key, block in zip(self.block_keys, self.blocks)}
+        object_registry[self._get_target_object_key()] = self._get_target_object()
+
+        subtask_defs = []
+        for block_idx, block_key in enumerate(self.block_keys):
+            pick_subtask_id = 2 * block_idx + 1
+            place_subtask_id = pick_subtask_id + 1
+            next_subtask_id = place_subtask_id + 1 if block_idx < len(self.block_keys) - 1 else -1
+            subtask_defs.extend(
+                [
+                    {
+                        "id": pick_subtask_id,
+                        "name": f"pick_remaining_block_{block_idx}",
+                        "instruction_idx": 1,
+                        "search_target_keys": list(self.block_keys),
+                        "action_target_keys": list(self.block_keys),
+                        "required_carried_keys": [],
+                        "carry_keys_after_done": [],
+                        "allow_stage2_from_memory": False,
+                        "done_when": "selected_block_grasped",
+                        "next_subtask_id": place_subtask_id,
+                    },
+                    {
+                        "id": place_subtask_id,
+                        "name": f"place_selected_block_{block_idx}_into_plate",
+                        "instruction_idx": 2,
+                        "search_target_keys": [self._get_target_object_key()],
+                        "action_target_keys": [self._get_target_object_key()],
+                        "required_carried_keys": [],
+                        "carry_keys_after_done": [],
+                        "allow_stage2_from_memory": True,
+                        "done_when": "selected_block_in_plate",
+                        "next_subtask_id": next_subtask_id,
+                    },
+                ]
+            )
+
+        self.configure_rotate_subtask_plan(
+            object_registry=object_registry,
+            subtask_defs=subtask_defs,
+            task_instruction=self._get_task_instruction(),
+        )
+
+    def _get_subtask_search_target_keys(self, subtask_idx):
+        subtask_def = self._get_rotate_subtask_def(subtask_idx) or {}
+        return [str(key) for key in subtask_def.get("search_target_keys", [])]
+
+    def _get_subtask_upper_search_target_keys(self, subtask_idx):
+        object_layers = getattr(self, "object_layers", {}) or {}
+        upper_keys = []
+        for key in self._get_subtask_search_target_keys(subtask_idx):
+            layer_name = object_layers.get(key, None)
+            if layer_name is not None and self._normalize_layer(layer_name) == "upper":
+                upper_keys.append(str(key))
+        return upper_keys
+
+    def _should_search_lower_before_upper_for_subtask(self, subtask_idx):
+        first_upper_idx = self._get_rotate_first_upper_search_state_index()
+        return bool(first_upper_idx is not None and len(self._get_subtask_upper_search_target_keys(subtask_idx)) > 0)
+
+    def _has_unfinished_lower_search_phase(self):
+        first_upper_idx = self._get_rotate_first_upper_search_state_index()
+        if first_upper_idx is None:
+            return False
+        state_idx = getattr(self, "search_cursor_state_index", None)
+        if state_idx is None:
+            return True
+        try:
+            return bool(int(state_idx) < int(first_upper_idx))
+        except (TypeError, ValueError):
+            return True
+
+    def _clear_rotate_target_search_history(self, object_key):
+        key = str(object_key)
+        state = self.discovered_objects.get(key, None)
+        if state is not None:
+            state.update(
+                {
+                    "discovered": False,
+                    "visible_now": False,
+                    "first_seen_frame": None,
+                    "last_seen_frame": None,
+                    "last_seen_subtask": 0,
+                    "last_seen_stage": 0,
+                    "last_uv_norm": None,
+                    "last_world_point": None,
+                }
+            )
+        if key in self.visible_objects:
+            self.visible_objects[key] = False
+
+    def _prepare_subtask_rotate_search(self, subtask_idx):
+        return None
+
+    def _after_rotate_visibility_refresh(self, visibility_map):
+        return None
+
+    def _get_layer_fixed_head_joint2_target(self, layer_name):
+        layer_name = self._normalize_layer(layer_name)
+        if layer_name == "upper":
+            return float(
+                getattr(
+                    self,
+                    "PLACE_TARGET_UPPER_HEAD_JOINT2_TARGET",
+                    getattr(self, "PLACE_PLATE_UPPER_HEAD_JOINT2_TARGET", getattr(self, "rotate_stage1_upper_head_joint2_rad", 0.8)),
+                )
+            )
+
+        lower_target = getattr(
+            self,
+            "PLACE_TARGET_LOWER_HEAD_JOINT2_TARGET",
+            getattr(self, "PLACE_PLATE_LOWER_HEAD_JOINT2_TARGET", None),
+        )
+        if lower_target is None:
+            head_home = np.array(getattr(self.robot, "head_homestate", []), dtype=np.float64).reshape(-1)
+            head_joint2_idx = self._get_head_joint2_index()
+            if head_joint2_idx is not None and head_home.shape[0] > head_joint2_idx:
+                lower_target = head_home[head_joint2_idx]
+            else:
+                head_now = self._get_head_joint_state_now()
+                lower_target = 0.0 if head_now is None else head_now[min(1, head_now.shape[0] - 1)]
+        return float(lower_target)
+
+    def _maybe_reset_head_to_home_for_subtask(self, subtask_idx, prev_subtask_idx=None):
+        return True
+
+    def _get_block_spawn_avoid_pose_lst(self, layer_name):
+        layer_name = self._normalize_layer(layer_name)
+        target_layer = self._get_target_layer()
+        if layer_name != target_layer:
+            return []
+        return [self._get_target_anchor_pose(target_layer)]
+
+    def _get_plate_place_slot_offsets(self):
+        block_count = int(getattr(self, "block_count", len(getattr(self, "block_keys", [])) or 1))
+        raw_offsets = getattr(self, "PLATE_PLACE_SLOT_OFFSETS", {}) or {}
+        if np.isscalar(raw_offsets):
+            spacing = max(float(raw_offsets), 0.0)
+            if block_count <= 1 or spacing <= 1e-9:
+                return [(0.0, 0.0)]
+            if block_count == 2:
+                return [(spacing, 0.0), (-spacing, 0.0)]
+            angles = np.linspace(0.0, 2.0 * np.pi, block_count, endpoint=False)
+            return [(float(spacing * np.cos(angle)), float(spacing * np.sin(angle))) for angle in angles]
+
+        slot_offset_map = dict(raw_offsets)
+        slot_offsets = slot_offset_map.get(block_count, None)
+        if slot_offsets is None and len(slot_offset_map) > 0:
+            nearest_key = min(slot_offset_map.keys(), key=lambda key: abs(int(key) - block_count))
+            slot_offsets = slot_offset_map[nearest_key]
+        if slot_offsets is None or len(slot_offsets) == 0:
+            return [(0.0, 0.0)]
+        return [(float(offset[0]), float(offset[1])) for offset in slot_offsets]
+
+    def _get_plate_place_target_pose(self, block_key=None):
+        object_registry = getattr(self, "object_registry", {}) or {}
+        target_object = object_registry.get(self._get_target_object_key(), None)
+        if target_object is None:
+            target_object = self._get_target_object()
+        functional_point_id = int(getattr(self, "TARGET_FUNCTIONAL_POINT_ID", 0)) if self._uses_target_actor() else 0
+        if target_object is not None:
+            try:
+                target_pose = target_object.get_functional_point(functional_point_id, "pose")
+                target_pose = target_pose.p.tolist() + target_pose.q.tolist()
+            except Exception:
+                try:
+                    target_pose = target_object.get_pose()
+                    target_pose = target_pose.p.tolist() + target_pose.q.tolist()
+                except Exception:
+                    target_pose = list(getattr(self, "plate_target_pose", [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]))
+        else:
+            target_pose = list(getattr(self, "plate_target_pose", [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]))
+
+        target_pose = np.array(target_pose, dtype=np.float64).reshape(-1)
+        slot_offsets = self._get_plate_place_slot_offsets()
+        slot_idx = 0 if block_key is None else self._get_plate_place_slot_index(block_key)
+        radial_offset, tangential_offset = slot_offsets[int(slot_idx) % len(slot_offsets)]
+
+        try:
+            target_cyl = world_to_robot(target_pose[:3].tolist(), self.robot_root_xy, self.robot_yaw)
+            target_theta = float(target_cyl[1])
+        except Exception:
+            target_theta = float(np.deg2rad(getattr(self, "plate_cyl_theta_deg", 0.0)))
+
+        world_theta = float(self.robot_yaw) + target_theta
+        radial_xy = np.array([np.cos(world_theta), np.sin(world_theta)], dtype=np.float64)
+        tangential_xy = np.array([-np.sin(world_theta), np.cos(world_theta)], dtype=np.float64)
+        target_pose[:2] += radial_offset * radial_xy + tangential_offset * tangential_xy
+        return target_pose.tolist()
+
+    def _get_target_place_target_pose(self, block_key=None):
+        return self._get_plate_place_target_pose(block_key)
+
+    def load_actors(self):
+        self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
+        self._plate_theta_deg_cache = {}
+        self._target_theta_deg_jitter_cache = {}
+        self._locked_pick_arm_tag = None
+        self._apply_task_initial_homestate()
+
+        self.block_count = self._get_block_count()
+        self.block_layers = list(self._get_block_layers())
+        self.blocks = []
+        self.block_keys = []
+        self.block_sizes = []
+        self.block_poses = []
+        self.block_colors = self._sample_block_colors(self.block_count)
+        existing_pose_lst = []
+        for block_idx in range(self.block_count):
+            block_key = f"A{block_idx}"
+            block_layer = self.block_layers[block_idx]
+            block_size = float(np.random.uniform(*self.BLOCK_SIZE_RANGE))
+            avoid_pose_lst = self._get_block_spawn_avoid_pose_lst(block_layer)
+            block_pose = self._sample_block_pose(
+                layer_name=block_layer,
+                size=block_size,
+                existing_pose_lst=existing_pose_lst,
+                avoid_pose_lst=avoid_pose_lst,
+                avoid_min_dist_sq=self.PLATE_BLOCK_SPAWN_MIN_DIST_SQ,
+            )
+            block = create_box(
+                scene=self,
+                pose=block_pose,
+                half_size=(block_size, block_size, block_size),
+                color=self.block_colors[block_idx],
+                name=f"block_{block_idx}",
+            )
+            block.set_mass(0.02)
+            self.blocks.append(block)
+            self.block_keys.append(block_key)
+            self.block_sizes.append(block_size)
+            self.block_poses.append(block_pose)
+            existing_pose_lst.append(block_pose)
+
+        self.block = self.blocks[0]
+        self.block_size = self.block_sizes[0]
+        self.block_pose = self.block_poses[0]
+
+        self._create_target_anchor()
+        self.plate_place_slot_assignments = {}
+        self.object_layers = {key: layer for key, layer in zip(self.block_keys, self.block_layers)}
+        self.object_layers[self._get_target_object_key()] = self._get_target_layer()
+        for block in self.blocks:
+            self.add_prohibit_area(block, padding=0.05)
+        self.add_prohibit_area(self._get_target_object(), padding=self._get_target_padding())
+        self._configure_rotate_subtask_plan()
+        self._prime_known_target_cache()
+
+    def _prepare_target_subtask(self, subtask_idx, scan_z):
+        return self.search_and_focus_rotate_subtask(
+            subtask_idx,
+            scan_r=self.SCAN_R,
+            scan_z=scan_z,
+            joint_name_prefer=self.SCAN_JOINT_NAME,
+        )
+
+    def _prepare_plate_subtask(self, subtask_idx, scan_z):
+        return self._prepare_target_subtask(subtask_idx, scan_z)
+
+    def _get_target_focus_world_point(self, target_key):
+        obj = self.object_registry.get(str(target_key), None)
+        if obj is not None:
+            try:
+                return np.array(self._resolve_object_world_point(obj=obj), dtype=np.float64).reshape(3)
+            except Exception:
+                pass
+            try:
+                functional_point_id = int(getattr(self, "TARGET_FUNCTIONAL_POINT_ID", 0)) if self._uses_target_actor() else 0
+                return np.array(obj.get_functional_point(functional_point_id, "pose").p, dtype=np.float64).reshape(3)
+            except Exception:
+                pass
+        return np.array(getattr(self, "plate_target_pose", [0.0, 0.0, 0.0])[:3], dtype=np.float64).reshape(3)
+
+    def _get_plate_focus_world_point(self, plate_key):
+        return self._get_target_focus_world_point(plate_key)
+
+    def _move_head_joint2_for_target_focus(self, target_key, subtask_idx):
+        head_joint2_name = getattr(self, "rotate_head_joint2_name", "astribot_head_joint_2")
+        target_layer = getattr(self, "object_layers", {}).get(str(target_key), None)
+        if target_layer is None:
+            target_layer = self._get_target_layer()
+        target_layer = self._normalize_layer(target_layer)
+        subtask_def = self._get_rotate_subtask_def(subtask_idx) or {}
+        self._set_rotate_subtask_state(
+            subtask_idx=subtask_idx,
+            stage=2,
+            focus_object_key=str(target_key),
+            search_target_keys=[str(k) for k in subtask_def.get("search_target_keys", [target_key])],
+            action_target_keys=[str(k) for k in subtask_def.get("action_target_keys", [target_key])],
+            info_complete=1,
+            camera_mode=2,
+            camera_target_theta=float(self._get_current_scan_camera_theta() or 0.0),
+        )
+        if bool(getattr(self, "fixed_layer_head_joint2_only", False)):
+            if not self._ensure_rotate_search_head_layer(target_layer, head_joint2_name=head_joint2_name):
+                return False
+            self._refresh_rotate_discovery_from_current_view()
+            return bool(self.visible_objects.get(str(target_key), False))
+
+        head_joint2_idx = self._get_head_joint2_index(head_joint2_name=head_joint2_name)
+        head_now = self._get_head_joint_state_now()
+        if head_joint2_idx is None or head_now is None:
+            self._refresh_rotate_discovery_from_current_view()
+            return bool(self.visible_objects.get(str(target_key), False))
+
+        head_target = np.array(head_now, dtype=np.float64)
+        target_joint2 = self._get_layer_fixed_head_joint2_target(target_layer)
+        solve_res = None
+        world_point = self._get_target_focus_world_point(target_key)
+        solve_res = self.solve_head_lookat_joint_target(world_point=world_point)
+        if solve_res is not None:
+            solved_head_target = np.array(solve_res.get("target", []), dtype=np.float64).reshape(-1)
+            if solved_head_target.shape[0] > head_joint2_idx:
+                if target_layer == "upper":
+                    target_joint2 = min(float(solved_head_target[head_joint2_idx]), target_joint2)
+                else:
+                    target_joint2 = float(solved_head_target[head_joint2_idx])
+        head_target[head_joint2_idx] = target_joint2
+        clipped_target = self._clip_head_target_to_limits(head_target, default_now=head_now)
+        if clipped_target is None:
+            clipped_target = head_target
+
+        if not self.move_head_to(
+            clipped_target,
+            settle_steps=getattr(self, "rotate_stage1_head_settle_steps", 12),
+            save_freq=-1,
+            enforce_lower_lock=False,
+        ):
+            return False
+        self._refresh_rotate_discovery_from_current_view()
+        return bool(self.visible_objects.get(str(target_key), False))
+
+    def _move_head_joint2_for_plate_focus(self, plate_key, subtask_idx):
+        return self._move_head_joint2_for_target_focus(plate_key, subtask_idx)
+
+    def _focus_target_before_place(self, subtask_idx, target_key):
+        target_key = str(target_key or self._get_target_object_key())
+        if bool(getattr(self, "EXTRA_ALIGN_TARGET_BEFORE_PLACE", False)):
+            subtask_def = self._get_rotate_subtask_def(subtask_idx) or {}
+            self._align_rotate_registry_target_with_torso_and_head_joint2(
+                target_key,
+                subtask_idx=subtask_idx,
+                target_keys=[str(k) for k in subtask_def.get("search_target_keys", [target_key])],
+                action_target_keys=[str(k) for k in subtask_def.get("action_target_keys", [target_key])],
+                joint_name_prefer=self.SCAN_JOINT_NAME,
+                head_joint2_name=getattr(self, "rotate_head_joint2_name", "astribot_head_joint_2"),
+            )
+        target_visible = self._move_head_joint2_for_target_focus(target_key, subtask_idx)
+        require_visible = getattr(
+            self,
+            "REQUIRE_TARGET_VISIBLE_BEFORE_PLACE",
+            getattr(self, "REQUIRE_PLATE_VISIBLE_BEFORE_PLACE", True),
+        )
+        if bool(require_visible) and not target_visible:
+            self.plan_success = False
+            return False
+        return True
+
+    def _focus_plate_before_place(self, subtask_idx, plate_key):
+        return self._focus_target_before_place(subtask_idx, plate_key)
+
+    def _place_block_into_target(self, arm_tag, subtask_idx, block_key, focus_object_key):
+        return self._place_block_into_plate(arm_tag, subtask_idx, block_key, focus_object_key)
+
+    def _build_info(self, arm_tag):
+        if self._uses_target_actor():
+            target_label = f"{self.target_name}/base{self.target_id}"
+            block_label = "green block"
+        else:
+            target_label = f"003_plate/base{self.PLATE_MODEL_ID}"
+            block_label = "green block" if len(getattr(self, "block_keys", [])) <= 1 else "green blocks"
+        return {
+            "{A}": block_label,
+            "{B}": target_label,
+            "{a}": str(arm_tag),
+        }
+
+    def play_once(self):
+        scan_z = float(self.SCAN_Z_BIAS + self.table_z_bias)
+        last_arm_tag = ArmTag("left")
+        remaining_block_keys = [str(key) for key in self.block_keys]
+        prev_subtask_idx = None
+
+        for block_idx in range(len(self.block_keys)):
+            pick_subtask_idx = 2 * block_idx + 1
+            place_subtask_idx = pick_subtask_idx + 1
+            self._prepare_dynamic_pick_subtask(pick_subtask_idx, remaining_block_keys)
+
+            self._prepare_subtask_rotate_search(pick_subtask_idx)
+            block_key = self.search_and_focus_rotate_subtask(
+                pick_subtask_idx,
+                scan_r=self.SCAN_R,
+                scan_z=scan_z,
+                joint_name_prefer=self.SCAN_JOINT_NAME,
+            )
+            if block_key is None:
+                self.plan_success = False
+                fallback_key = remaining_block_keys[0] if len(remaining_block_keys) > 0 else self.block_keys[0]
+                fallback_arm = self._get_object_arm_tag(self.object_registry[fallback_key])
+                self.info["info"] = self._build_info(fallback_arm)
+                return self.info
+            if block_key not in remaining_block_keys:
+                self.plan_success = False
+                self.info["info"] = self._build_info(last_arm_tag)
+                return self.info
+
+            arm_tag = self._pick_block(pick_subtask_idx, block_key)
+            last_arm_tag = arm_tag
+            if not self.plan_success:
+                self.info["info"] = self._build_info(arm_tag)
+                return self.info
+            prev_subtask_idx = pick_subtask_idx
+
+            self._prepare_dynamic_place_subtask(place_subtask_idx, block_key)
+            self._prepare_subtask_rotate_search(place_subtask_idx)
+            target_key = self._prepare_target_subtask(place_subtask_idx, scan_z)
+            if target_key is None:
+                self.plan_success = False
+                self.info["info"] = self._build_info(arm_tag)
+                return self.info
+            if not self._focus_target_before_place(place_subtask_idx, target_key):
+                self.info["info"] = self._build_info(arm_tag)
+                return self.info
+
+            self._place_block_into_target(arm_tag, place_subtask_idx, block_key, target_key)
+            if not self.plan_success:
+                self.info["info"] = self._build_info(arm_tag)
+                return self.info
+            prev_subtask_idx = place_subtask_idx
+            remaining_block_keys.remove(block_key)
+
+        self.info["info"] = self._build_info(last_arm_tag)
+        return self.info
+
+    def check_success(self):
+        gripper_open = self.is_left_gripper_open() and self.is_right_gripper_open()
+        target_object = self._get_target_object()
+        if target_object is None:
+            return False
+
+        if self._uses_target_actor():
+            block = self.blocks[0] if len(getattr(self, "blocks", [])) > 0 else getattr(self, "block", None)
+            if block is None:
+                return False
+            block_pose = np.array(block.get_functional_point(0, "pose").p, dtype=np.float64).reshape(3)
+            target_pose = np.array(
+                target_object.get_functional_point(int(getattr(self, "TARGET_FUNCTIONAL_POINT_ID", 0)), "pose").p,
+                dtype=np.float64,
+            ).reshape(3)
+            xy_ok = float(np.linalg.norm(block_pose[:2] - target_pose[:2])) < float(self.SUCCESS_XY_TOL)
+            z_ok = float(abs(block_pose[2] - target_pose[2])) < float(self.SUCCESS_Z_TOL)
+            on_target = self.check_actors_contact(block.get_name(), target_object.get_name())
+            return bool(gripper_open and xy_ok and z_ok and on_target)
+
+        target_pose = np.array(target_object.get_functional_point(0, "pose").p, dtype=np.float64).reshape(3)
+        blocks = getattr(self, "blocks", None)
+        if blocks is None:
+            blocks = [self.block]
+        blocks_in_plate = all(
+            np.all(
+                np.abs(np.array(block.get_functional_point(0, "pose").p, dtype=np.float64).reshape(3) - target_pose)
+                < self.SUCCESS_EPS
+            )
+            for block in blocks
+        )
+        return bool(blocks_in_plate and gripper_open)
 
     def _build_direct_release_pose_candidates(self, arm_tag, block_key=None):
         plate_layer = getattr(self, "object_layers", {}).get("B", None)
@@ -6598,6 +7339,11 @@ class PutBlockFanDoubleMixin:
                 theta_half = float(getattr(self, "rotate_object_theta_half_rad", np.deg2rad(45.0))) * 0.8
             thetalim = [-float(theta_half), float(theta_half)]
 
+        if "theta_min_deg" in block_spec or "theta_max_deg" in block_spec:
+            theta_min = float(block_spec.get("theta_min_deg", np.rad2deg(thetalim[0])))
+            theta_max = float(block_spec.get("theta_max_deg", np.rad2deg(thetalim[1])))
+            thetalim = [float(np.deg2rad(theta_min)), float(np.deg2rad(theta_max))]
+
         return {
             "layer": layer_name,
             "inner_radius": inner_radius,
@@ -6788,7 +7534,13 @@ class PutBlockFanDoubleMixin:
     def _pick_block(self, subtask_idx, block_key):
         block_key = str(block_key)
         block = self.object_registry[block_key]
-        arm_tag = self._get_object_arm_tag(block)
+        locked_arm = getattr(self, "_locked_pick_arm_tag", None)
+        if bool(getattr(self, "LOCK_SELECTED_ARM_AFTER_FIRST_PICK", True)) and locked_arm is not None:
+            arm_tag = ArmTag(locked_arm)
+        else:
+            arm_tag = self._get_object_arm_tag(block)
+            if bool(getattr(self, "LOCK_SELECTED_ARM_AFTER_FIRST_PICK", True)):
+                self._locked_pick_arm_tag = str(arm_tag)
         self.enter_rotate_action_stage(subtask_idx, focus_object_key=block_key)
         block_layer = self.object_layers.get(block_key, "lower")
         if block_layer == "upper":
