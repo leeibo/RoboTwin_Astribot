@@ -6,6 +6,9 @@ import numpy as np
 
 class place_container_plate_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
+    OBJECT_RLIM = (0.38, 0.47)
+    OBJECT_MIN_DISTANCE = 0.15
+    OBJECT_SAMPLE_TRIES = 120
 
     def check_success(self):
         container_pose = self.container.get_pose().p
@@ -52,20 +55,22 @@ class place_container_plate_rotate_view(Base_Task):
         kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(**kwags)
 
+    def _sample_object_pose(self, z=0.741):
+        return rand_pose_cyl(
+            rlim=list(self.OBJECT_RLIM),
+            thetalim=rotate_theta_center(self),
+            zlim=[float(z), float(z)],
+            robot_root_xy=self.robot_root_xy,
+            robot_yaw_rad=self.robot_yaw,
+            qpos=[0.5, 0.5, 0.5, 0.5],
+            rotate_rand=False,
+        )
+
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         while True:
-            container_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
-                thetalim=rotate_theta_center(self),
-
-                zlim=[0.741, 0.741],
-                robot_root_xy=self.robot_root_xy,
-                robot_yaw_rad=self.robot_yaw,
-                qpos=[0.5, 0.5, 0.5, 0.5],
-                rotate_rand=False,
-            )
+            container_pose = self._sample_object_pose()
             if abs(container_pose.p[0]) < 0.2:
                 continue
             break
@@ -81,19 +86,13 @@ class place_container_plate_rotate_view(Base_Task):
             convex=True,
         )
 
-        x = 0.05 if self.container.get_pose().p[0] > 0 else -0.05
         self.plate_id = 0
-        plate_pose = rand_pose_cyl(
-            rlim=[0.43, 0.5],
-            thetalim=rotate_theta_center(self),
-
-            zlim=[0.741, 0.741],
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            qpos=[0.5, 0.5, 0.5, 0.5],
-            rotate_rand=False,
-        )
-        plate_pose.set_p([x, float(plate_pose.p[1]), float(plate_pose.p[2])])
+        for _ in range(int(self.OBJECT_SAMPLE_TRIES)):
+            plate_pose = self._sample_object_pose()
+            if float(np.linalg.norm(container_pose.p[:2] - plate_pose.p[:2])) >= float(self.OBJECT_MIN_DISTANCE):
+                break
+        else:
+            raise RuntimeError("Failed to sample non-overlapping container and plate poses")
         self.plate = create_actor(
             self,
             pose=plate_pose,
@@ -157,8 +156,8 @@ class place_container_plate_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"003_plate/base{self.plate_id}",
-            "{B}": f"{self.actor_name}/base{self.container_id}",
+            "{A}": "plate",
+            "{B}": self._natural_model_label(self.actor_name, fallback="container"),
             "{a}": str(arm_tag),
         }
         return self.info

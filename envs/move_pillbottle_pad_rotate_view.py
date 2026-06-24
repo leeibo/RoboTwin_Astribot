@@ -161,7 +161,7 @@ class move_pillbottle_pad_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"080_pillbottle/base{self.pillbottle_id}",
+            "{A}": "pill bottle",
             "{a}": str(arm_tag),
         }
         return self.info

@@ -162,5 +162,5 @@ class place_empty_cup_rotate_view(Base_Task):
         self.move(self.move_by_displacement(arm_tag, z=0.05, move_axis="arm"))
         self.complete_rotate_subtask(2, carried_after=[])
 
-        self.info["info"] = {"{A}": "021_cup/base0", "{B}": "019_coaster/base0"}
+        self.info["info"] = {"{A}": "empty cup", "{B}": "coaster"}
         return self.info

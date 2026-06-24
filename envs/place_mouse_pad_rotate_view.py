@@ -157,7 +157,7 @@ class place_mouse_pad_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"047_mouse/base{self.mouse_id}",
+            "{A}": "mouse",
             "{B}": f"{self.color_name}",
             "{a}": str(arm_tag),
         }

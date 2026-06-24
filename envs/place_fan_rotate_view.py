@@ -167,7 +167,7 @@ class place_fan_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"099_fan/base{self.fan_id}",
+            "{A}": "fan",
             "{B}": self.color_name,
             "{a}": str(arm_tag),
         }

@@ -105,16 +105,33 @@ def get_all_cluttered_objects():
 cluttered_objects_info, cluttered_objects_list, same_obj = get_all_cluttered_objects()
 
 
-def get_available_cluttered_objects(entity_on_scene: list):
+def expand_clutter_model_names(model_names):
+    global same_obj
+
+    expanded = set()
+    for model_name in model_names or []:
+        if model_name is None:
+            continue
+        model_name = str(model_name)
+        if not model_name:
+            continue
+        expanded.add(model_name)
+        if same_obj.get(model_name) is not None:
+            expanded.update(str(item) for item in same_obj[model_name])
+    return expanded
+
+
+def get_available_cluttered_objects(entity_on_scene: list, include_models=None, exclude_models=None):
     global cluttered_objects_info, cluttered_objects_list, same_obj
 
-    model_in_use = []
-    for entity_name in entity_on_scene:
-        if same_obj.get(entity_name) is not None:
-            model_in_use += same_obj[entity_name]
-        model_in_use.append(entity_name)
+    model_in_use = expand_clutter_model_names(entity_on_scene)
+    model_in_use.update(expand_clutter_model_names(exclude_models))
 
-    available_models = set(cluttered_objects_list) - set(model_in_use)
+    if include_models is None:
+        available_models = set(cluttered_objects_list)
+    else:
+        available_models = set(cluttered_objects_list).intersection(expand_clutter_model_names(include_models))
+    available_models -= model_in_use
     available_models = list(available_models)
     available_models.sort()
     return available_models, cluttered_objects_info

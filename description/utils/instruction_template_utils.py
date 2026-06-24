@@ -59,14 +59,20 @@ def filter_instructions(
     }
 
     filtered = []
+    available_placeholders = set(stripped_episode_params.keys())
     for instruction in candidates:
         placeholders = set(extract_placeholders(instruction))
-        if placeholders == set(stripped_episode_params.keys()):
+        # A template is valid as long as every placeholder it mentions can be
+        # resolved for this episode.  Many natural instructions intentionally
+        # omit some object/arm placeholders (for example "inspect the blocks"
+        # may not mention the pads explicitly), so requiring exact equality
+        # with all episode params incorrectly drops otherwise valid templates.
+        if placeholders.issubset(available_placeholders):
             filtered.append(str(instruction))
             continue
         if (
             arm_params
-            and placeholders.union(arm_params) == set(stripped_episode_params.keys())
+            and placeholders.difference(arm_params).issubset(available_placeholders)
             and not arm_params.intersection(placeholders)
         ):
             filtered.append(str(instruction))
@@ -156,7 +162,7 @@ def _trim_episode_params_for_bank(bank: Dict[str, List[str]], episode_params: Op
             used_placeholders.update(extract_placeholders(instruction))
 
     if len(used_placeholders) == 0:
-        return dict(episode_params or {})
+        return {}
 
     trimmed = {}
     for key in used_placeholders:

@@ -91,7 +91,7 @@ class place_object_stand_rotate_view(Base_Task):
 
         while True:
             object_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.4, 0.45],
                 thetalim=theta_obj_lim,
 
                 zlim=[0.741, 0.741],
@@ -108,7 +108,7 @@ class place_object_stand_rotate_view(Base_Task):
 
         while True:
             displaystand_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.45, 0.45],
                 thetalim=theta_stand_lim,
 
                 zlim=[0.741, 0.741],
@@ -160,7 +160,7 @@ class place_object_stand_rotate_view(Base_Task):
         arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
         self.enter_rotate_action_stage(1, focus_object_key=(object_key or "A"))
-        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
+        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1,gripper_pos=0.1))
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1))
         self.complete_rotate_subtask(1, carried_after=["A"])
@@ -179,15 +179,15 @@ class place_object_stand_rotate_view(Base_Task):
                 arm_tag=arm_tag,
                 target_pose=displaystand_pose,
                 constrain="free",
-                pre_dis=0.07,
+                pre_dis=0.05
             )
         )
         self._set_carried_object_keys([])
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"{self.selected_modelname}/base{self.selected_model_id}",
-            "{B}": f"074_displaystand/base{self.displaystand_id}",
+            "{A}": self._natural_model_label(self.selected_modelname),
+            "{B}": "display stand",
             "{a}": str(arm_tag),
         }
         return self.info

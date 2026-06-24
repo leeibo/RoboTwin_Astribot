@@ -9,7 +9,7 @@ import numpy as np
 
 class move_stapler_pad_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
-    STAPLER_RLIM = (0.42, 0.50)
+    STAPLER_RLIM = (0.40, 0.47)
     PAD_RLIM = (0.32, 0.42)
     STAPLER_MIN_ABS_THETA = 0.2
     PAD_MIN_DISTANCE = 0.1
@@ -167,7 +167,7 @@ class move_stapler_pad_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"048_stapler/base{self.stapler_id}",
+            "{A}": "stapler",
             "{B}": self.color_name,
             "{a}": str(arm_tag),
         }

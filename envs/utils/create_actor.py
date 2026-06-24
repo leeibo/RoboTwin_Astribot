@@ -670,9 +670,12 @@ def create_fan_double_table(
     upper_theta_start = float(np.deg2rad(upper_theta_start_deg))
     upper_theta_end = float(np.deg2rad(upper_theta_end_deg))
     upper_angle_rad = max(upper_theta_end - upper_theta_start, 1e-6)
-    if support_theta_deg is None:
-        support_theta_deg = upper_theta_start_deg - 10.0
-    support_theta = float(np.deg2rad(float(support_theta_deg)))
+    # Keep the white support column tied to the upper tabletop instead of
+    # allowing it to be independently distributed.  The argument is retained
+    # for backward-compatible call sites, but the task geometry requires the
+    # support to sit at the center of the upper-layer angular span.
+    support_theta_deg = 0.5 * (upper_theta_start_deg + upper_theta_end_deg)
+    support_theta = float(np.deg2rad(support_theta_deg))
     layer_gap = max(float(layer_gap), thickness + 0.05)
     table_mat = _create_table_visual_material(texture_id=texture_id, color=color)
 

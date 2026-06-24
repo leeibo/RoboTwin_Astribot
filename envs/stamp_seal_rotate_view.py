@@ -184,7 +184,7 @@ class stamp_seal_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"100_seal/base{self.seal_id}",
+            "{A}": "seal",
             "{B}": f"{self.color_name}",
             "{a}": str(arm_tag),
         }

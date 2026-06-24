@@ -53,10 +53,126 @@ def _parse_bool_config(value, default=False):
     return bool(value)
 
 
+TASK_USED_CLUTTER_OBJECT_NAMES = {
+    "001_bottle",
+    "003_plate",
+    "004_fluted-block",
+    "015_laptop",
+    "019_coaster",
+    "020_hammer",
+    "021_cup",
+    "036_cabinet",
+    "037_box",
+    "041_shoe",
+    "042_wooden_box",
+    "046_alarm-clock",
+    "047_mouse",
+    "048_stapler",
+    "050_bell",
+    "056_switch",
+    "057_toycar",
+    "062_plasticbox",
+    "071_can",
+    "071_cans",
+    "072_electronicscale",
+    "073_rubikscube",
+    "074_displaystand",
+    "075_bread",
+    "076_breadbasket",
+    "077_phone",
+    "079_remotecontrol",
+    "080_pillbottle",
+    "081_playingcards",
+    "086_woodenblock",
+    "099_fan",
+    "100_seal",
+    "106_skillet",
+    "107_soap",
+    "108_block",
+    "110_basket",
+    "112_tea-box",
+    "113_coffee-box",
+    "can",
+    "clock",
+    "hammer",
+    "plate",
+    "slipper",
+    "sneaker",
+    "toy_car",
+}
+
+
+LABEL_TO_CLUTTER_OBJECT_NAMES = (
+    ("alarm", ("046_alarm-clock", "clock")),
+    ("basket", ("076_breadbasket", "110_basket")),
+    ("bell", ("050_bell", "111_callbell")),
+    ("block", ("004_fluted-block", "086_woodenblock", "108_block")),
+    ("bottle", ("001_bottle", "114_bottle", "bottle")),
+    ("bread", ("054_baguette", "075_bread")),
+    ("cabinet", ("036_cabinet",)),
+    ("can", ("071_can", "can")),
+    ("coaster", ("019_coaster",)),
+    ("cup", ("021_cup", "022_cup-with-liquid")),
+    ("displaystand", ("074_displaystand", "078_phonestand")),
+    ("fan", ("099_fan",)),
+    ("hammer", ("020_hammer", "hammer")),
+    ("laptop", ("015_laptop",)),
+    ("mouse", ("047_mouse",)),
+    ("pad", ("003_plate",)),
+    ("pill", ("080_pillbottle",)),
+    ("plate", ("003_plate", "plate")),
+    ("plasticbox", ("062_plasticbox",)),
+    ("rubik", ("073_rubikscube",)),
+    ("scale", ("072_electronicscale",)),
+    ("seal", ("100_seal",)),
+    ("shoe", ("041_shoe", "slipper", "sneaker")),
+    ("skillet", ("106_skillet",)),
+    ("stapler", ("048_stapler",)),
+    ("switch", ("056_switch",)),
+)
+
+NATURAL_MODEL_LABELS = {
+    "001_bottle": "bottle",
+    "003_plate": "plate",
+    "015_laptop": "laptop",
+    "019_coaster": "coaster",
+    "020_hammer": "hammer",
+    "021_cup": "empty cup",
+    "036_cabinet": "cabinet",
+    "041_shoe": "shoe",
+    "046_alarm-clock": "alarm clock",
+    "047_mouse": "mouse",
+    "048_stapler": "stapler",
+    "050_bell": "bell",
+    "056_switch": "switch",
+    "057_toycar": "toy car",
+    "062_plasticbox": "plastic box",
+    "071_can": "can",
+    "072_electronicscale": "electronic scale",
+    "073_rubikscube": "rubik's cube",
+    "074_displaystand": "display stand",
+    "076_breadbasket": "bread basket",
+    "080_pillbottle": "pill bottle",
+    "099_fan": "fan",
+    "100_seal": "seal",
+}
+
+
 class Base_Task(gym.Env):
 
     def __init__(self):
         pass
+
+    @staticmethod
+    def _natural_model_label(modelname, fallback=None):
+        modelname = "" if modelname is None else str(modelname)
+        if modelname in NATURAL_MODEL_LABELS:
+            return NATURAL_MODEL_LABELS[modelname]
+        if fallback is not None and str(fallback).strip():
+            return str(fallback).strip()
+        label = re.sub(r"^\d+_", "", modelname)
+        label = label.replace("_", " ").replace("-", " ").strip()
+        return label or "object"
 
     # =========================================================== Init Task Env ===========================================================
     def _init_task_env_(self, table_xy_bias=[0, 0], table_height_bias=0, **kwags):
@@ -86,6 +202,7 @@ class Base_Task(gym.Env):
         self.render_freq = kwags.get("render_freq", 10)
         self.data_type = kwags.get("data_type", None)
         self.save_data = kwags.get("save_data", False)
+        self.save_auxiliary_videos = _parse_bool_config(kwags.get("save_auxiliary_videos", True), default=True)
         self.dual_arm = kwags.get("dual_arm", True)
         self.eval_mode = kwags.get("eval_mode", False)
 
@@ -129,8 +246,31 @@ class Base_Task(gym.Env):
         self.prohibited_area = list()  # [x_min, y_min, x_max, y_max]
         self.record_cluttered_objects = list()  # record cluttered objects info
         self.rotate_cluttered_numbers = int(kwags.get("rotate_cluttered_numbers", kwags.get("cluttered_numbers", 10)))
+        self.rotate_upper_cluttered_numbers = int(
+            kwags.get(
+                "rotate_upper_cluttered_numbers",
+                kwags.get(
+                    "rotate_cluttered_upper_numbers",
+                    random_setting.get("rotate_upper_cluttered_numbers", 0),
+                ),
+            )
+        )
         self.rotate_clutter_is_static = bool(
             kwags.get("rotate_clutter_is_static", random_setting.get("rotate_clutter_is_static", False))
+        )
+        self.rotate_clutter_object_pool = str(
+            kwags.get(
+                "rotate_clutter_object_pool",
+                random_setting.get("rotate_clutter_object_pool", "all"),
+            )
+        ).strip().lower()
+        self.rotate_clutter_include_models = kwags.get(
+            "rotate_clutter_include_models",
+            random_setting.get("rotate_clutter_include_models", None),
+        )
+        self.rotate_clutter_exclude_models = kwags.get(
+            "rotate_clutter_exclude_models",
+            random_setting.get("rotate_clutter_exclude_models", None),
         )
 
         self.eval_success = False
@@ -256,7 +396,13 @@ class Base_Task(gym.Env):
         self.load_actors()
 
         if self.cluttered_table:
-            self.get_cluttered_table(cluttered_numbers=self.rotate_cluttered_numbers)
+            self.get_cluttered_table(cluttered_numbers=self.rotate_cluttered_numbers, layer="lower")
+            if str(getattr(self, "rotate_table_shape", "")).lower() == "fan_double":
+                self.get_cluttered_table(
+                    cluttered_numbers=self.rotate_upper_cluttered_numbers,
+                    layer="upper",
+                    reset_record=False,
+                )
 
         is_stable, unstable_list = self.check_stable()
         if not is_stable:
@@ -874,10 +1020,13 @@ class Base_Task(gym.Env):
                 upper_theta_offset_deg = float(kwargs.get("fan_double_upper_theta_offset_deg", 0.0))
                 upper_theta_start_deg = float(kwargs.get("fan_double_upper_theta_start_deg", -30.0))
                 upper_theta_end_deg = float(kwargs.get("fan_double_upper_theta_end_deg", 30.0))
-                support_theta_deg = float(kwargs.get("fan_double_support_theta_deg", upper_theta_start_deg - 10.0))
                 upper_theta_start_deg += upper_theta_offset_deg
                 upper_theta_end_deg += upper_theta_offset_deg
-                support_theta_deg += upper_theta_offset_deg
+                # The white support column belongs to the upper tabletop: keep
+                # it centered under that second-layer sector instead of
+                # treating the column and tabletop as independently placed
+                # assets.
+                support_theta_deg = 0.5 * (upper_theta_start_deg + upper_theta_end_deg)
                 self.rotate_fan_double_upper_theta_start_world_rad = float(
                     np.deg2rad(fan_center_yaw_deg + upper_theta_start_deg)
                 )
@@ -958,13 +1107,154 @@ class Base_Task(gym.Env):
                 texture_id=self.table_texture,
             )
 
-    def get_cluttered_table(self, cluttered_numbers=10, xlim=[-0.59, 0.59], ylim=[-0.34, 0.34], zlim=[0.741]):
-        self.record_cluttered_objects = []  # record cluttered objects
+    def _get_configured_clutter_model_names(self, key):
+        value = getattr(self, key, None)
+        if value is None:
+            return set()
+        if isinstance(value, str):
+            return {item.strip() for item in value.split(",") if item.strip()}
+        if isinstance(value, (list, tuple, set)):
+            return {str(item).strip() for item in value if str(item).strip()}
+        return set()
 
-        xlim[0] += self.table_xy_bias[0]
-        xlim[1] += self.table_xy_bias[0]
-        ylim[0] += self.table_xy_bias[1]
-        ylim[1] += self.table_xy_bias[1]
+    def _get_current_task_clutter_model_exclusions(self, entity_on_scene):
+        excluded = set(str(name) for name in entity_on_scene if str(name))
+        for attr_name in (
+            "CLUTTER_EXCLUDE_MODEL_NAMES",
+            "TASK_CLUTTER_OBJECT_NAMES",
+            "TASK_OBJECT_MODEL_NAMES",
+        ):
+            value = getattr(self, attr_name, None)
+            if isinstance(value, str):
+                excluded.add(value)
+            elif isinstance(value, (list, tuple, set)):
+                excluded.update(str(item) for item in value if str(item))
+
+        for attr_name, attr_value in vars(self).items():
+            if not isinstance(attr_value, str) or not attr_value:
+                continue
+            normalized_attr = str(attr_name).lower()
+            if (
+                "modelname" in normalized_attr
+                or "model_name" in normalized_attr
+                or normalized_attr in {"actor_name", "target_name", "object_name", "basket_name"}
+            ):
+                excluded.add(attr_value)
+
+        object_labels = getattr(self, "object_labels", {}) or {}
+        for label in object_labels.values():
+            label_text = str(label).lower()
+            for keyword, model_names in LABEL_TO_CLUTTER_OBJECT_NAMES:
+                if keyword in label_text:
+                    excluded.update(model_names)
+        return excluded
+
+    def _get_clutter_model_filters(self, entity_on_scene):
+        pool = str(getattr(self, "rotate_clutter_object_pool", "all")).strip().lower()
+        include_models = self._get_configured_clutter_model_names("rotate_clutter_include_models")
+        exclude_models = self._get_configured_clutter_model_names("rotate_clutter_exclude_models")
+        exclude_models.update(self._get_current_task_clutter_model_exclusions(entity_on_scene))
+
+        if pool in {"unused_task_objects", "non_task", "clean", "clean_unused"}:
+            exclude_models.update(TASK_USED_CLUTTER_OBJECT_NAMES)
+        elif pool in {"task_objects", "task_used", "seen_task_objects"}:
+            include_models.update(TASK_USED_CLUTTER_OBJECT_NAMES)
+        elif pool in {"all", "all_available", "randomized", ""}:
+            pass
+        else:
+            raise ValueError(
+                "rotate_clutter_object_pool must be one of all, unused_task_objects, "
+                f"or task_objects; got {pool!r}"
+            )
+
+        return (include_models or None), exclude_models
+
+    @staticmethod
+    def _clutter_angle_from_start_end(theta_start, theta_end):
+        theta_start = float(theta_start)
+        theta_end = float(theta_end)
+        delta = (theta_end - theta_start + np.pi) % (2.0 * np.pi) - np.pi
+        if abs(delta) < 1e-6:
+            delta = 2.0 * np.pi
+        center_theta = theta_start + 0.5 * delta
+        return center_theta, abs(delta)
+
+    def _build_clutter_fan_region(self, layer):
+        table_shape = str(getattr(self, "rotate_table_shape", "rect")).lower()
+        if table_shape not in {"fan", "sector", "arc", "fan_double"}:
+            return None
+
+        layer = str(layer).lower()
+        fan_center_xy = np.array(getattr(self, "rotate_table_center_xy", [0.0, 0.0]), dtype=np.float64).reshape(2)
+        if table_shape == "fan_double" and layer == "upper":
+            inner_radius = getattr(self, "rotate_fan_double_upper_inner_radius", None)
+            outer_radius = getattr(self, "rotate_fan_double_upper_outer_radius", None)
+            theta_start = getattr(self, "rotate_fan_double_upper_theta_start_world_rad", None)
+            theta_end = getattr(self, "rotate_fan_double_upper_theta_end_world_rad", None)
+            if theta_start is not None and theta_end is not None:
+                center_theta, angle_rad = self._clutter_angle_from_start_end(theta_start, theta_end)
+            else:
+                center_theta = float(np.deg2rad(float(getattr(self, "rotate_fan_center_deg", 90.0) or 90.0)))
+                angle_rad = float(np.deg2rad(float(getattr(self, "rotate_fan_angle_deg", 200.0) or 200.0)))
+        elif table_shape == "fan_double":
+            inner_radius = getattr(self, "rotate_fan_double_lower_inner_radius", None)
+            outer_radius = getattr(self, "rotate_fan_double_lower_outer_radius", None)
+            center_theta = float(np.deg2rad(float(getattr(self, "rotate_fan_center_deg", 90.0) or 90.0)))
+            angle_rad = float(np.deg2rad(float(getattr(self, "rotate_fan_angle_deg", 200.0) or 200.0)))
+        else:
+            inner_radius = getattr(self, "rotate_fan_inner_radius", None)
+            outer_radius = getattr(self, "rotate_fan_outer_radius", None)
+            center_theta = float(np.deg2rad(float(getattr(self, "rotate_fan_center_deg", 90.0) or 90.0)))
+            angle_rad = float(np.deg2rad(float(getattr(self, "rotate_fan_angle_deg", 200.0) or 200.0)))
+
+        if inner_radius is None:
+            inner_radius = getattr(self, "rotate_fan_inner_radius", 0.3)
+        if outer_radius is None:
+            outer_radius = getattr(self, "rotate_fan_outer_radius", 0.9)
+
+        radius_floor_key = "rotate_upper_clutter_min_radius" if layer == "upper" else "rotate_clutter_min_radius"
+        radius_floor = getattr(self, radius_floor_key, getattr(self, "rotate_clutter_min_radius", 0.55))
+        if radius_floor is None:
+            radius_floor = getattr(self, "rotate_clutter_min_radius", 0.55)
+        return {
+            "center_xy": fan_center_xy.tolist(),
+            "inner_radius": float(inner_radius or 0.3),
+            "outer_radius": float(outer_radius or 0.9),
+            "center_theta_rad": float(center_theta),
+            "angle_rad": float(angle_rad),
+            "radius_floor": float(max(radius_floor, 0.0)),
+            "candidate_count": int(max(getattr(self, "rotate_clutter_candidate_count", 8), 1)),
+            "radial_bias_power": float(max(getattr(self, "rotate_clutter_radial_bias_power", 0.35), 1e-3)),
+        }
+
+    def _get_clutter_layer_zlim(self, layer, zlim):
+        layer = str(layer).lower()
+        if layer == "upper":
+            top_z = float(getattr(self, "rotate_table_top_z", 0.74)) + float(
+                getattr(self, "rotate_fan_double_layer_gap", 0.35)
+            )
+            return [top_z]
+        return zlim
+
+    def get_cluttered_table(
+        self,
+        cluttered_numbers=10,
+        xlim=(-0.59, 0.59),
+        ylim=(-0.34, 0.34),
+        zlim=(0.741,),
+        layer="lower",
+        reset_record=True,
+    ):
+        if int(cluttered_numbers) <= 0:
+            return
+        if reset_record:
+            self.record_cluttered_objects = []  # record cluttered objects
+        if self.size_dict is None:
+            self.size_dict = []
+
+        xlim = [float(xlim[0]) + self.table_xy_bias[0], float(xlim[1]) + self.table_xy_bias[0]]
+        ylim = [float(ylim[0]) + self.table_xy_bias[1], float(ylim[1]) + self.table_xy_bias[1]]
+        zlim = self._get_clutter_layer_zlim(layer, list(zlim))
 
         if np.random.rand() < self.clean_background_rate:
             return
@@ -977,31 +1267,19 @@ class Base_Task(gym.Env):
             if actor_name in ["table", "wall", "ground"]:
                 continue
             task_objects_list.append(actor_name)
-        self.obj_names, self.cluttered_item_info = get_available_cluttered_objects(task_objects_list)
-        fan_region = None
-        table_shape = str(getattr(self, "rotate_table_shape", "rect")).lower()
-        if table_shape in {"fan", "sector", "arc", "fan_double"}:
-            fan_center_xy = np.array(getattr(self, "rotate_table_center_xy", [0.0, 0.0]), dtype=np.float64).reshape(2)
-            if table_shape == "fan_double":
-                inner_radius = getattr(self, "rotate_fan_double_lower_inner_radius", None)
-                outer_radius = getattr(self, "rotate_fan_double_lower_outer_radius", None)
-            else:
-                inner_radius = getattr(self, "rotate_fan_inner_radius", None)
-                outer_radius = getattr(self, "rotate_fan_outer_radius", None)
-            if inner_radius is None:
-                inner_radius = getattr(self, "rotate_fan_inner_radius", 0.3)
-            if outer_radius is None:
-                outer_radius = getattr(self, "rotate_fan_outer_radius", 0.9)
-            fan_region = {
-                "center_xy": fan_center_xy.tolist(),
-                "inner_radius": float(inner_radius or 0.3),
-                "outer_radius": float(outer_radius or 0.9),
-                "center_theta_rad": float(np.deg2rad(float(getattr(self, "rotate_fan_center_deg", 90.0) or 90.0))),
-                "angle_rad": float(np.deg2rad(float(getattr(self, "rotate_fan_angle_deg", 200.0) or 200.0))),
-                "radius_floor": float(max(getattr(self, "rotate_clutter_min_radius", 0.55), 0.0)),
-                "candidate_count": int(max(getattr(self, "rotate_clutter_candidate_count", 8), 1)),
-                "radial_bias_power": float(max(getattr(self, "rotate_clutter_radial_bias_power", 0.35), 1e-3)),
-            }
+        include_models, exclude_models = self._get_clutter_model_filters(task_objects_list)
+        self.obj_names, self.cluttered_item_info = get_available_cluttered_objects(
+            task_objects_list,
+            include_models=include_models,
+            exclude_models=exclude_models,
+        )
+        if len(self.obj_names) == 0:
+            print(
+                "Warning: No cluttered object candidates are available for "
+                f"rotate_clutter_object_pool={self.rotate_clutter_object_pool}."
+            )
+            return
+        fan_region = self._build_clutter_fan_region(layer)
 
         success_count = 0
         max_try = int(max(getattr(self, "rotate_clutter_max_tries", 0), max(50, cluttered_numbers * 50)))
@@ -1048,6 +1326,7 @@ class Base_Task(gym.Env):
                 {
                     "object_type": obj_name,
                     "object_index": obj_idx,
+                    "layer": str(layer).lower(),
                     "pose": self.cluttered_obj.get_pose().p.tolist(),
                     "radius": float(obj_radius),
                     "is_static": bool(self.rotate_clutter_is_static),
@@ -1057,7 +1336,6 @@ class Base_Task(gym.Env):
         if success_count < cluttered_numbers:
             print(f"Warning: Only {success_count} cluttered objects are placed on the table.")
 
-        self.size_dict = None
         self.cluttered_objs = []
 
     def load_robot(self, **kwags):
@@ -1640,20 +1918,25 @@ class Base_Task(gym.Env):
         target_annotated_video_path = (
             None if skip_annotated_video else self.get_rotate_annotated_video_path(self.ep_num)
         )
-        target_video_path_map = {
-            "left_camera": f"{self.save_dir}/video/episode{self.ep_num}_left_camera.mp4",
-            "right_camera": f"{self.save_dir}/video/episode{self.ep_num}_right_camera.mp4",
-            "camera_head": f"{self.save_dir}/video/episode{self.ep_num}_camera_head.mp4",
-        }
-        if self.data_type.get("top_view", False):
-            top_view_camera_names = list(getattr(self.cameras, "top_view_camera_names", []) or ["top_view_camera"])
-            for top_view_camera_name in top_view_camera_names:
-                video_suffix = "top_view" if top_view_camera_name == "top_view_camera" else str(top_view_camera_name)
-                target_video_path_map[top_view_camera_name] = (
-                    f"{self.save_dir}/video/episode{self.ep_num}_{video_suffix}.mp4"
-                )
-        for camera_name in self._get_extra_view_camera_names():
-            target_video_path_map[camera_name] = f"{self.save_dir}/video/episode{self.ep_num}_{camera_name}.mp4"
+        if bool(getattr(self, "save_auxiliary_videos", True)):
+            target_video_path_map = {
+                "left_camera": f"{self.save_dir}/video/episode{self.ep_num}_left_camera.mp4",
+                "right_camera": f"{self.save_dir}/video/episode{self.ep_num}_right_camera.mp4",
+                "camera_head": f"{self.save_dir}/video/episode{self.ep_num}_camera_head.mp4",
+            }
+            if self.data_type.get("top_view", False):
+                top_view_camera_names = list(getattr(self.cameras, "top_view_camera_names", []) or ["top_view_camera"])
+                for top_view_camera_name in top_view_camera_names:
+                    video_suffix = "top_view" if top_view_camera_name == "top_view_camera" else str(top_view_camera_name)
+                    target_video_path_map[top_view_camera_name] = (
+                        f"{self.save_dir}/video/episode{self.ep_num}_{video_suffix}.mp4"
+                    )
+            for camera_name in self._get_extra_view_camera_names():
+                target_video_path_map[camera_name] = f"{self.save_dir}/video/episode{self.ep_num}_{camera_name}.mp4"
+            video_camera_names = ["left_camera", "right_camera", "camera_head"]
+        else:
+            target_video_path_map = {}
+            video_camera_names = []
         # print('Merging pkl to hdf5: ', cache_path, ' -> ', target_file_path)
 
         os.makedirs(f"{self.save_dir}/data", exist_ok=True)
@@ -1671,7 +1954,7 @@ class Base_Task(gym.Env):
             cache_path,
             target_file_path,
             video_path=target_video_path,
-            video_camera_names=["left_camera", "right_camera", "camera_head"],
+            video_camera_names=video_camera_names,
             video_path_map=target_video_path_map,
             main_video_camera="camera_head",
             annotated_video_path=(target_annotated_video_path if annotated_video_metadata is not None else None),
@@ -3463,6 +3746,7 @@ class Base_Task(gym.Env):
                 far=camera_spec.get("far", None),
                 horizontal_margin_rad=float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0)),
                 vertical_margin_rad=float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0)),
+                aabb_visible_ratio_threshold=float(getattr(self, "rotate_scan_aabb_visible_ratio_threshold", 0.0)),
                 ret_debug=True,
             )
             world_point = np.array(debug.get("world_point", self._resolve_object_world_point(obj=obj)), dtype=np.float64)
@@ -3471,6 +3755,7 @@ class Base_Task(gym.Env):
                 "u_norm": float(u_norm) if np.isfinite(u_norm) else None,
                 "v_norm": float(v_norm) if np.isfinite(v_norm) else None,
                 "inside": bool(debug["inside"]),
+                "visible_ratio": float(debug.get("visible_ratio", 1.0 if bool(debug.get("inside", False)) else 0.0)),
             }
         except Exception:
             return None
@@ -3508,12 +3793,14 @@ class Base_Task(gym.Env):
                 state["last_seen_frame"] = int(self.FRAME_IDX)
                 state["last_seen_subtask"] = int(self.current_subtask_idx)
                 state["last_seen_stage"] = int(self.current_stage)
+                state["last_seen_search_layer"] = self._get_active_rotate_search_head_layer()
                 state["last_uv_norm"] = [float(proj["u_norm"]), float(proj["v_norm"])]
                 state["last_world_point"] = np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist()
             results[key] = {
                 "visible": visible,
                 "u_norm": None if proj is None else proj["u_norm"],
                 "v_norm": None if proj is None else proj["v_norm"],
+                "visible_ratio": 0.0 if proj is None else float(proj.get("visible_ratio", 0.0)),
                 "world_point": None if proj is None else np.array(proj["world_point"], dtype=np.float64).reshape(-1).tolist(),
             }
         post_hook = getattr(self, "_after_rotate_visibility_refresh", None)
@@ -3594,6 +3881,27 @@ class Base_Task(gym.Env):
             if self._normalize_rotate_search_layer(state.get("layer", "lower")) == "upper":
                 return idx
         return None
+
+    def _filter_rotate_target_keys_by_layer(self, target_keys, layer_name):
+        """Return only target keys that belong to the requested search layer.
+
+        Fan-double search records a full lower-table sweep before entering the
+        upper layer for some subtasks.  A low/partial AABB visibility threshold
+        can otherwise mark an upper-layer object visible while the head is still
+        in the lower-table search posture, causing stage 1 to jump directly to
+        stage 2.  Layer-filtering keeps lower and upper search phases explicit.
+        """
+        layer_name = self._normalize_rotate_search_layer(layer_name)
+        object_layers = getattr(self, "object_layers", {}) or {}
+        filtered = []
+        for key in [str(k) for k in target_keys]:
+            key_layer = object_layers.get(key, None)
+            if key_layer is None:
+                filtered.append(key)
+                continue
+            if self._normalize_rotate_search_layer(key_layer) == layer_name:
+                filtered.append(key)
+        return filtered
 
     def _has_pending_lower_rotate_search_states(self):
         first_upper_idx = self._get_rotate_first_upper_search_state_index()
@@ -4234,6 +4542,7 @@ class Base_Task(gym.Env):
         def _refresh_current_stage1_view():
             self._sync_rotate_search_cursor_from_current_view(layer_name=layer_name)
             current_theta = self.search_cursor_theta
+            layer_target_keys = self._filter_rotate_target_keys_by_layer(target_keys, layer_name)
             self._set_rotate_subtask_state(
                 subtask_idx=subtask_idx,
                 stage=1,
@@ -4245,7 +4554,7 @@ class Base_Task(gym.Env):
                 camera_target_theta=(np.nan if current_theta is None else float(current_theta)),
             )
             self._refresh_rotate_discovery_from_current_view()
-            return self._get_rotate_target_key(target_keys, visible_only=True)
+            return self._get_rotate_target_key(layer_target_keys, visible_only=True)
 
         found_key = _refresh_current_stage1_view()
         if found_key is not None:
@@ -4800,38 +5109,70 @@ class Base_Task(gym.Env):
         # First use the current layer/view and any valid memory.  Same-layer
         # memory focus keeps the head fixed; cross-layer memory focus performs
         # the lower<->upper head transition before horizontal torso focus.
-        self._refresh_rotate_discovery_from_current_view()
-        visible_key = self._get_rotate_target_key(target_keys, visible_only=True)
-        if visible_key is not None:
-            focused_key = self._focus_rotate_registry_target_with_fixed_head(
-                visible_key,
-                subtask_idx=subtask_idx,
-                target_keys=target_keys,
-                action_target_keys=action_target_keys,
-                joint_name_prefer=joint_name_prefer,
-                max_iter=max_iter,
-                tol_yaw_rad=tol_yaw_rad,
-                head_joint2_name=head_joint2_name,
-                prefer_history_world_point=False,
-            )
-            if focused_key is not None:
-                return focused_key
+        enforce_stage1_order = self._should_enforce_rotate_stage1_search_order(subtask_idx, subtask_def)
+        allow_reliable_memory_before_ordered_scan = False
+        if bool(enforce_stage1_order):
+            remembered_key_for_order = self._get_rotate_target_key(target_keys, visible_only=False)
+            if remembered_key_for_order is not None:
+                remembered_layer = self._get_rotate_object_layer(remembered_key_for_order)
+                remembered_state = self.discovered_objects.get(str(remembered_key_for_order), {}) or {}
+                last_seen_layer = remembered_state.get("last_seen_search_layer", None)
+                if last_seen_layer is not None:
+                    allow_reliable_memory_before_ordered_scan = (
+                        self._normalize_rotate_search_layer(last_seen_layer) == remembered_layer
+                    )
+                elif int(remembered_state.get("last_seen_stage", 0) or 0) >= 2:
+                    allow_reliable_memory_before_ordered_scan = True
 
-        remembered_key = self._get_rotate_target_key(target_keys, visible_only=False)
-        if remembered_key is not None:
-            focused_key = self._focus_rotate_registry_target_with_fixed_head(
-                remembered_key,
-                subtask_idx=subtask_idx,
-                target_keys=target_keys,
-                action_target_keys=action_target_keys,
-                joint_name_prefer=joint_name_prefer,
-                max_iter=max_iter,
-                tol_yaw_rad=tol_yaw_rad,
-                head_joint2_name=head_joint2_name,
-                prefer_history_world_point=True,
-            )
-            if focused_key is not None:
-                return focused_key
+                if bool(allow_reliable_memory_before_ordered_scan):
+                    focused_key = self._focus_rotate_registry_target_with_fixed_head(
+                        remembered_key_for_order,
+                        subtask_idx=subtask_idx,
+                        target_keys=target_keys,
+                        action_target_keys=action_target_keys,
+                        joint_name_prefer=joint_name_prefer,
+                        max_iter=max_iter,
+                        tol_yaw_rad=tol_yaw_rad,
+                        head_joint2_name=head_joint2_name,
+                        prefer_history_world_point=True,
+                    )
+                    if focused_key is not None:
+                        return focused_key
+
+        if not bool(enforce_stage1_order):
+            self._refresh_rotate_discovery_from_current_view()
+            visible_key = self._get_rotate_target_key(target_keys, visible_only=True)
+            if visible_key is not None:
+                focused_key = self._focus_rotate_registry_target_with_fixed_head(
+                    visible_key,
+                    subtask_idx=subtask_idx,
+                    target_keys=target_keys,
+                    action_target_keys=action_target_keys,
+                    joint_name_prefer=joint_name_prefer,
+                    max_iter=max_iter,
+                    tol_yaw_rad=tol_yaw_rad,
+                    head_joint2_name=head_joint2_name,
+                    prefer_history_world_point=False,
+                )
+                if focused_key is not None:
+                    return focused_key
+
+            remembered_key = self._get_rotate_target_key(target_keys, visible_only=False)
+            allow_memory = bool(subtask_def.get("allow_stage2_from_memory", True))
+            if allow_memory and remembered_key is not None:
+                focused_key = self._focus_rotate_registry_target_with_fixed_head(
+                    remembered_key,
+                    subtask_idx=subtask_idx,
+                    target_keys=target_keys,
+                    action_target_keys=action_target_keys,
+                    joint_name_prefer=joint_name_prefer,
+                    max_iter=max_iter,
+                    tol_yaw_rad=tol_yaw_rad,
+                    head_joint2_name=head_joint2_name,
+                    prefer_history_world_point=True,
+                )
+                if focused_key is not None:
+                    return focused_key
 
         # No current-view or memory hit.  Start one unified search state
         # machine from the lower layer.  For fan_double, exhausting lower-left
@@ -5091,6 +5432,7 @@ class Base_Task(gym.Env):
         ).lower()
         horizontal_margin_rad = float(getattr(self, "rotate_scan_horizontal_margin_rad", 0.0))
         vertical_margin_rad = float(getattr(self, "rotate_scan_vertical_margin_rad", 0.0))
+        aabb_visible_ratio_threshold = float(getattr(self, "rotate_scan_aabb_visible_ratio_threshold", 0.0))
         far = camera_spec.get("far", None)
 
         obj = entry.get("obj", None)
@@ -5107,6 +5449,7 @@ class Base_Task(gym.Env):
                         far=far,
                         horizontal_margin_rad=horizontal_margin_rad,
                         vertical_margin_rad=vertical_margin_rad,
+                        aabb_visible_ratio_threshold=aabb_visible_ratio_threshold,
                     )
                 )
             except Exception:
@@ -6238,6 +6581,7 @@ class PutBlockFanDoubleMixin:
 
     PLATE_MODEL_ID = 0
     PLATE_LAYER = "upper"
+    PLATE_LOWER_LAYER_PROB = None
     PLATE_LAYER_SPECS = {
         "lower": {
             "r": 0.55,
@@ -6287,7 +6631,7 @@ class PutBlockFanDoubleMixin:
     PICK_PRE_GRASP_DIS = 0.09
     PICK_GRASP_DIS = 0.01
     PICK_LIFT_Z = 0.10
-    POST_GRASP_EXTRA_LIFT_Z = 0.04
+    POST_GRASP_EXTRA_LIFT_Z = 0.00
     LOCK_SELECTED_ARM_AFTER_FIRST_PICK = True
 
     INITIAL_LEFT_ARM_JOINT1 = -0.110
@@ -6334,12 +6678,15 @@ class PutBlockFanDoubleMixin:
     SUCCESS_XY_TOL = 0.08
     SUCCESS_Z_TOL = 0.06
     EXTRA_ALIGN_TARGET_BEFORE_PLACE = False
+    END_AFTER_DIRECT_RELEASE = False
+    END_AFTER_FINAL_DIRECT_RELEASE = False
+    RETURN_TO_RELEASE_ENTRY_AFTER_INTERMEDIATE_UPPER_PLACE = False
 
     # Optional upper-layer return policy.  When enabled, after direct-release
     # placement on the upper layer and the vertical lift, the active arm is
     # returned to its initial EE pose through cuRobo-planned Cartesian moves
     # instead of the old joint-space back_to_origin() shortcut.
-    UPPER_PLACE_RETURN_WITH_CUROBO = False
+    UPPER_PLACE_RETURN_WITH_CUROBO = True
     # Default to reversing through the already-planned release entry corridor.
     # A pure side-step can keep the hand under/near the upper shelf and is not a
     # safe top-layer exit by itself.
@@ -6400,12 +6747,43 @@ class PutBlockFanDoubleMixin:
         return int(getattr(self, "TARGET_MODEL_ID", 0))
 
     def _get_task_instruction(self):
+        """Return a fully readable task instruction for fan-double block tasks.
+
+        This string is passed directly to configure_rotate_subtask_plan(), so it is
+        not processed by the description placeholder resolver.  Avoid leaving
+        placeholders such as ``{B}`` in the saved full instruction, and avoid
+        leaking the sampled plate layer in language.
+        """
+        block_count = self._get_block_count()
+        block_phrase = "the block" if block_count == 1 else "all blocks"
+
         if self._uses_target_actor():
             preposition = str(getattr(self, "TARGET_TASK_PREPOSITION", "into")).strip() or "into"
-            return f"Put the block {preposition} {{B}}."
-        return "Put the block into {B}." if self._get_block_count() == 1 else "Put all blocks into {B}."
+            target_phrase = str(getattr(self, "TARGET_TASK_NAME", "the target object")).strip() or "the target object"
+            return f"Put {block_phrase} {preposition} {target_phrase}."
+
+        return f"Put {block_phrase} into the plate."
 
     def _get_plate_layer(self):
+        sampled_layer = getattr(self, "_sampled_plate_layer", None)
+        if sampled_layer is not None:
+            return self._normalize_layer(sampled_layer)
+
+        lower_prob = (
+            getattr(self, "TARGET_LOWER_LAYER_PROB", None)
+            if self._uses_target_actor()
+            else getattr(self, "PLATE_LOWER_LAYER_PROB", None)
+        )
+        if lower_prob is not None:
+            if float(np.random.random()) < float(lower_prob):
+                sampled_layer = "lower"
+            elif self._uses_target_actor():
+                sampled_layer = getattr(self, "TARGET_LAYER", "upper")
+            else:
+                sampled_layer = getattr(self, "PLATE_LAYER", "upper")
+            self._sampled_plate_layer = self._normalize_layer(sampled_layer)
+            return self._sampled_plate_layer
+
         if self._uses_target_actor():
             return self._normalize_layer(getattr(self, "TARGET_LAYER", "upper"))
         return self._normalize_layer(getattr(self, "PLATE_LAYER", "upper"))
@@ -6425,9 +6803,14 @@ class PutBlockFanDoubleMixin:
         if layer_name == "lower":
             theta_deg = float(np.random.choice((-55.0, 55.0)))
         elif layer_name == "upper":
-            support_theta_world_rad = getattr(self, "rotate_fan_double_support_theta_world_rad", None)
-            if support_theta_world_rad is not None:
-                theta_deg = float(np.rad2deg(self._wrap_to_pi(float(support_theta_world_rad) - float(self.robot_yaw))))
+            layer_spec = self._get_layer_spec(layer_name)
+            theta_min = float(np.rad2deg(layer_spec["thetalim"][0]))
+            theta_max = float(np.rad2deg(layer_spec["thetalim"][1]))
+            margin = float(getattr(self, "UPPER_TARGET_THETA_MARGIN_DEG", 6.0))
+            low = theta_min + margin
+            high = theta_max - margin
+            if high >= low:
+                theta_deg = float(np.random.uniform(low, high))
             else:
                 theta_deg = float(plate_spec.get("theta_deg", 0.0))
         else:
@@ -6456,12 +6839,24 @@ class PutBlockFanDoubleMixin:
                 self._target_theta_deg_jitter_cache = theta_cache
             cache_key = str(layer_name)
             if cache_key not in theta_cache:
-                theta_cache[cache_key] = theta_deg + float(
-                    np.random.uniform(
-                        -float(getattr(self, "TARGET_THETA_JITTER_DEG", 0.0)),
-                        float(getattr(self, "TARGET_THETA_JITTER_DEG", 0.0)),
+                if layer_name == "upper":
+                    theta_min = float(np.rad2deg(layer_spec["thetalim"][0]))
+                    theta_max = float(np.rad2deg(layer_spec["thetalim"][1]))
+                    margin = float(getattr(self, "UPPER_TARGET_THETA_MARGIN_DEG", 6.0))
+                    low = theta_min + margin
+                    high = theta_max - margin
+                    theta_cache[cache_key] = (
+                        float(np.random.uniform(low, high))
+                        if high >= low
+                        else theta_deg
                     )
-                )
+                else:
+                    theta_cache[cache_key] = theta_deg + float(
+                        np.random.uniform(
+                            -float(getattr(self, "TARGET_THETA_JITTER_DEG", 0.0)),
+                            float(getattr(self, "TARGET_THETA_JITTER_DEG", 0.0)),
+                        )
+                    )
             theta_deg = float(theta_cache[cache_key])
             scale = raw_spec.get("scale", None)
         else:
@@ -6550,16 +6945,19 @@ class PutBlockFanDoubleMixin:
         object_registry[self._get_target_object_key()] = self._get_target_object()
 
         subtask_defs = []
+        subtask_instruction_map = {}
         for block_idx, block_key in enumerate(self.block_keys):
             pick_subtask_id = 2 * block_idx + 1
             place_subtask_id = pick_subtask_id + 1
             next_subtask_id = place_subtask_id + 1 if block_idx < len(self.block_keys) - 1 else -1
+            subtask_instruction_map[pick_subtask_id] = "pick up a block"
+            subtask_instruction_map[place_subtask_id] = "place a block into the plate"
             subtask_defs.extend(
                 [
                     {
                         "id": pick_subtask_id,
-                        "name": f"pick_remaining_block_{block_idx}",
-                        "instruction_idx": 1,
+                        "name": f"pick_a_block_{block_idx}",
+                        "instruction_idx": pick_subtask_id,
                         "search_target_keys": list(self.block_keys),
                         "action_target_keys": list(self.block_keys),
                         "required_carried_keys": [],
@@ -6570,8 +6968,8 @@ class PutBlockFanDoubleMixin:
                     },
                     {
                         "id": place_subtask_id,
-                        "name": f"place_selected_block_{block_idx}_into_plate",
-                        "instruction_idx": 2,
+                        "name": f"place_a_block_{block_idx}_into_plate",
+                        "instruction_idx": place_subtask_id,
                         "search_target_keys": [self._get_target_object_key()],
                         "action_target_keys": [self._get_target_object_key()],
                         "required_carried_keys": [],
@@ -6586,6 +6984,8 @@ class PutBlockFanDoubleMixin:
         self.configure_rotate_subtask_plan(
             object_registry=object_registry,
             subtask_defs=subtask_defs,
+            subtask_instruction_map=subtask_instruction_map,
+            subtask_instruction_template_map={},
             task_instruction=self._get_task_instruction(),
         )
 
@@ -6743,6 +7143,7 @@ class PutBlockFanDoubleMixin:
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
         self._plate_theta_deg_cache = {}
         self._target_theta_deg_jitter_cache = {}
+        self._sampled_plate_layer = None
         self._locked_pick_arm_tag = None
         self._apply_task_initial_homestate()
 
@@ -6912,16 +7313,17 @@ class PutBlockFanDoubleMixin:
 
     def _build_info(self, arm_tag):
         if self._uses_target_actor():
-            target_label = f"{self.target_name}/base{self.target_id}"
-            block_label = "green block"
+            target_label = str(getattr(self, "TARGET_TASK_NAME", "the target object")).strip() or "the target object"
         else:
-            target_label = f"003_plate/base{self.PLATE_MODEL_ID}"
-            block_label = "green block" if len(getattr(self, "block_keys", [])) <= 1 else "green blocks"
-        return {
-            "{A}": block_label,
+            target_label = "plate"
+        info = {
+            "{A}": "a block",
             "{B}": target_label,
             "{a}": str(arm_tag),
         }
+        for block_key in getattr(self, "block_keys", []):
+            info[f"{{{block_key}}}"] = "a block"
+        return info
 
     def play_once(self):
         scan_z = float(self.SCAN_Z_BIAS + self.table_z_bias)
@@ -7316,14 +7718,16 @@ class PutBlockFanDoubleMixin:
             upper_theta_end = None
 
         block_spec = dict(self.BLOCK_LAYER_SPECS.get(layer_name, {}))
-        inner_margin = float(block_spec.get("inner_margin", 0.10))
-        outer_margin = float(block_spec.get("outer_margin", 0.10))
-        max_cyl_r = float(block_spec.get("max_cyl_r", outer_radius - outer_margin))
-        theta_shrink = float(block_spec.get("theta_shrink", 0.92))
-
-        r_min = min(max(inner_radius + inner_margin, inner_radius + 0.05), outer_radius - 0.08)
-        r_cap = min(max_cyl_r, outer_radius - outer_margin)
-        r_max = max(r_min, r_cap)
+        if "r_min" in block_spec or "r_max" in block_spec:
+            r_min = float(block_spec.get("r_min", inner_radius))
+            r_max = float(block_spec.get("r_max", outer_radius))
+        else:
+            inner_margin = float(block_spec.get("inner_margin", 0.10))
+            outer_margin = float(block_spec.get("outer_margin", 0.10))
+            max_cyl_r = float(block_spec.get("max_cyl_r", outer_radius - outer_margin))
+            r_min = min(max(inner_radius + inner_margin, inner_radius + 0.05), outer_radius - 0.08)
+            r_cap = min(max_cyl_r, outer_radius - outer_margin)
+            r_max = max(r_min, r_cap)
         if (
             layer_name == "upper"
             and upper_theta_start is not None
@@ -7334,6 +7738,7 @@ class PutBlockFanDoubleMixin:
             theta_end = float(self._wrap_to_pi(float(upper_theta_end) - float(self.robot_yaw)))
             thetalim = [min(theta_start, theta_end), max(theta_start, theta_end)]
         else:
+            theta_shrink = float(block_spec.get("theta_shrink", 0.92))
             theta_half = float(rotate_theta_half(self)) * theta_shrink
             if theta_half <= 1e-3:
                 theta_half = float(getattr(self, "rotate_object_theta_half_rad", np.deg2rad(45.0))) * 0.8
@@ -7503,6 +7908,7 @@ class PutBlockFanDoubleMixin:
         state["visible_now"] = False
         state["last_seen_subtask"] = int(self.current_subtask_idx)
         state["last_seen_stage"] = int(self.current_stage)
+        state["last_seen_search_layer"] = self._get_rotate_object_layer(key)
         if world_point is not None:
             state["last_world_point"] = np.array(world_point, dtype=np.float64).reshape(-1).tolist()
 
@@ -7665,9 +8071,13 @@ class PutBlockFanDoubleMixin:
         if not self.move(self.open_gripper(arm_tag)):
             return
         self._set_carried_object_keys([])
+        if self._should_end_after_direct_release(subtask_idx):
+            self.complete_rotate_subtask(subtask_idx, carried_after=[])
+            return
         if not self._retreat_then_return_both_arms_to_initial_pose(
             arm_tag,
             selected_release_candidate=selected_release_candidate,
+            subtask_idx=subtask_idx,
         ):
             return
         self.complete_rotate_subtask(subtask_idx, carried_after=[])
@@ -7948,7 +8358,37 @@ class PutBlockFanDoubleMixin:
             return True
         return self._return_both_arms_to_initial_pose()
 
-    def _retreat_then_return_both_arms_to_initial_pose(self, arm_tag, selected_release_candidate=None):
+    def _is_final_rotate_subtask(self, subtask_idx):
+        subtask_def = self._get_rotate_subtask_def(subtask_idx) or {}
+        try:
+            next_subtask_id = int(subtask_def.get("next_subtask_id", -1))
+        except (TypeError, ValueError):
+            next_subtask_id = -1
+        return bool(next_subtask_id == -1)
+
+    def _should_end_after_direct_release(self, subtask_idx):
+        if bool(getattr(self, "END_AFTER_DIRECT_RELEASE", False)):
+            return True
+        if not bool(getattr(self, "END_AFTER_FINAL_DIRECT_RELEASE", False)):
+            return False
+        return self._is_final_rotate_subtask(subtask_idx)
+
+    def _should_stop_at_release_entry_after_upper_place(self, subtask_idx):
+        if not bool(getattr(self, "RETURN_TO_RELEASE_ENTRY_AFTER_INTERMEDIATE_UPPER_PLACE", False)):
+            return False
+        return not self._is_final_rotate_subtask(subtask_idx)
+
+    def _return_after_upper_place_to_release_entry(self, arm_tag, selected_release_candidate=None):
+        pose_sequence = self._build_reverse_release_return_poses(selected_release_candidate)
+        if len(pose_sequence) == 0:
+            self.plan_success = False
+            return False
+        if self._move_pose_sequence_with_curobo(arm_tag, pose_sequence):
+            return True
+        self.plan_success = False
+        return False
+
+    def _retreat_then_return_both_arms_to_initial_pose(self, arm_tag, selected_release_candidate=None, subtask_idx=None):
         retreat_action = self.move_by_displacement(
             arm_tag=arm_tag,
             z=self.DIRECT_RELEASE_RETREAT_Z,
@@ -7961,6 +8401,11 @@ class PutBlockFanDoubleMixin:
             plate_layer = getattr(self, "plate_layer", None)
         if plate_layer == "upper":
             self._sync_curobo_tabletop_collisions()
+            if self._should_stop_at_release_entry_after_upper_place(subtask_idx):
+                return self._return_after_upper_place_to_release_entry(
+                    arm_tag,
+                    selected_release_candidate=selected_release_candidate,
+                )
             if bool(getattr(self, "upper_place_return_with_curobo", False)) and bool(
                 self.RETURN_TO_HOMESTATE_AFTER_PLACE
             ):
@@ -7997,8 +8442,8 @@ class PutBlockFanDoubleMixin:
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
                 qpos=[1, 0, 0, 0],
-                rotate_rand=True,
-                rotate_lim=[0.0, 0.0, 0.75],
+                rotate_rand=False,
+                rotate_lim=[0.0, 0.0, 0.15],
             )
             if not self._is_valid_block_spawn_pose(
                 block_pose,

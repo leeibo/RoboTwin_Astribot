@@ -8,6 +8,7 @@ import numpy as np
 class blocks_ranking_size_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
     ROTATE_SCAN_SCENE_R = 0.64
+    BLOCK_RLIM = (0.40, 0.45)
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -101,7 +102,7 @@ class blocks_ranking_size_rotate_view(Base_Task):
 
         for _ in range(120):
             pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=list(self.BLOCK_RLIM),
                 thetalim=[theta_lo, theta_hi],
                 zlim=[0.741 + size, 0.741 + size],
                 robot_root_xy=self.robot_root_xy,
@@ -116,7 +117,7 @@ class blocks_ranking_size_rotate_view(Base_Task):
 
         fallback_theta = max(theta_lo, min(theta_hi, max(0.15, total_gap + 0.1)))
         return rand_pose_cyl(
-            rlim=[0.45, 0.45],
+            rlim=[float(np.mean(self.BLOCK_RLIM)), float(np.mean(self.BLOCK_RLIM))],
             thetalim=[fallback_theta, fallback_theta],
             zlim=[0.741 + size, 0.741 + size],
             robot_root_xy=self.robot_root_xy,
@@ -128,7 +129,7 @@ class blocks_ranking_size_rotate_view(Base_Task):
     def _sample_block_pose(self, size, existing_pose_lst, avoid_xy_lst):
         for _ in range(120):
             pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=list(self.BLOCK_RLIM),
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741 + size, 0.741 + size],
@@ -149,7 +150,7 @@ class blocks_ranking_size_rotate_view(Base_Task):
         theta_half = rotate_theta_half(self)
         fallback_theta = float(np.clip(-0.35 * theta_half, -theta_half, theta_half))
         return rand_pose_cyl(
-            rlim=[0.5, 0.5],
+            rlim=[self.BLOCK_RLIM[1], self.BLOCK_RLIM[1]],
             thetalim=[fallback_theta, fallback_theta],
             zlim=[0.741 + size, 0.741 + size],
             robot_root_xy=self.robot_root_xy,
@@ -273,7 +274,7 @@ class blocks_ranking_size_rotate_view(Base_Task):
             scan_z=0.88 + self.table_z_bias,
             joint_name_prefer="astribot_torso_joint_2",
         )
-        arm_tag3 = self._get_block_arm_tag(self.block3)
+        arm_tag3 = ArmTag(arm_tag2)
         self.enter_rotate_action_stage(3, focus_object_key=(block3_key or "C"))
         if self.last_gripper is not None and self.last_gripper != arm_tag3:
             self.move(self.back_to_origin(arm_tag=arm_tag3.opposite))
@@ -323,14 +324,9 @@ class blocks_ranking_size_rotate_view(Base_Task):
 
         if self.last_gripper is not None and self.last_gripper != arm_tag:
             self.move(self.back_to_origin(arm_tag=arm_tag.opposite))
-        self.face_object_with_torso(block, joint_name_prefer="astribot_torso_joint_2")
         self.move(self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09))
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.12))
 
-        self.face_world_point_with_torso(
-            target_pose[:3],
-            joint_name_prefer="astribot_torso_joint_2",
-        )
         self.move(
             self.place_actor(
                 block,

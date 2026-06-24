@@ -6,7 +6,7 @@ task_config=${1:-auto}
 gpu_id=${2:-0}
 
 fan_config=${DYJ_FAN_CONFIG:-demo_randomized}
-fan_double_config=${DYJ_FAN_DOUBLE_CONFIG:-demo_randomized_fan_double}
+fan_double_config=${DYJ_FAN_DOUBLE_CONFIG:-${fan_config}}
 continue_on_error=${CONTINUE_ON_ERROR:-1}
 
 if [[ "${task_config}" == "-h" || "${task_config}" == "--help" ]]; then
@@ -14,10 +14,13 @@ if [[ "${task_config}" == "-h" || "${task_config}" == "--help" ]]; then
     echo ""
     echo "Default:"
     echo "  bash collect_dyj_data_list.sh"
-    echo "  Uses demo_randomized for search_object* and demo_randomized_fan_double for fan_double tasks."
+    echo "  Uses the same demo_randomized config for fan and fan_double tasks."
     echo ""
-    echo "Override per group:"
-    echo "  DYJ_FAN_CONFIG=demo_clean DYJ_FAN_DOUBLE_CONFIG=demo_clean_fan_double bash collect_dyj_data_list.sh auto 0"
+    echo "Override the shared config:"
+    echo "  DYJ_FAN_CONFIG=demo_clean bash collect_dyj_data_list.sh auto 0"
+    echo ""
+    echo "Optional legacy per-group override:"
+    echo "  DYJ_FAN_CONFIG=demo_clean DYJ_FAN_DOUBLE_CONFIG=demo_clean_double bash collect_dyj_data_list.sh auto 0"
     echo ""
     echo "Force one config for every task:"
     echo "  bash collect_dyj_data_list.sh demo_clean_fan_double_test 0"
@@ -38,12 +41,9 @@ search_task_list=(
 fan_double_task_list=(
     put_block_on
     put_block_on_upper_easy
-    put_block_on_lower_easy
     put_block_on_upper_hard
+    put_block_on_lower_easy
     put_block_on_lower_hard
-    put_block_plasticbox_fan_double
-    put_block_breadbasket_fan_double
-    put_block_skillet_fan_double
     blocks_ranking_rgb_fan_double
     blocks_ranking_size_fan_double
     place_object_basket_fan_double

@@ -57,7 +57,7 @@ class beat_block_hammer_rotate_view(Base_Task):
     def _sample_block_pose(self):
         for _ in range(100):
             pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.45, 0.5],
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.76, 0.76],
@@ -88,7 +88,7 @@ class beat_block_hammer_rotate_view(Base_Task):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         hammer_pos = place_point_cyl(
-            [0.44, 0.0, 0.783],
+            [0.44, 0.0, 0.8],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="list",
@@ -164,5 +164,5 @@ class beat_block_hammer_rotate_view(Base_Task):
         )
         self.complete_rotate_subtask(2, carried_after=[])
 
-        self.info["info"] = {"{A}": "020_hammer/base0", "{a}": str(arm_tag)}
+        self.info["info"] = {"{A}": "hammer", "{a}": str(arm_tag)}
         return self.info

@@ -72,11 +72,12 @@ def infer_difficulty_tag(args):
 
 
 def apply_task_table_config(task, args):
-    """Expand the task-selected table profile into the runtime config."""
+    """Expand the task-selected base table profile into the runtime config."""
     args = dict(args)
     has_task_table_shape = hasattr(task, "ROTATE_TABLE_SHAPE")
     table_shape = str(getattr(task, "ROTATE_TABLE_SHAPE", args.get("table_shape", "rect"))).lower()
     profile_key = str(getattr(task, "ROTATE_TABLE_CONFIG_KEY", table_shape))
+    profile_shape = "fan" if table_shape == "fan_double" and profile_key == "fan" else table_shape
     table_configs = args.get("task_table_configs", {}) or {}
     if not isinstance(table_configs, dict):
         raise TypeError("task_table_configs must be a mapping")
@@ -91,10 +92,10 @@ def apply_task_table_config(task, args):
         raise TypeError(f"task_table_configs.{profile_key} must be a mapping")
 
     config_shape = table_config.get("table_shape", None)
-    if config_shape is not None and str(config_shape).lower() != table_shape:
+    if config_shape is not None and str(config_shape).lower() != profile_shape:
         raise ValueError(
             f"task_table_configs.{profile_key}.table_shape={config_shape!r} "
-            f"does not match task table shape {table_shape!r}"
+            f"does not match task base table shape {profile_shape!r}"
         )
 
     args.update(table_config)

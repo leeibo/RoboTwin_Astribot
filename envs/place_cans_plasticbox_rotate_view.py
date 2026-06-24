@@ -9,6 +9,8 @@ import numpy as np
 
 class place_cans_plasticbox_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
+    CAN_BOX_MIN_DISTANCE = 0.13
+    CAN_BOX_SAMPLE_TRIES = 120
 
     def check_success(self):
         plasticbox_functional_points_0 = self.plasticbox.get_functional_point(0)[0:2]
@@ -83,6 +85,33 @@ class place_cans_plasticbox_rotate_view(Base_Task):
         kwags = prepare_rotate_task_kwargs(self, kwags)
         super()._init_task_env_(**kwags)
 
+    def _can_pose_far_from_box(self, pose):
+        can_xy = np.array(pose.p[:2], dtype=np.float64)
+        box_points = [np.array(self.plasticbox.get_pose().p[:2], dtype=np.float64)]
+        for point_id in (0, 1):
+            try:
+                box_points.append(np.array(self.plasticbox.get_functional_point(point_id)[:2], dtype=np.float64))
+            except Exception:
+                pass
+        min_distance = float(self.CAN_BOX_MIN_DISTANCE)
+        return all(float(np.linalg.norm(can_xy - point)) >= min_distance for point in box_points)
+
+    def _sample_can_pose_away_from_box(self, side):
+        for _ in range(int(self.CAN_BOX_SAMPLE_TRIES)):
+            pose = rand_pose_cyl(
+                rlim=[0.4, 0.5],
+                thetalim=rotate_theta_side(self, side=side),
+                zlim=[0.755, 0.755],
+                robot_root_xy=self.robot_root_xy,
+                robot_yaw_rad=self.robot_yaw,
+                qpos=[0.5, 0.5, 0.5, 0.5],
+                rotate_rand=False,
+                rotate_lim=[0, 0, 0],
+            )
+            if self._can_pose_far_from_box(pose):
+                return pose
+        raise RuntimeError("Failed to sample can pose outside the plastic box footprint")
+
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
@@ -108,17 +137,7 @@ class place_cans_plasticbox_rotate_view(Base_Task):
         )
         self.plasticbox.set_mass(0.05)
 
-        obj1_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
-            thetalim=rotate_theta_side(self, side=1),
-
-            zlim=[0.755, 0.755],
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            qpos=[0.5, 0.5, 0.5, 0.5],
-            rotate_rand=False,
-            rotate_lim=[0, 0, 0],
-        )
+        obj1_pose = self._sample_can_pose_away_from_box(side=1)
         self.object1_id = int(np.random.choice([0, 1, 2, 3, 5, 6], 1)[0])
         self.object1 = create_actor(
             scene=self,
@@ -129,17 +148,7 @@ class place_cans_plasticbox_rotate_view(Base_Task):
         )
         self.object1.set_mass(0.05)
 
-        obj2_pose = rand_pose_cyl(
-            rlim=[0.4, 0.5],
-            thetalim=rotate_theta_side(self, side=-1),
-
-            zlim=[0.755, 0.755],
-            robot_root_xy=self.robot_root_xy,
-            robot_yaw_rad=self.robot_yaw,
-            qpos=[0.5, 0.5, 0.5, 0.5],
-            rotate_rand=False,
-            rotate_lim=[0, 0, 0],
-        )
+        obj2_pose = self._sample_can_pose_away_from_box(side=-1)
         self.object2_id = int(np.random.choice([0, 1, 2, 3, 5, 6], 1)[0])
         self.object2 = create_actor(
             scene=self,
@@ -225,8 +234,8 @@ class place_cans_plasticbox_rotate_view(Base_Task):
         self.complete_rotate_subtask(4, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"071_can/base{self.object1_id}",
-            "{B}": f"062_plasticbox/base{self.plasticbox_id}",
-            "{C}": f"071_can/base{self.object2_id}",
+            "{A}": "can",
+            "{B}": "plastic box",
+            "{C}": "can",
         }
         return self.info

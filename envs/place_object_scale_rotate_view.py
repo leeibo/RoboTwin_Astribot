@@ -156,7 +156,7 @@ class place_object_scale_rotate_view(Base_Task):
         self.arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
         self.enter_rotate_action_stage(1, focus_object_key=(object_key or "B"))
-        self.move(self.grasp_actor(self.object, arm_tag=self.arm_tag))
+        self.move(self.grasp_actor(self.object, arm_tag=self.arm_tag,gripper_pos=0.1))
         self._set_carried_object_keys(["B"])
         self.move(self.move_by_displacement(arm_tag=self.arm_tag, z=0.15))
         self.complete_rotate_subtask(1, carried_after=["B"])
@@ -183,8 +183,8 @@ class place_object_scale_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"072_electronicscale/base{self.scale_id}",
-            "{B}": f"{self.selected_modelname}/base{self.selected_model_id}",
+            "{A}": "electronic scale",
+            "{B}": self._natural_model_label(self.selected_modelname),
             "{a}": str(self.arm_tag),
         }
         return self.info

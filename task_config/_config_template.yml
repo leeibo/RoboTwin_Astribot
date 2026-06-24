@@ -3,9 +3,10 @@ episode_num: 50
 use_seed: false
 save_freq: 15
 # Table options:
-# Each task declares whether it uses fan or fan_double. Geometry lives here.
-# If a task selects a named profile such as fan_double_left_support, that
-# profile must exist under task_table_configs.
+# Rotate tasks share the same base fan geometry. fan_double tasks also use this
+# fan profile for the lower layer; their upper-layer profiles are selected in
+# each task via ROTATE_FAN_DOUBLE_LAYER_CONFIG_KEY and defined in
+# envs/_GLOBAL_CONFIGS.py.
 # task_table_configs:
 #   fan:
 #     table_shape: fan
@@ -17,27 +18,9 @@ save_freq: 15
 #     rotate_object_margin_deg: 10
 #     rotate_theta_reference_fan_angle_deg: 220
 #     rotate_theta_shared_ratio: 1.0
-#   fan_double_centered:
-#     table_shape: fan_double
-#     fan_center_on_robot: true
-#     fan_outer_radius: 0.9
-#     fan_inner_radius: 0.3
-#     fan_angle_deg: 200
-#     fan_center_deg: 90
-#     fan_double_lower_outer_radius: 0.9
-#     fan_double_lower_inner_radius: 0.3
-#     fan_double_upper_outer_radius: 0.8
-#     fan_double_upper_inner_radius: 0.6
-#     fan_double_layer_gap: 0.35
-#     fan_double_upper_theta_start_deg: -20.0
-#     fan_double_upper_theta_end_deg: 20.0
-#     fan_double_support_theta_deg: 0.0
-#     fan_double_upper_theta_offset_deg: 0.0
-#     fan_double_upper_collision_under_padding: 0.08
-#     rotate_object_margin_deg: 10
-#     rotate_theta_reference_fan_angle_deg: 220
-#     rotate_theta_shared_ratio: 1.0
 # difficulty_tag: medium_fan200  # optional; if unset, auto inferred from fan_angle_deg
+rotate_clutter_object_pool: all  # all | unused_task_objects | task_objects
+rotate_upper_cluttered_numbers: 0  # extra clutter on fan_double upper layer
 embodiment:
 - aloha-agilex
 language_num: 100

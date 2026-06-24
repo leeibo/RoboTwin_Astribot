@@ -130,7 +130,7 @@ class click_alarmclock_rotate_view(Base_Task):
         if press_pose is None:
             self.plan_success = False
             self.info["info"] = {
-                "{A}": f"046_alarm-clock/base{self.alarmclock_id}",
+                "{A}": "alarm clock",
                 "{a}": str(arm_tag),
             }
             return self.info
@@ -151,7 +151,7 @@ class click_alarmclock_rotate_view(Base_Task):
         self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"046_alarm-clock/base{self.alarmclock_id}",
+            "{A}": "alarm clock",
             "{a}": str(arm_tag),
         }
         return self.info

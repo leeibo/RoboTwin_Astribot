@@ -9,12 +9,13 @@ class place_object_basket_fan_double(Base_Task):
     ROTATE_LOWER_LAYER_KEEP_HEAD_HOME = True
     FIXED_LAYER_HEAD_JOINT2_ONLY = True
     BASKET_THETA_JITTER_DEG = 0.0
+    UPPER_THETA_MARGIN_DEG = 6.0
     LAYER_SPECS = {
         "lower": {
-            "inner_margin": 0.12,
-            "outer_margin": 0.16,
-            "max_cyl_r": 0.5,
-            "theta_shrink": 0.90,
+            "r_min": 0.40,
+            "r_max": 0.43,
+            "theta_min_deg": -55.0,
+            "theta_max_deg": 55.0,
         },
         "upper": {
             "inner_margin": 0.05,
@@ -26,27 +27,36 @@ class place_object_basket_fan_double(Base_Task):
 
     OBJECT_LAYER = "lower"
     BASKET_LAYER = "upper"
+    BASKET_LOWER_LAYER_PROB = 0.3
     OBJECT_CANDIDATES = {
-        "081_playingcards": [0, 1, 2],
-        "057_toycar": [0, 1, 2, 3, 4, 5],
+        # "057_toycar": [0, 1, 2, 3, 4, 5],
         "071_can": [0, 1, 2, 3, 5, 6],
     }
     OBJECT_R_RANGE_BY_MODEL = {
-        "071_can": [0.35, 0.50],
+        "057_toycar": [0.40, 0.43],
+        "071_can": [0.40, 0.43],
     }
     OBJECT_ROTATE_RAND_BY_MODEL = {
+        "057_toycar": True,
         "071_can": False,
     }
     OBJECT_PRE_GRASP_DIS_BY_MODEL = {
-        "071_can": 0.12,
+        "057_toycar": 0.10,
+        "071_can": 0.08,
+    }
+    OBJECT_GRIPPER_POS_BY_MODEL = {
+        "057_toycar": 0.2,
+        "071_can": 0.2,
     }
     BASKET_MODEL_NAME = "076_breadbasket"
     BASKET_MODEL_IDS = [0]
-    OBJECT_R_RANGE = [0.40, 0.50]
-    OBJECT_QPOS = [0.707225, 0.706849, -0.0100455, -0.00982061]
+    OBJECT_R_RANGE = [0.40, 0.43]
+    # OBJECT_QPOS = [0.707225, 0.706849, -0.0100455, -0.00982061]
+    OBJECT_QPOS = [0, 0, 0, 1]
     OBJECT_ROTATE_RAND = True
     OBJECT_ROTATE_LIM = [0.0, np.pi / 6, 0.0]
-    OBJECT_PRE_GRASP_DIS = 0.10
+    OBJECT_PRE_GRASP_DIS = 0.30
+    OBJECT_GRIPPER_POS = 0.0
     PICK_SUCCESS_Z_DELTA = 0.03
     OBJECT_POSE_SPECS = {
         "lower": {
@@ -63,7 +73,7 @@ class place_object_basket_fan_double(Base_Task):
         },
     }
     BASKET_POSE_SPECS = {
-        "lower": {"r": 0.48, "theta_deg": -18.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
+        "lower": {"r": 0.42, "theta_deg": -18.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
         "upper": {"r": 0.68, "theta_deg": 5.0, "z_offset": 0.0, "qpos": [0.5, 0.5, 0.5, 0.5]},
     }
     LIFT_BASKET_AFTER_PLACE = False
@@ -73,8 +83,8 @@ class place_object_basket_fan_double(Base_Task):
     SCAN_JOINT_NAME = "astribot_torso_joint_2"
     HEAD_RESET_SAVE_FREQ = None
 
-    PICK_LIFT_Z = 0.20
-    POST_GRASP_EXTRA_LIFT_Z = 0.02
+    PICK_LIFT_Z = 0.12
+    POST_GRASP_EXTRA_LIFT_Z = 0.00
     PLACE_RETREAT_Z = 0.0
     LOWER_PLACE_WITH_PLACE_ACTOR = True
     RETURN_TO_HOMESTATE_AFTER_PLACE = False
@@ -114,19 +124,45 @@ class place_object_basket_fan_double(Base_Task):
 
     def _get_basket_pose_spec(self):
         basket_spec = dict(self.BASKET_POSE_SPECS[self.basket_layer])
-        basket_spec["theta_deg"] = float(basket_spec.get("theta_deg", 0.0)) + float(
-            np.random.uniform(-self.BASKET_THETA_JITTER_DEG, self.BASKET_THETA_JITTER_DEG)
-        )
+        if self.basket_layer == "upper":
+            basket_spec["theta_deg"] = self._sample_theta_deg_on_layer("upper")
+        else:
+            basket_spec["theta_deg"] = float(basket_spec.get("theta_deg", 0.0)) + float(
+                np.random.uniform(-self.BASKET_THETA_JITTER_DEG, self.BASKET_THETA_JITTER_DEG)
+            )
         return basket_spec
 
+    def _sample_basket_layer(self):
+        lower_prob = float(getattr(self, "BASKET_LOWER_LAYER_PROB", 0.0))
+        return "lower" if float(np.random.random()) < lower_prob else normalize_layer(self.BASKET_LAYER)
+
+    def _sample_theta_deg_on_layer(self, layer_name):
+        layer_spec = get_layer_spec(self, layer_name)
+        theta_min = float(np.rad2deg(layer_spec["thetalim"][0]))
+        theta_max = float(np.rad2deg(layer_spec["thetalim"][1]))
+        margin = float(getattr(self, "UPPER_THETA_MARGIN_DEG", 0.0)) if normalize_layer(layer_name) == "upper" else 0.0
+        low = theta_min + margin
+        high = theta_max - margin
+        if high < low:
+            return 0.5 * (theta_min + theta_max)
+        return float(np.random.uniform(low, high))
+
     def _get_object_r_range(self):
-        return list(self.OBJECT_R_RANGE_BY_MODEL.get(self.object_name, self.OBJECT_R_RANGE))
+        layer_spec = get_layer_spec(self, self.object_layer)
+        return list(self.OBJECT_R_RANGE_BY_MODEL.get(self.object_name, layer_spec["rlim"]))
+
+    def _get_object_theta_range(self):
+        layer_spec = get_layer_spec(self, self.object_layer)
+        return list(layer_spec["thetalim"])
 
     def _get_object_rotate_rand(self):
         return bool(self.OBJECT_ROTATE_RAND_BY_MODEL.get(self.object_name, self.OBJECT_ROTATE_RAND))
 
     def _get_object_pre_grasp_dis(self):
         return float(self.OBJECT_PRE_GRASP_DIS_BY_MODEL.get(self.object_name, self.OBJECT_PRE_GRASP_DIS))
+
+    def _get_object_gripper_pos(self):
+        return float(self.OBJECT_GRIPPER_POS_BY_MODEL.get(self.object_name, self.OBJECT_GRIPPER_POS))
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -160,13 +196,13 @@ class place_object_basket_fan_double(Base_Task):
                     "next_subtask_id": -1,
                 },
             ],
-            task_instruction="Put {A} into {B}.",
+            task_instruction="Put the object into the bread basket.",
         )
 
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = get_robot_root_xy_yaw(self)
         self.object_layer = normalize_layer(self.OBJECT_LAYER)
-        self.basket_layer = normalize_layer(self.BASKET_LAYER)
+        self.basket_layer = normalize_layer(self._sample_basket_layer())
         self.object_name = str(np.random.choice(list(self.OBJECT_CANDIDATES.keys())))
         self.object_id = int(np.random.choice(self.OBJECT_CANDIDATES[self.object_name]))
         self.basket_name = str(self.BASKET_MODEL_NAME)
@@ -174,27 +210,28 @@ class place_object_basket_fan_double(Base_Task):
         self.arm_tag = ArmTag({0: "left", 1: "right"}[int(np.random.randint(0, 2))])
 
         if self.object_layer == "lower":
-            # Follow place_object_basket_rotate_view: spawn the object on the
-            # side assigned to the grasping arm, not near the center band.
             object_z = (
                 get_layer_top_z(self, self.object_layer)
                 + float(self.OBJECT_POSE_SPECS[self.object_layer].get("z_offset", 0.0))
             )
             object_pose = rand_pose_cyl(
                 rlim=self._get_object_r_range(),
-                thetalim=rotate_theta_side(self, side=1 if self.arm_tag == "left" else -1),
+                thetalim=self._get_object_theta_range(),
                 zlim=[object_z, object_z],
                 robot_root_xy=self.robot_root_xy,
                 robot_yaw_rad=self.robot_yaw,
-                qpos=self.OBJECT_QPOS,
-                rotate_rand=self._get_object_rotate_rand(),
-                rotate_lim=self.OBJECT_ROTATE_LIM,
+                qpos=[0.5, 0.5, 0.5, 0.5],
+                rotate_rand=True,
+                rotate_lim=[0, np.pi, 0],
             )
         else:
+            object_spec = dict(self.OBJECT_POSE_SPECS[self.object_layer])
+            if self.object_layer == "upper":
+                object_spec["theta_deg"] = self._sample_theta_deg_on_layer("upper")
             object_pose = pose_from_cyl(
                 self,
                 self.object_layer,
-                self.OBJECT_POSE_SPECS[self.object_layer],
+                object_spec,
                 default_qpos=self.OBJECT_QPOS,
                 ret="pose",
             )
@@ -205,7 +242,7 @@ class place_object_basket_fan_double(Base_Task):
             model_id=self.object_id,
             convex=True,
         )
-        self.object.set_mass(0.01)
+        self.object.set_mass(0.05)
 
         basket_pose = pose_from_cyl(
             self,
@@ -306,6 +343,7 @@ class place_object_basket_fan_double(Base_Task):
             self.plan_success = False
             arm_tag = self.arm_tag
         else:
+            # print("pick_object")
             arm_tag = pick_object(
                 self,
                 1,
@@ -313,8 +351,12 @@ class place_object_basket_fan_double(Base_Task):
                 self.object,
                 self.object_layer,
                 arm_tag=self.arm_tag,
-                lower_grasp_kwargs={"pre_grasp_dis": self._get_object_pre_grasp_dis()},
+                lower_grasp_kwargs={
+                    "pre_grasp_dis": self._get_object_pre_grasp_dis(),
+                    "gripper_pos": self._get_object_gripper_pos(),
+                },
             )
+            # print("after pick_object")
             if self.plan_success and not self._object_lifted_after_pick():
                 self.plan_success = False
             if self.plan_success:
@@ -345,14 +387,16 @@ class place_object_basket_fan_double(Base_Task):
                         "constrain": "free",
                     },
                     focus_object_key=basket_key,
+                    retreat_after_release=False,
+                    return_after_upper_release=False,
                 )
                 if place_ok:
                     prev_subtask_idx = 2
                 self._lift_basket_if_requested(arm_tag)
 
         self.info["info"] = {
-            "{A}": f"{self.object_name}/base{self.object_id}",
-            "{B}": f"{self.basket_name}/base{self.basket_id}",
+            "{A}": self._natural_model_label(self.object_name),
+            "{B}": self._natural_model_label(self.basket_name, fallback="bread basket"),
             "{a}": str(arm_tag),
         }
         return self.info

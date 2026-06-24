@@ -49,13 +49,15 @@ def get_layer_spec(task, layer_name, spec_attr="LAYER_SPECS"):
 
     layer_specs = getattr(task, spec_attr, {})
     local_spec = dict(layer_specs.get(layer_name, {})) if isinstance(layer_specs, dict) else {}
-    inner_margin = float(local_spec.get("inner_margin", 0.08 if layer_name == "upper" else 0.12))
-    outer_margin = float(local_spec.get("outer_margin", 0.06 if layer_name == "upper" else 0.14))
-    max_cyl_r = float(local_spec.get("max_cyl_r", outer_radius - outer_margin))
-    theta_shrink = float(local_spec.get("theta_shrink", 0.92))
-
-    r_min = min(max(inner_radius + inner_margin, inner_radius + 0.04), outer_radius - 0.06)
-    r_max = max(r_min, min(max_cyl_r, outer_radius - outer_margin))
+    if "r_min" in local_spec or "r_max" in local_spec:
+        r_min = float(local_spec.get("r_min", inner_radius))
+        r_max = float(local_spec.get("r_max", outer_radius))
+    else:
+        inner_margin = float(local_spec.get("inner_margin", 0.08 if layer_name == "upper" else 0.12))
+        outer_margin = float(local_spec.get("outer_margin", 0.06 if layer_name == "upper" else 0.14))
+        max_cyl_r = float(local_spec.get("max_cyl_r", outer_radius - outer_margin))
+        r_min = min(max(inner_radius + inner_margin, inner_radius + 0.04), outer_radius - 0.06)
+        r_max = max(r_min, min(max_cyl_r, outer_radius - outer_margin))
 
     if (
         layer_name == "upper"
@@ -67,6 +69,7 @@ def get_layer_spec(task, layer_name, spec_attr="LAYER_SPECS"):
         theta1 = float(task._wrap_to_pi(float(theta_end) - float(task.robot_yaw)))
         thetalim = [min(theta0, theta1), max(theta0, theta1)]
     else:
+        theta_shrink = float(local_spec.get("theta_shrink", 0.92))
         theta_half = float(rotate_theta_half(task)) * theta_shrink
         if theta_half <= 1e-3:
             theta_half = float(getattr(task, "rotate_object_theta_half_rad", np.deg2rad(45.0))) * theta_shrink
@@ -124,8 +127,6 @@ def sample_pose_on_layer(
     layer_name,
     z_offset=0.0,
     qpos=None,
-    rotate_rand=True,
-    rotate_lim=None,
     existing_pose_lst=None,
     avoid_xy_lst=None,
     min_dist_sq=0.012,
@@ -134,8 +135,6 @@ def sample_pose_on_layer(
 ):
     if qpos is None:
         qpos = [1, 0, 0, 0]
-    if rotate_lim is None:
-        rotate_lim = [0.0, 0.0, 0.75]
     if existing_pose_lst is None:
         existing_pose_lst = []
     if avoid_xy_lst is None:
@@ -150,8 +149,7 @@ def sample_pose_on_layer(
             robot_root_xy=task.robot_root_xy,
             robot_yaw_rad=task.robot_yaw,
             qpos=qpos,
-            rotate_rand=rotate_rand,
-            rotate_lim=rotate_lim,
+            rotate_rand=False,
         )
         if not valid_spacing(pose, existing_pose_lst, min_dist_sq):
             continue
@@ -348,6 +346,81 @@ def move_pose_sequence(task, arm_tag, candidate, pose_keys):
     return True
 
 
+def pose_with_min_z(pose, min_z):
+    if pose is None:
+        return None
+    pose_arr = np.array(pose, dtype=np.float64).reshape(-1)
+    if pose_arr.shape[0] < 7:
+        return None
+    pose_arr = pose_arr[:7].copy()
+    pose_arr[2] = max(float(pose_arr[2]), float(min_z))
+    return pose_arr.tolist()
+
+
+def append_unique_pose(pose_sequence, pose, pos_tol=1e-4, quat_tol=1e-4):
+    if pose is None:
+        return
+    pose_arr = np.array(pose, dtype=np.float64).reshape(-1)
+    if pose_arr.shape[0] < 7:
+        return
+    pose = pose_arr[:7].tolist()
+    if len(pose_sequence) > 0:
+        prev = np.array(pose_sequence[-1], dtype=np.float64).reshape(-1)
+        if prev.shape[0] >= 7:
+            pos_same = float(np.linalg.norm(prev[:3] - pose_arr[:3])) <= float(pos_tol)
+            quat_same = float(np.linalg.norm(prev[3:7] - pose_arr[3:7])) <= float(quat_tol)
+            quat_same = quat_same or float(np.linalg.norm(prev[3:7] + pose_arr[3:7])) <= float(quat_tol)
+            if pos_same and quat_same:
+                return
+    pose_sequence.append(pose)
+
+
+def get_upper_release_clear_z(task):
+    clear_offset = float(
+        getattr(
+            task,
+            "upper_place_return_curobo_clear_z_offset",
+            getattr(task, "UPPER_PLACE_RETURN_CUROBO_CLEAR_Z_OFFSET", 0.18),
+        )
+    )
+    return float(get_layer_top_z(task, "upper") + max(clear_offset, 0.0))
+
+
+def build_reverse_release_return_poses(task, selected_release_candidate):
+    if not bool(getattr(task, "upper_place_return_curobo_reverse_release_path", True)):
+        return []
+    if not isinstance(selected_release_candidate, dict):
+        return []
+
+    clear_z = get_upper_release_clear_z(task)
+    poses = []
+    for pose_key in ("approach_planner_pose", "entry_planner_pose"):
+        append_unique_pose(
+            poses,
+            pose_with_min_z(selected_release_candidate.get(pose_key, None), clear_z),
+        )
+    return poses
+
+
+def move_upper_release_return_to_entry(task, arm_tag, selected_release_candidate):
+    pose_sequence = build_reverse_release_return_poses(task, selected_release_candidate)
+    if len(pose_sequence) == 0:
+        return True
+
+    candidate = {}
+    pose_keys = []
+    for idx, pose in enumerate(pose_sequence):
+        pose_key = f"return_pose_{idx}"
+        candidate[pose_key] = pose
+        pose_keys.append(pose_key)
+
+    selected = select_pose_sequence_candidate(task, arm_tag, [candidate], tuple(pose_keys))
+    if selected is None:
+        task.plan_success = False
+        return False
+    return move_pose_sequence(task, arm_tag, selected, tuple(pose_keys))
+
+
 def pose_like_to_matrix(pose_like):
     if isinstance(pose_like, sapien.Pose):
         return pose_like.to_transformation_matrix()
@@ -497,8 +570,16 @@ def pick_object(task, subtask_idx, object_key, obj, layer_name, arm_tag=None, lo
     return arm_tag
 
 
-def release_object_at_point(task, arm_tag, target_world_point, target_layer):
+def release_object_at_point(
+    task,
+    arm_tag,
+    target_world_point,
+    target_layer,
+    retreat_after_release=True,
+    return_after_upper_release=True,
+):
     arm_tag = ArmTag(arm_tag)
+    target_layer = normalize_layer(target_layer)
     candidates = build_direct_release_pose_candidates(task, target_world_point, target_layer, arm_tag=arm_tag)
     pose_keys = ("entry_planner_pose", "approach_planner_pose", "planner_pose")
     selected = select_pose_sequence_candidate(task, arm_tag, candidates, pose_keys)
@@ -510,10 +591,12 @@ def release_object_at_point(task, arm_tag, target_world_point, target_layer):
     if not task.move(task.open_gripper(arm_tag)):
         return False
     retreat_z = float(getattr(task, "DIRECT_RELEASE_RETREAT_Z", 0.06))
-    if retreat_z > 1e-9:
+    if bool(retreat_after_release) and retreat_z > 1e-9:
         if not task.move(task.move_by_displacement(arm_tag=arm_tag, z=retreat_z, move_axis="world")):
             return False
-    if normalize_layer(target_layer) == "upper":
+    if target_layer == "upper" and bool(return_after_upper_release):
+        if not move_upper_release_return_to_entry(task, arm_tag, selected):
+            return False
         lateral_xy = get_upper_place_lateral_escape_xy(task, arm_tag)
         if lateral_xy is not None and (
             abs(float(lateral_xy[0])) > 1e-9 or abs(float(lateral_xy[1])) > 1e-9
@@ -599,6 +682,8 @@ def place_object(
     target_layer,
     place_kwargs=None,
     focus_object_key=None,
+    retreat_after_release=True,
+    return_after_upper_release=True,
 ):
     object_key = str(object_key)
     arm_tag = ArmTag(arm_tag)
@@ -630,10 +715,23 @@ def place_object(
             return False
     else:
         target_point = np.array(target_pose[:3], dtype=np.float64).reshape(3)
-        if not release_object_at_point(task, arm_tag, target_point, target_layer):
+        if not release_object_at_point(
+            task,
+            arm_tag,
+            target_point,
+            target_layer,
+            retreat_after_release=retreat_after_release,
+            return_after_upper_release=return_after_upper_release,
+        ):
             return False
         task._set_carried_object_keys([])
 
+    object_layers = getattr(task, "object_layers", None)
+    if isinstance(object_layers, dict):
+        object_layers[object_key] = target_layer
+    mark_discovered = getattr(task, "_mark_registry_target_discovered", None)
+    if callable(mark_discovered):
+        mark_discovered(object_key)
     task.complete_rotate_subtask(subtask_idx, carried_after=[])
     if bool(getattr(task, "RETURN_TO_HOMESTATE_AFTER_PLACE", True)):
         task.move(task.back_to_origin("left"), task.back_to_origin("right"))

@@ -10,20 +10,16 @@ class blocks_ranking_size_fan_double(Base_Task):
     FIXED_LAYER_HEAD_JOINT2_ONLY = True
     LAYER_SPECS = {
         "lower": {
-            "inner_margin": 0.12,
-            "outer_margin": 0.16,
-            "max_cyl_r": 0.5,
-            "theta_shrink": 0.90,
-            "theta_min_deg": 2.0,
-            "theta_max_deg": 38.0,
+            "r_min": 0.35,
+            "r_max": 0.35,
+            "theta_min_deg": -70.0,
+            "theta_max_deg": 70.0,
         },
         "upper": {
             "inner_margin": 0.05,
             "outer_margin": 0.07,
             "max_cyl_r": 0.68,
             "theta_shrink": 0.96,
-            "theta_min_deg": 2.0,
-            "theta_max_deg": 38.0,
         },
     }
     BLOCK_DEFS = (
@@ -34,19 +30,16 @@ class blocks_ranking_size_fan_double(Base_Task):
     BLOCK_SPAWN_MIN_DIST_SQ = 0.014
 
     TARGET_LAYER = "upper"
+    TARGET_LOWER_LAYER_PROB = 0.3
+    LOWER_TARGET_ROW_R = 0.43
     TARGET_ROW_SPEC = {
         "r": 0.68,
         "theta_deg": 34.0,
         "gap_theta_deg": 13.0,
         "z_offset": 0.0,
     }
-    MOVABLE_BLOCK_SPAWN_SPEC = {
-        "r": 0.45,
-        "theta_deg": 18.0,
-        "z_offset": 0.0,
-        "qpos": [1, 0, 0, 0],
-    }
-
+    RANDOMIZE_TARGET_ROW_THETA = True
+    TARGET_ROW_THETA_MARGIN_DEG = 6.0
     SCAN_R = 0.62
     SCAN_Z_BIAS = 0.90
     SCAN_JOINT_NAME = "astribot_torso_joint_2"
@@ -54,8 +47,7 @@ class blocks_ranking_size_fan_double(Base_Task):
 
     PICK_PRE_GRASP_DIS = 0.09
     PICK_GRASP_DIS = 0.01
-    PICK_LIFT_Z = 0.10
-    POST_GRASP_EXTRA_LIFT_Z = 0.04
+    PICK_LIFT_Z = 0.12
     PLACE_RETREAT_Z = 0.08
     LOWER_PLACE_WITH_PLACE_ACTOR = True
     LOWER_PLACE_FUNCTIONAL_POINT_ID = 0
@@ -66,7 +58,7 @@ class blocks_ranking_size_fan_double(Base_Task):
     LOWER_PLACE_IS_OPEN = True
     LOWER_PLACE_RETREAT_Z = 0.0
     LOWER_PLACE_RETREAT_MOVE_AXIS = "arm"
-    RETURN_TO_HOMESTATE_AFTER_PLACE = True
+    RETURN_TO_HOMESTATE_AFTER_PLACE = False
 
     DIRECT_RELEASE_TCP_BACKOFF = 0.12
     DIRECT_RELEASE_ENTRY_R_MARGIN_FROM_UPPER_INNER = 0.08
@@ -74,9 +66,9 @@ class blocks_ranking_size_fan_double(Base_Task):
     DIRECT_RELEASE_ENTRY_TCP_Z_OFFSET = 0.10
     DIRECT_RELEASE_APPROACH_TCP_Z_OFFSET = 0.10
     DIRECT_RELEASE_RETREAT_Z = 0.06
-    DIRECT_RELEASE_R_OFFSETS = (0.0, -0.03, 0.03)
-    DIRECT_RELEASE_THETA_OFFSETS_DEG = (0.0, -3.0, 3.0)
-    DIRECT_RELEASE_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0)
+    DIRECT_RELEASE_R_OFFSETS = (0.0, -0.03, 0.03, -0.06, 0.06)
+    DIRECT_RELEASE_THETA_OFFSETS_DEG = (0.0, -3.0, 3.0, -6.0, 6.0)
+    DIRECT_RELEASE_YAW_OFFSETS_DEG = (0.0, 15.0, -15.0, 30.0, -30.0)
 
     UPPER_TO_LOWER_USE_HOVER_DROP = True
     UPPER_TO_LOWER_HOVER_Z_OFFSETS = (0.06, 0.08, 0.10)
@@ -124,17 +116,48 @@ class blocks_ranking_size_fan_double(Base_Task):
     def _after_rotate_visibility_refresh(self, visibility_map):
         return None
 
+    def _sample_target_layer(self):
+        lower_prob = float(getattr(self, "TARGET_LOWER_LAYER_PROB", 0.0))
+        return "lower" if float(np.random.random()) < lower_prob else normalize_layer(self.TARGET_LAYER)
+
+    def _get_target_layer(self):
+        return normalize_layer(getattr(self, "target_layer", self.TARGET_LAYER))
+
+    def _get_target_row_spec(self):
+        spec = dict(self.TARGET_ROW_SPEC)
+        if self._get_target_layer() == "lower":
+            spec["r"] = float(getattr(self, "LOWER_TARGET_ROW_R", spec["r"]))
+        return spec
+
     def _sample_block_layers(self):
-        return {"A": "upper", "B": "lower", "C": "upper"}
+        return {"A": self._get_target_layer(), "B": "lower", "C": "lower"}
+
+    def _sample_target_row_theta_deg(self):
+        spec = self._get_target_row_spec()
+        fallback_theta = float(spec["theta_deg"])
+        if not bool(getattr(self, "RANDOMIZE_TARGET_ROW_THETA", False)):
+            return fallback_theta
+
+        layer_spec = get_layer_spec(self, self._get_target_layer())
+        theta_min = float(np.rad2deg(layer_spec["thetalim"][0]))
+        theta_max = float(np.rad2deg(layer_spec["thetalim"][1]))
+        margin = float(getattr(self, "TARGET_ROW_THETA_MARGIN_DEG", 0.0))
+        total_gap = float(spec.get("gap_theta_deg", 0.0)) * 2.0
+        low = theta_min + total_gap + margin
+        high = theta_max - margin
+        if high < low:
+            return min(max(fallback_theta, theta_min), theta_max)
+        return float(np.random.uniform(low, high))
 
     def _target_point(self, target_idx, z_offset=0.0):
-        spec = dict(self.TARGET_ROW_SPEC)
-        theta_deg = float(spec["theta_deg"]) - float(spec["gap_theta_deg"]) * float(target_idx)
+        spec = self._get_target_row_spec()
+        base_theta_deg = float(getattr(self, "target_row_theta_deg", spec["theta_deg"]))
+        theta_deg = base_theta_deg - float(spec["gap_theta_deg"]) * float(target_idx)
         return place_point_cyl(
             [
                 float(spec["r"]),
                 float(np.deg2rad(theta_deg)),
-                get_layer_top_z(self, self.TARGET_LAYER) + float(spec.get("z_offset", 0.0)) + float(z_offset),
+                get_layer_top_z(self, self._get_target_layer()) + float(spec.get("z_offset", 0.0)) + float(z_offset),
             ],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
@@ -174,18 +197,44 @@ class blocks_ranking_size_fan_double(Base_Task):
                     "carry_keys_after_done": [],
                     "allow_stage2_from_memory": True,
                     "done_when": "medium_block_placed",
+                    "next_subtask_id": 3,
+                },
+                {
+                    "id": 3,
+                    "name": "pick_small_block",
+                    "instruction_idx": 3,
+                    "search_target_keys": ["C"],
+                    "action_target_keys": ["C"],
+                    "required_carried_keys": [],
+                    "carry_keys_after_done": ["C"],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "small_block_grasped",
+                    "next_subtask_id": 4,
+                },
+                {
+                    "id": 4,
+                    "name": "place_small_block_right_of_medium",
+                    "instruction_idx": 4,
+                    "search_target_keys": ["B"],
+                    "action_target_keys": ["B", "C"],
+                    "required_carried_keys": ["C"],
+                    "carry_keys_after_done": [],
+                    "allow_stage2_from_memory": True,
+                    "done_when": "small_block_placed",
                     "next_subtask_id": -1,
                 },
             ],
-            task_instruction="Arrange {A}, {B}, and {C} from left to right by size.",
+            task_instruction="Arrange the large block, medium block, and small block from left to right by size.",
         )
 
     def load_actors(self):
         self.robot_root_xy, self.robot_yaw = get_robot_root_xy_yaw(self)
+        self.target_layer = self._sample_target_layer()
         sampled_layers = self._sample_block_layers()
         self.blocks = {}
         self.block_layers = {}
         self.block_sizes = {}
+        self.target_row_theta_deg = self._sample_target_row_theta_deg()
         self.target_poses = {
             "A": self._target_pose(0),
             "B": self._target_pose(1),
@@ -198,16 +247,9 @@ class blocks_ranking_size_fan_double(Base_Task):
             key = block_def["key"]
             layer_name = normalize_layer(sampled_layers[key])
             block_size = float(np.random.uniform(*block_def["size_range"]))
-            if key in ("A", "C"):
-                # Anchor the leftmost and rightmost blocks in their final row
-                # slots so the demo only needs the difficult middle placement.
-                target_idx = 0 if key == "A" else 2
-                pose_point = self._target_point(target_idx, z_offset=block_size)
+            if key == "A":
+                pose_point = self._target_point(0, z_offset=block_size)
                 block_pose = sapien.Pose(pose_point.tolist(), [1, 0, 0, 0])
-            elif key == "B" and normalize_layer(self.TARGET_LAYER) == "upper":
-                spawn_spec = dict(self.MOVABLE_BLOCK_SPAWN_SPEC)
-                spawn_spec["z_offset"] = float(spawn_spec.get("z_offset", 0.0)) + block_size
-                block_pose = pose_from_cyl(self, layer_name, spawn_spec, ret="pose")
             else:
                 block_pose = sample_pose_on_layer(
                     self,
@@ -223,7 +265,7 @@ class blocks_ranking_size_fan_double(Base_Task):
                 half_size=(block_size, block_size, block_size),
                 color=block_def["color"],
                 name=f"{key}_block",
-                is_static=(key in ("A", "C") and layer_name == normalize_layer(self.TARGET_LAYER)),
+                is_static=(key == "A" and layer_name == self._get_target_layer()),
             )
             block.set_mass(0.03)
             self.blocks[key] = block
@@ -238,16 +280,18 @@ class blocks_ranking_size_fan_double(Base_Task):
         self.object_layers = dict(self.block_layers)
         self._configure_rotate_subtask_plan()
 
-    def _pick(self, subtask_idx, key):
+    def _pick(self, subtask_idx, key, arm_tag=None):
         return pick_object(
             self,
             subtask_idx,
             key,
             self.blocks[key],
             self.block_layers[key],
+            arm_tag=arm_tag,
             lower_grasp_kwargs={
                 "pre_grasp_dis": self.PICK_PRE_GRASP_DIS,
                 "grasp_dis": self.PICK_GRASP_DIS,
+                # "contact_point_id":0
             },
         )
 
@@ -259,7 +303,7 @@ class blocks_ranking_size_fan_double(Base_Task):
             self.blocks[key],
             arm_tag,
             self.target_poses[key],
-            self.TARGET_LAYER,
+            self._get_target_layer(),
             place_kwargs={
                 "functional_point_id": self.LOWER_PLACE_FUNCTIONAL_POINT_ID,
                 "pre_dis": self.LOWER_PLACE_PRE_DIS,
@@ -269,17 +313,18 @@ class blocks_ranking_size_fan_double(Base_Task):
                 "is_open": bool(self.LOWER_PLACE_IS_OPEN),
             },
             focus_object_key=focus_key,
+            retreat_after_release=(key != "C"),
+            return_after_upper_release=(key != "C"),
         )
         if placed:
-            self.block_layers[str(key)] = normalize_layer(self.TARGET_LAYER)
-            self.object_layers[str(key)] = normalize_layer(self.TARGET_LAYER)
+            self.block_layers[str(key)] = self._get_target_layer()
+            self.object_layers[str(key)] = self._get_target_layer()
         return placed
 
     def play_once(self):
-        arm_tag_b = ArmTag("left")
-        arm_tag_c = get_object_arm_tag(self, self.blocks["C"])
+        locked_arm_tag = None
         prev_subtask_idx = None
-        for pick_idx, place_idx, key, focus_key in [(1, 2, "B", "A")]:
+        for pick_idx, place_idx, key, focus_key in [(1, 2, "B", "A"), (3, 4, "C", "B")]:
             self._prepare_subtask_rotate_search(pick_idx)
             found_key = self.search_and_focus_rotate_subtask(
                 pick_idx,
@@ -290,7 +335,10 @@ class blocks_ranking_size_fan_double(Base_Task):
             if found_key is None:
                 self.plan_success = False
                 break
-            arm_tag = self._pick(pick_idx, key)
+            if locked_arm_tag is None:
+                locked_arm_tag = get_object_arm_tag(self, self.blocks[key])
+            arm_tag = ArmTag(locked_arm_tag)
+            self._pick(pick_idx, key, arm_tag=arm_tag)
             if not self.plan_success:
                 break
             prev_subtask_idx = pick_idx
@@ -308,16 +356,16 @@ class blocks_ranking_size_fan_double(Base_Task):
             if not self._place(place_idx, key, arm_tag, found_focus or focus_key):
                 break
             prev_subtask_idx = place_idx
-            if key == "B":
-                arm_tag_b = arm_tag
+
+        info_arm_tag = locked_arm_tag or get_object_arm_tag(self, self.blocks["B"])
 
         self.info["info"] = {
             "{A}": "large block",
             "{B}": "medium block",
             "{C}": "small block",
-            "{a}": str(get_object_arm_tag(self, self.blocks["A"])),
-            "{b}": str(arm_tag_b),
-            "{c}": str(arm_tag_c),
+            "{a}": str(info_arm_tag),
+            "{b}": str(info_arm_tag),
+            "{c}": str(info_arm_tag),
         }
         return self.info
 

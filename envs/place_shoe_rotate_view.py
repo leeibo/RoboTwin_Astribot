@@ -50,7 +50,7 @@ class place_shoe_rotate_view(Base_Task):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         target_pose = place_pose_cyl(
-            [0.47, 0.0, 0.74, 1, 0, 0, 0],
+            [0.45, 0.0, 0.74, 1, 0, 0, 0],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             ret="pose",
@@ -79,7 +79,7 @@ class place_shoe_rotate_view(Base_Task):
         theta_lim = rotate_theta_side(self, side=side)
         while True:
             shoe_pose = rand_pose_cyl(
-                rlim=[0.4, 0.5],
+                rlim=[0.45, 0.45],
                 thetalim=theta_lim,
 
                 zlim=[0.741, 0.741],
@@ -121,7 +121,7 @@ class place_shoe_rotate_view(Base_Task):
         arm_tag = ArmTag("left" if shoe_pose[0] < 0 else "right")
 
         self.enter_rotate_action_stage(1, focus_object_key=(shoe_key or "A"))
-        self.move(self.grasp_actor(self.shoe, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.01))
+        self.move(self.grasp_actor(self.shoe, arm_tag=arm_tag, pre_grasp_dis=0.07, grasp_dis=-0.01,gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.07))
         self.complete_rotate_subtask(1, carried_after=["A"])
@@ -134,21 +134,22 @@ class place_shoe_rotate_view(Base_Task):
         )
         target_pose = self.target_block.get_functional_point(0)
         self.enter_rotate_action_stage(2, focus_object_key=(target_key or "B"))
-        self.move(
-            self.place_actor(
-                self.shoe,
-                arm_tag=arm_tag,
-                target_pose=target_pose,
-                functional_point_id=0,
-                pre_dis=0.12,
-                constrain="free",  # Shoe placement needs orientation alignment on the target pad.
-            )
-        )
+        # self.move(self.move_by_displacement(arm_tag=arm_tag, z=-0.07))
+        # self.move(
+        #     self.place_actor(
+        #         self.shoe,
+        #         arm_tag=arm_tag,
+        #         target_pose=target_pose,
+        #         functional_point_id=0,
+        #         pre_dis=0.12,
+        #         constrain="free",  # Shoe placement needs orientation alignment on the target pad.
+        #     )
+        # )
         self._set_carried_object_keys([])
         self.move(self.open_gripper(arm_tag=arm_tag))
         self.complete_rotate_subtask(2, carried_after=[])
 
-        self.info["info"] = {"{A}": f"041_shoe/base{self.shoe_id}", "{a}": str(arm_tag)}
+        self.info["info"] = {"{A}": "shoe", "{a}": str(arm_tag)}
         return self.info
     def check_success(self):
         shoe_pose = self.shoe.get_pose().p

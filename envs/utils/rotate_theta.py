@@ -1,5 +1,7 @@
 import numpy as np
 
+from envs._GLOBAL_CONFIGS import ROTATE_FAN_DOUBLE_LAYER_CONFIGS
+
 
 DEFAULT_ROTATE_THETA_SHARED_RATIO = 1.0
 DEFAULT_SIDE_INNER_RATIO = 0.55
@@ -15,44 +17,91 @@ DEFAULT_SCAN_VISIBILITY_MODE = "aabb"
 DEFAULT_SCAN_VISIBILITY_CAMERA_NAME = "camera_head"
 DEFAULT_SCAN_HORIZONTAL_MARGIN_DEG = 5.0
 DEFAULT_SCAN_VERTICAL_MARGIN_DEG = 3.0
+DEFAULT_SCAN_AABB_VISIBLE_RATIO_THRESHOLD = 0.4
 DEFAULT_SCAN_REFERENCE_R = 0.63
 DEFAULT_SCAN_JOINT_NAME = "astribot_torso_joint_2"
 DEFAULT_STAGE1_THETA_UNIT_DEG = 45.0
 DEFAULT_STAGE2_MAX_THETA_STEP_DEG = 30.0
 DEFAULT_STAGE2_CENTER_TOL_DEG = 3.0
 
+ROTATE_FAN_TABLE_CONFIG_REQUIRED_KEYS = (
+    "fan_center_on_robot",
+    "fan_outer_radius",
+    "fan_inner_radius",
+    "fan_angle_deg",
+    "fan_center_deg",
+    "rotate_object_margin_deg",
+    "rotate_theta_reference_fan_angle_deg",
+    "rotate_theta_shared_ratio",
+)
+
 ROTATE_TABLE_CONFIG_REQUIRED_KEYS = {
-    "fan": (
-        "fan_center_on_robot",
-        "fan_outer_radius",
-        "fan_inner_radius",
-        "fan_angle_deg",
-        "fan_center_deg",
-        "rotate_object_margin_deg",
-        "rotate_theta_reference_fan_angle_deg",
-        "rotate_theta_shared_ratio",
-    ),
-    "fan_double": (
-        "fan_center_on_robot",
-        "fan_outer_radius",
-        "fan_inner_radius",
-        "fan_angle_deg",
-        "fan_center_deg",
-        "fan_double_lower_outer_radius",
-        "fan_double_lower_inner_radius",
-        "fan_double_upper_outer_radius",
-        "fan_double_upper_inner_radius",
-        "fan_double_layer_gap",
-        "fan_double_upper_theta_start_deg",
-        "fan_double_upper_theta_end_deg",
-        "fan_double_support_theta_deg",
-        "fan_double_upper_theta_offset_deg",
-        "fan_double_upper_collision_under_padding",
-        "rotate_object_margin_deg",
-        "rotate_theta_reference_fan_angle_deg",
-        "rotate_theta_shared_ratio",
-    ),
+    "fan": ROTATE_FAN_TABLE_CONFIG_REQUIRED_KEYS,
+    "fan_double": ROTATE_FAN_TABLE_CONFIG_REQUIRED_KEYS,
 }
+
+FAN_DOUBLE_LAYER_CONFIG_ALIASES = {
+    "fan_double_centered": "centered",
+    "centered": "centered",
+    "fan_double_left_support": "left_support",
+    "left_support": "left_support",
+}
+
+
+def _normalize_fan_double_layer_config_key(config_key):
+    config_key = str(config_key).strip().lower()
+    if config_key in FAN_DOUBLE_LAYER_CONFIG_ALIASES:
+        return FAN_DOUBLE_LAYER_CONFIG_ALIASES[config_key]
+    return config_key
+
+
+def _get_task_fan_double_layer_config_key(task, kwargs):
+    config_key = kwargs.get(
+        "rotate_fan_double_layer_config_key",
+        kwargs.get("fan_double_layer_config_key", None),
+    )
+    if config_key is None:
+        config_key = getattr(task, "ROTATE_FAN_DOUBLE_LAYER_CONFIG_KEY", None)
+    if config_key is None:
+        legacy_table_key = str(getattr(task, "ROTATE_TABLE_CONFIG_KEY", "")).strip().lower()
+        if legacy_table_key.startswith("fan_double_"):
+            config_key = legacy_table_key
+    if config_key is None:
+        config_key = "centered"
+    return _normalize_fan_double_layer_config_key(config_key)
+
+
+def apply_rotate_fan_double_layer_config(task, kwargs):
+    """Merge global second-layer geometry into fan_double task kwargs."""
+    kwargs = dict(kwargs)
+    table_shape = str(getattr(task, "ROTATE_TABLE_SHAPE", kwargs.get("table_shape", "fan"))).lower()
+    if table_shape != "fan_double":
+        return kwargs
+
+    config_key = _get_task_fan_double_layer_config_key(task, kwargs)
+    if config_key not in ROTATE_FAN_DOUBLE_LAYER_CONFIGS:
+        task_name = getattr(task, "task_name", None) or task.__class__.__name__
+        available = ", ".join(sorted(ROTATE_FAN_DOUBLE_LAYER_CONFIGS.keys()))
+        raise KeyError(
+            f"Unknown fan_double layer config for {task_name}: {config_key!r}. "
+            f"Available configs: {available}"
+        )
+
+    layer_config = dict(ROTATE_FAN_DOUBLE_LAYER_CONFIGS[config_key])
+    if bool(layer_config.pop("fan_double_upper_align_with_lower", False)):
+        fan_angle_deg = float(kwargs.get("fan_angle_deg", layer_config.get("fan_angle_deg", 150.0)))
+        half_angle_deg = 0.5 * max(fan_angle_deg, 0.0)
+        layer_config["fan_double_upper_theta_start_deg"] = -half_angle_deg
+        layer_config["fan_double_upper_theta_end_deg"] = half_angle_deg
+        layer_config["fan_double_upper_theta_offset_deg"] = 0.0
+    for key, value in layer_config.items():
+        kwargs[key] = value
+
+    kwargs["fan_double_lower_outer_radius"] = kwargs.get("fan_outer_radius", 0.9)
+    kwargs["fan_double_lower_inner_radius"] = kwargs.get("fan_inner_radius", 0.3)
+    kwargs["fan_double_layer_config_key"] = config_key
+    kwargs["rotate_fan_double_layer_config_key"] = config_key
+    return kwargs
 
 
 def prepare_rotate_task_kwargs(task, kwargs):
@@ -60,6 +109,7 @@ def prepare_rotate_task_kwargs(task, kwargs):
     kwargs = dict(kwargs)
     table_shape = str(getattr(task, "ROTATE_TABLE_SHAPE", kwargs.get("table_shape", "fan"))).lower()
     kwargs["table_shape"] = table_shape
+    kwargs = apply_rotate_fan_double_layer_config(task, kwargs)
 
     required_keys = ROTATE_TABLE_CONFIG_REQUIRED_KEYS.get(table_shape, ())
     missing_keys = [key for key in required_keys if key not in kwargs]
@@ -157,6 +207,18 @@ def init_rotate_theta_bounds(
     )
     task.rotate_scan_horizontal_margin_rad = float(np.deg2rad(task.rotate_scan_horizontal_margin_deg))
     task.rotate_scan_vertical_margin_rad = float(np.deg2rad(task.rotate_scan_vertical_margin_deg))
+    task.rotate_scan_aabb_visible_ratio_threshold = float(
+        np.clip(
+            float(
+                kwargs.get(
+                    "rotate_scan_aabb_visible_ratio_threshold",
+                    DEFAULT_SCAN_AABB_VISIBLE_RATIO_THRESHOLD,
+                )
+            ),
+            0.0,
+            1.0,
+        )
+    )
     task.rotate_scan_reference_r = max(float(kwargs.get("rotate_scan_reference_r", DEFAULT_SCAN_REFERENCE_R)), 0.0)
     task.rotate_scan_joint_name_prefer = str(kwargs.get("rotate_scan_joint_name_prefer", DEFAULT_SCAN_JOINT_NAME))
     rotate_stage1_theta_unit_deg = max(

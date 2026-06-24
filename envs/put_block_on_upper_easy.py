@@ -7,31 +7,30 @@ class put_block_on_upper_easy(PutBlockFanDoubleMixin, Base_Task):
     ROTATE_FAN_DOUBLE_LAYER_CONFIG_KEY = "left_support"
     ROTATE_LOWER_LAYER_KEEP_HEAD_HOME = True
 
-    BLOCK_COUNT = 2
-    BLOCK_LAYER_SEQUENCE = ("lower", "lower")
+    BLOCK_COUNT = 1
+    BLOCK_LAYER_SEQUENCE = ("lower",)
     BLOCK_LAYER_SPECS = {
         "lower": {
-            "inner_margin": 0.10,
-            "outer_margin": 0.20,
-            "max_cyl_r": 0.50,
-            "theta_shrink": 0.92,
-            "theta_min_deg": -38.0,
-            "theta_max_deg": -2.0,
+            "r_min": 0.42,
+            "r_max": 0.43,
+            "theta_min_deg": -55.0,
+            "theta_max_deg": 55.0,
         },
         "upper": {
-            "inner_margin": 0.02,
-            "outer_margin": 0.04,
-            "max_cyl_r": 0.64,
-            "theta_shrink": 0.92,
+            "inner_margin": 0.05,
+            "outer_margin": 0.07,
+            "max_cyl_r": 0.68,
+            "theta_shrink": 0.96,
         },
     }
 
     PLATE_LAYER = "upper"
+    PLATE_LOWER_LAYER_PROB = 0.3
     PLATE_LAYER_SPECS = {
         "lower": {
-            "r": 0.55,
+            "r": 0.43,
             "theta_deg": -60.0,
-            "z_offset": 0.0,
+            "z_offset": 0.015,
             "qpos": [0.5, 0.5, 0.5, 0.5],
             "scale": [0.025, 0.025, 0.025],
         },
@@ -49,3 +48,5 @@ class put_block_on_upper_easy(PutBlockFanDoubleMixin, Base_Task):
     UPPER_PICK_ENTRY_Z_OFFSET = 0.06
     UPPER_PICK_PRE_GRASP_DIS = 0.06
     UPPER_PLACE_LATERAL_ESCAPE_DIS = 0.20
+    RETURN_TO_RELEASE_ENTRY_AFTER_INTERMEDIATE_UPPER_PLACE = True
+    END_AFTER_FINAL_DIRECT_RELEASE = True

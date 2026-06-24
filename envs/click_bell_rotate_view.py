@@ -8,6 +8,7 @@ import numpy as np
 
 class click_bell_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
+    BELL_RLIM = (0.40, 0.45)
 
     def check_success(self):
         if self.stage_success_tag:
@@ -53,7 +54,7 @@ class click_bell_rotate_view(Base_Task):
 
         while True:
             rand_pos = rand_pose_cyl(
-                rlim=[0.44, 0.5],
+                rlim=list(self.BELL_RLIM),
                 thetalim=rotate_theta_center(self),
 
                 zlim=[0.741, 0.741],
@@ -113,5 +114,5 @@ class click_bell_rotate_view(Base_Task):
         self.check_success()
         self.complete_rotate_subtask(1, carried_after=[])
 
-        self.info["info"] = {"{A}": f"050_bell/base{self.bell_id}", "{a}": str(arm_tag)}
+        self.info["info"] = {"{A}": "bell", "{a}": str(arm_tag)}
         return self.info

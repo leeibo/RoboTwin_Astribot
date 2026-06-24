@@ -85,11 +85,10 @@ class press_stapler_rotate_view(Base_Task):
         )
         self.move(self.close_gripper(arm_tag=arm_tag))
 
-        self.face_object_with_torso(self.stapler, joint_name_prefer="astribot_torso_joint_2")
         self.move(
             self.grasp_actor(self.stapler, arm_tag=arm_tag, pre_grasp_dis=0.02, grasp_dis=0.02, contact_point_id=2)
         )
         self.complete_rotate_subtask(1, carried_after=[])
 
-        self.info["info"] = {"{A}": f"048_stapler/base{self.stapler_id}", "{a}": str(arm_tag)}
+        self.info["info"] = {"{A}": "stapler", "{a}": str(arm_tag)}
         return self.info

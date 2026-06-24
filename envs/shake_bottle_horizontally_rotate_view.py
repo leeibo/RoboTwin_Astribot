@@ -117,7 +117,7 @@ class shake_bottle_horizontally_rotate_view(Base_Task):
         self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"001_bottle/base{self.bottle_id}",
+            "{A}": "bottle",
             "{a}": str(arm_tag),
         }
         return self.info

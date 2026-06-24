@@ -157,7 +157,7 @@ class search_object(Base_Task):
                     "next_subtask_id": -1,
                 },
             ],
-            task_instruction="Search for {A}; if it is not visible, open {B} and pick {A} up.",
+            task_instruction="Search for the object; if it is not visible, open the cabinet and pick the object up.",
         )
 
     @staticmethod
@@ -485,7 +485,6 @@ class search_object(Base_Task):
         self.object_arm_tag = self.cabinet_arm_tag.opposite
         self.initial_drawer_world_point = self._get_drawer_world_point()
         self.enter_rotate_action_stage(2, focus_object_key=(cabinet_key or "B"))
-        self.face_object_with_torso(self.cabinet, joint_name_prefer=self.SCAN_JOINT_NAME)
         if not self._grasp_cabinet_for_current_side():
             return False
 
@@ -527,7 +526,6 @@ class search_object(Base_Task):
         if self.object_arm_tag is None:
             self.object_arm_tag = self._get_cabinet_arm_tag().opposite
         self.enter_rotate_action_stage(3, focus_object_key=(object_key or "A"))
-        self.face_object_with_torso(self.object, joint_name_prefer=self.SCAN_JOINT_NAME)
         self.initial_object_z = float(self.object.get_pose().p[2])
         pre_grasp_pose, grasp_pose = self._choose_object_grasp_pose()
         if pre_grasp_pose is None or grasp_pose is None:
@@ -577,7 +575,7 @@ class search_object(Base_Task):
             self.object_arm_tag = self.cabinet_arm_tag.opposite
         return {
             "{A}": str(getattr(self, "object_label", self.OBJECT_LABEL)),
-            "{B}": "036_cabinet/base0",
+            "{B}": "cabinet",
             "{a}": str(self.object_arm_tag),
             "{b}": str(self.cabinet_arm_tag),
         }

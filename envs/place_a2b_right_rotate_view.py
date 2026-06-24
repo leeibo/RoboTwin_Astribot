@@ -11,17 +11,18 @@ import os
 
 class place_a2b_right_rotate_view(Base_Task):
     ROTATE_TABLE_SHAPE = "fan"
-    A2B_RLIM = (0.32, 0.42)
+    A2B_RLIM = (0.35, 0.45)
     A2B_MIN_DISTANCE = 0.19
     A2B_MIN_THETA_GAP = 0.12
-    A2B_PLACE_ARC_DIS = 0.11
+    A2B_PLACE_ARC_DIS = 0.1
     A2B_PLACE_R_BIAS = 0.0
     A2B_PLACE_TANGENT_BIAS = 0.0
     A2B_PLACE_Z_BIAS = 0.0
-    A2B_PLACE_PRE_DIS = 0.08
-    A2B_PLACE_DIS = 0.02
+    A2B_PLACE_PRE_DIS = 0.07
+    A2B_PLACE_DIS = 0.01
     A2B_PLACE_PRE_DIS_AXIS = "grasp"
     A2B_PLACE_CONSTRAIN = "free"
+
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(
@@ -207,7 +208,7 @@ class place_a2b_right_rotate_view(Base_Task):
         object_theta = float(self._pose_to_cyl(self.object.get_pose())[1])
         arm_tag = ArmTag("left" if object_theta >= 0.0 else "right")
         self.enter_rotate_action_stage(1, focus_object_key=(source_key or "A"))
-        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.1))
+        self.move(self.grasp_actor(self.object, arm_tag=arm_tag, pre_grasp_dis=0.07,gripper_pos=0.2))
         self._set_carried_object_keys(["A"])
         self.move(self.move_by_displacement(arm_tag=arm_tag, z=0.1, move_axis="arm"))
         self.complete_rotate_subtask(1, carried_after=["A"])
@@ -218,6 +219,7 @@ class place_a2b_right_rotate_view(Base_Task):
             scan_z=0.88 + self.table_z_bias,
             joint_name_prefer="astribot_torso_joint_2",
         )
+        self.move_torso([np.deg2rad(-20)])
         target_pose = self._side_place_pose(self.target_object.get_pose(), to_left=False)
         self.enter_rotate_action_stage(2, focus_object_key=(target_key or "B"))
         self.move(
@@ -235,8 +237,8 @@ class place_a2b_right_rotate_view(Base_Task):
         self.complete_rotate_subtask(2, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"{self.selected_modelname_A}/base{self.selected_model_id_A}",
-            "{B}": f"{self.selected_modelname_B}/base{self.selected_model_id_B}",
+            "{A}": self._natural_model_label(self.selected_modelname_A),
+            "{B}": self._natural_model_label(self.selected_modelname_B),
             "{a}": str(arm_tag),
         }
         return self.info

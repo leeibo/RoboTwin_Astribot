@@ -21,51 +21,13 @@ task_table_configs:
     rotate_object_margin_deg: 10
     rotate_theta_reference_fan_angle_deg: 220
     rotate_theta_shared_ratio: 1.0
-  fan_double_centered:
-    table_shape: fan_double
-    fan_center_on_robot: true
-    fan_outer_radius: 0.9
-    fan_inner_radius: 0.3
-    fan_angle_deg: 200
-    fan_center_deg: 90
-    fan_double_lower_outer_radius: 0.9
-    fan_double_lower_inner_radius: 0.3
-    fan_double_upper_outer_radius: 0.8
-    fan_double_upper_inner_radius: 0.6
-    fan_double_layer_gap: 0.35
-    fan_double_upper_theta_start_deg: -20.0
-    fan_double_upper_theta_end_deg: 20.0
-    fan_double_support_theta_deg: 0.0
-    fan_double_upper_theta_offset_deg: 0.0
-    fan_double_upper_collision_under_padding: 0.08
-    rotate_object_margin_deg: 10
-    rotate_theta_reference_fan_angle_deg: 220
-    rotate_theta_shared_ratio: 1.0
-  fan_double_left_support:
-    table_shape: fan_double
-    fan_center_on_robot: true
-    fan_outer_radius: 0.9
-    fan_inner_radius: 0.3
-    fan_angle_deg: 200
-    fan_center_deg: 90
-    fan_double_lower_outer_radius: 0.9
-    fan_double_lower_inner_radius: 0.3
-    fan_double_upper_outer_radius: 0.8
-    fan_double_upper_inner_radius: 0.6
-    fan_double_layer_gap: 0.35
-    fan_double_upper_theta_start_deg: -30.0
-    fan_double_upper_theta_end_deg: 30.0
-    fan_double_support_theta_deg: -40.0
-    fan_double_upper_theta_offset_deg: 0.0
-    fan_double_upper_collision_under_padding: 0.08
-    rotate_object_margin_deg: 10
-    rotate_theta_reference_fan_angle_deg: 220
-    rotate_theta_shared_ratio: 1.0
 rotate_scan_aabb_visible_ratio_threshold: 0.4
 rotate_clutter_min_radius: 0.55
 rotate_cluttered_numbers: 3
+rotate_upper_cluttered_numbers: 3
 rotate_clutter_candidate_count: 12
 rotate_clutter_radial_bias_power: 0.45
+rotate_clutter_object_pool: all
 episode_num: 50
 use_seed: false
 save_freq: 15

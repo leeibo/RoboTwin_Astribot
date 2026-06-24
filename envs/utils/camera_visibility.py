@@ -328,6 +328,7 @@ def project_object_to_image_uv(
     far=None,
     horizontal_margin_rad=0.0,
     vertical_margin_rad=0.0,
+    aabb_visible_ratio_threshold=0.0,
     ret_debug=False,
 ):
     mode = str(mode).lower()
@@ -370,6 +371,7 @@ def project_object_to_image_uv(
             far=far,
             horizontal_margin_rad=horizontal_margin_rad,
             vertical_margin_rad=vertical_margin_rad,
+            aabb_visible_ratio_threshold=aabb_visible_ratio_threshold,
             ret_debug=ret_debug,
         )
 
@@ -439,18 +441,23 @@ def project_object_to_image_uv(
     v_min = float(np.min(projected_uvs[:, 1]))
     v_max = float(np.max(projected_uvs[:, 1]))
 
-    inside = bool(
-        u_max >= uv_bounds["u_min"]
-        and u_min <= uv_bounds["u_max"]
-        and v_max >= uv_bounds["v_min"]
-        and v_min <= uv_bounds["v_max"]
-    )
+    clipped_u_min = max(u_min, uv_bounds["u_min"])
+    clipped_u_max = min(u_max, uv_bounds["u_max"])
+    clipped_v_min = max(v_min, uv_bounds["v_min"])
+    clipped_v_max = min(v_max, uv_bounds["v_max"])
+    bbox_w = max(float(u_max - u_min), 0.0)
+    bbox_h = max(float(v_max - v_min), 0.0)
+    bbox_area = bbox_w * bbox_h
+    clipped_w = max(float(clipped_u_max - clipped_u_min), 0.0)
+    clipped_h = max(float(clipped_v_max - clipped_v_min), 0.0)
+    clipped_area = clipped_w * clipped_h
+    visible_ratio = 0.0 if bbox_area <= 1e-12 else float(np.clip(clipped_area / bbox_area, 0.0, 1.0))
+    ratio_threshold = float(np.clip(float(aabb_visible_ratio_threshold), 0.0, 1.0))
+
+    has_overlap = bool(clipped_w > 0.0 and clipped_h > 0.0)
+    inside = bool(has_overlap and visible_ratio >= ratio_threshold)
 
     if inside:
-        clipped_u_min = max(u_min, uv_bounds["u_min"])
-        clipped_u_max = min(u_max, uv_bounds["u_max"])
-        clipped_v_min = max(v_min, uv_bounds["v_min"])
-        clipped_v_max = min(v_max, uv_bounds["v_max"])
         u_norm = float(0.5 * (clipped_u_min + clipped_u_max))
         v_norm = float(0.5 * (clipped_v_min + clipped_v_max))
     else:
@@ -471,6 +478,8 @@ def project_object_to_image_uv(
             "v_max": v_max,
         },
         "visible_uv_bounds": uv_bounds,
+        "visible_ratio": float(visible_ratio),
+        "visible_ratio_threshold": float(ratio_threshold),
         "valid_projected_points": int(projected_uvs.shape[0]),
         "sample_world_points": [point.tolist() for point in valid_world_points],
         "sample_camera_points": [point.tolist() for point in valid_camera_points],
@@ -493,6 +502,7 @@ def is_object_in_camera_fov(
     far=None,
     horizontal_margin_rad=0.0,
     vertical_margin_rad=0.0,
+    aabb_visible_ratio_threshold=0.0,
     ret_debug=False,
 ):
     """
@@ -509,6 +519,7 @@ def is_object_in_camera_fov(
         far=far,
         horizontal_margin_rad=horizontal_margin_rad,
         vertical_margin_rad=vertical_margin_rad,
+        aabb_visible_ratio_threshold=aabb_visible_ratio_threshold,
         ret_debug=True,
     )
 

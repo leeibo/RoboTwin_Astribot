@@ -1,5 +1,13 @@
+- search_object
+- search_object_place_pad
 - count_target_press_button
+- count_random_object_press_button
+- count_color_kinds_press_button
+- check_block_color
+- check_cola_date
+- check_cola_color
+- rank_backside_rgb_blocks
+- match_backside_two_blocks
+- match_backside_three_blocks_hard
 - count_target_collect_container
-- track_moved_object_direction
-- open_container_identify_object
-- inspect_underside_sort_block
+- flip_object_front_back

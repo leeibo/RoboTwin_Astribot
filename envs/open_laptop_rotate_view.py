@@ -45,16 +45,17 @@ class open_laptop_rotate_view(Base_Task):
         self.robot_root_xy, self.robot_yaw = self._get_robot_root_xy_yaw()
 
         self.model_name = "015_laptop"
-        self.model_id = int(np.random.randint(0, 11))
+        # self.model_id = int(np.random.randint(0, 11))
+        self.model_id = 1
         laptop_pose = rand_pose_cyl(
-            rlim=[0.46, 0.5],
-            thetalim=rotate_theta_center(self),
+            rlim=[0.58, 0.58],
+            thetalim=[-0.1,0.1],
 
             zlim=[0.741, 0.741],
             robot_root_xy=self.robot_root_xy,
             robot_yaw_rad=self.robot_yaw,
             qpos=[0.7, 0, 0, 0.7],
-            rotate_rand=True,
+            rotate_rand=False,
             rotate_lim=[0, 0, np.pi / 3],
         )
         self.laptop = create_sapien_urdf_obj(
@@ -86,24 +87,23 @@ class open_laptop_rotate_view(Base_Task):
         self.enter_rotate_action_stage(1, focus_object_key=(laptop_key or "A"))
         self.move(self.grasp_actor(self.laptop, arm_tag=arm_tag, pre_grasp_dis=0.08, contact_point_id=0))
         for _ in range(15):
-            self.face_object_with_torso(self.laptop, joint_name_prefer="astribot_torso_joint_2")
             self.move(
                 self.grasp_actor(
                     self.laptop,
                     arm_tag=arm_tag,
                     pre_grasp_dis=0.0,
-                    grasp_dis=0.0,
+                    grasp_dis=-0.01,
                     contact_point_id=1,
                 )
             )
             if not self.plan_success:
                 break
-            if self.check_success(target=0.5):
+            if self.check_success(target=0.2):
                 break
         self.complete_rotate_subtask(1, carried_after=[])
 
         self.info["info"] = {
-            "{A}": f"{self.model_name}/base{self.model_id}",
+            "{A}": self._natural_model_label(self.model_name),
             "{a}": str(arm_tag),
         }
         return self.info

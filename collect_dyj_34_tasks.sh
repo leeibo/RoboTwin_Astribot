@@ -13,11 +13,9 @@ task_list=(
     blocks_ranking_rgb_rotate_view
     blocks_ranking_size_fan_double
     blocks_ranking_size_rotate_view
-    click_alarmclock_rotate_view
     click_bell_rotate_view
     move_pillbottle_pad_rotate_view
     move_stapler_pad_rotate_view
-    open_laptop_rotate_view
     place_a2b_left_rotate_view
     place_a2b_right_rotate_view
     place_cans_plasticbox_rotate_view
@@ -30,15 +28,11 @@ task_list=(
     place_object_stand_rotate_view
     place_shoe_rotate_view
     press_stapler_rotate_view
-    put_block_breadbasket_fan_double
     put_block_on_upper_easy
     put_block_on_upper_hard
-    put_block_plasticbox_fan_double
-    put_block_skillet_fan_double
     search_object
     shake_bottle_horizontally_rotate_view
     shake_bottle_rotate_view
-    stack_blocks_three_rotate_view
     stack_blocks_two_rotate_view
     stamp_seal_rotate_view
     turn_switch_rotate_view
@@ -71,11 +65,11 @@ for task_name in "${task_list[@]}"; do
 done
 
 if [[ ${#failed_tasks[@]} -gt 0 ]]; then
-    echo "DYJ 34-task collection finished with failures:"
+    echo "DYJ task collection finished with failures:"
     for item in "${failed_tasks[@]}"; do
         echo "  ${item}"
     done
     exit 1
 fi
 
-echo "DYJ 34-task collection finished successfully."
+echo "DYJ task collection finished successfully."
