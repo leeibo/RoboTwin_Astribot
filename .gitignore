@@ -14,13 +14,6 @@ logs/
 imgs/
 eval_video/
 outputs/
-task_config/
-!task_config/
-task_config/*
-!task_config/rotate_task_whitelist.yml
-!task_config/info_gathering_demo.yml
-!task_config/info_gathering_randomized.yml
-!task_config/info_task_whitelist.yml
 **/.DS_Store
 .pytest_cache/
 # eval result

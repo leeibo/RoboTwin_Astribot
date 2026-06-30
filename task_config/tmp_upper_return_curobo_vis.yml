@@ -1,0 +1,135 @@
+# dyj random environment with demo ep1 external cameras.
+render_freq: 0
+visualize_markers: false
+fan_center_on_robot: true
+fan_outer_radius: 0.9
+fan_inner_radius: 0.3
+fan_angle_deg: 150
+fan_center_deg: 90
+fan_double_upper_theta_offset_deg: 20.0
+rotate_object_margin_deg: 20
+rotate_theta_reference_fan_angle_deg: 150
+rotate_theta_shared_ratio: 1.0
+task_table_configs:
+  fan:
+    table_shape: fan
+    fan_center_on_robot: true
+    fan_outer_radius: 0.9
+    fan_inner_radius: 0.3
+    fan_angle_deg: 150
+    fan_center_deg: 90
+    rotate_object_margin_deg: 20
+    rotate_theta_reference_fan_angle_deg: 150
+    rotate_theta_shared_ratio: 1.0
+  fan_double_centered:
+    table_shape: fan_double
+    fan_center_on_robot: true
+    fan_outer_radius: 0.9
+    fan_inner_radius: 0.3
+    fan_angle_deg: 150
+    fan_center_deg: 90
+    fan_double_lower_outer_radius: 0.9
+    fan_double_lower_inner_radius: 0.3
+    fan_double_upper_outer_radius: 0.8
+    fan_double_upper_inner_radius: 0.6
+    fan_double_layer_gap: 0.35
+    fan_double_upper_theta_start_deg: -20.0
+    fan_double_upper_theta_end_deg: 20.0
+    fan_double_support_theta_deg: 0.0
+    fan_double_upper_theta_offset_deg: 20.0
+    fan_double_upper_collision_under_padding: 0.08
+    rotate_object_margin_deg: 20
+    rotate_theta_reference_fan_angle_deg: 150
+    rotate_theta_shared_ratio: 1.0
+  fan_double_left_support:
+    table_shape: fan_double
+    fan_center_on_robot: true
+    fan_outer_radius: 0.9
+    fan_inner_radius: 0.3
+    fan_angle_deg: 150
+    fan_center_deg: 90
+    fan_double_lower_outer_radius: 0.9
+    fan_double_lower_inner_radius: 0.3
+    fan_double_upper_outer_radius: 0.8
+    fan_double_upper_inner_radius: 0.6
+    fan_double_layer_gap: 0.35
+    fan_double_upper_theta_start_deg: -30.0
+    fan_double_upper_theta_end_deg: 30.0
+    fan_double_support_theta_deg: -40.0
+    fan_double_upper_theta_offset_deg: 20.0
+    fan_double_upper_collision_under_padding: 0.08
+    rotate_object_margin_deg: 20
+    rotate_theta_reference_fan_angle_deg: 150
+    rotate_theta_shared_ratio: 1.0
+rotate_scan_aabb_visible_ratio_threshold: 0.4
+rotate_clutter_min_radius: 0.55
+rotate_cluttered_numbers: 5
+rotate_upper_cluttered_numbers: 3
+rotate_clutter_candidate_count: 12
+rotate_clutter_radial_bias_power: 0.45
+rotate_clutter_max_tries: 300
+rotate_clutter_is_static: true
+rotate_clutter_object_pool: all
+difficulty_tag: easy_fan150_randenv_ep1cam_observer
+episode_num: 1
+max_seed_tries: 300
+use_seed: false
+save_freq: 15
+embodiment: [astribot_texture]
+language_num: 100
+domain_randomization:
+  random_background: true
+  cluttered_table: true
+  clean_background_rate: 0
+  random_head_camera_dis: 0
+  random_table_height: 0.01
+  random_light: true
+  crazy_random_light_rate: 0.02
+camera:
+  head_camera_type: Large
+  wrist_camera_type: D435
+  collect_head_camera: true
+  collect_wrist_camera: true
+  collect_top_view_camera: true
+  top_view_camera:
+    w: 512
+    h: 384
+    fovy: 55
+    position: [0.0, -0.35, 1.80]
+    target: [0.0, 0.0, 0.74]
+    left: [-1.0, 0.0, 0.0]
+  observer_camera:
+    w: 1200
+    h: 1000
+    fovy: 65
+    position: [0.0, 0.73, 1.7]
+    forward: [0.0, -1.0, -1.02]
+    left: [1.0, 0.0, 0.0]
+data_type:
+  rgb: true
+  top_view: true
+  top_view_snapshot_freq: 15
+  extra_view_snapshot_freq: 15
+  observer_camera: true
+  world_camera1: true
+  third_view: false
+  depth: false
+  pointcloud: false
+  observer: false
+  endpose: true
+  qpos: true
+  mesh_segmentation: false
+  actor_segmentation: false
+pcd_down_sample_num: 1024
+pcd_crop: true
+save_path: ./data_view
+clear_cache_freq: 5
+collect_data: true
+eval_video_log: true
+# Temporary visualization config: upper-layer post-place return uses cuRobo.
+difficulty_tag: upper_return_curobo_vis
+upper_place_return_with_curobo: true
+upper_place_return_curobo_use_lateral_escape: false
+upper_place_return_curobo_fallback_to_joint: false
+upper_place_return_curobo_reverse_release_path: true
+upper_place_return_curobo_clear_z_offset: 0.18
