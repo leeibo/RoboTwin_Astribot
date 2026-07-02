@@ -34,3 +34,9 @@ envs/curobo/*
 
 /*.json*
 /*.txt
+
+# Local generated datasets and caches
+/.cache/
+/debug_data/
+/lerobot_data/
+/lerobot_data_rgb/
