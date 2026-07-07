@@ -33,3 +33,4 @@ envs/curobo/*
 
 /*.json*
 /*.txt
+policy/fast_subtask_action_12_wos/parallel_eval_logs

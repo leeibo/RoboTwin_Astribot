@@ -191,8 +191,9 @@ class Base_Task(gym.Env):
         """
         super().__init__()
         ta.setup_logging("CRITICAL")  # hide logging
-        np.random.seed(kwags.get("seed", 0))
-        torch.manual_seed(kwags.get("seed", 0))
+        self.seed = kwags.get("seed", 0)
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
         # random.seed(kwags.get('seed', 0))
 
         self.FRAME_IDX = 0
@@ -6320,48 +6321,116 @@ class Base_Task(gym.Env):
         right_gripper_path = np.hstack((right_current_gripper, right_gripper_actions))
 
         if action_type == 'qpos':
-            left_current_qpos, right_current_qpos = (
-                current_jointstate[:left_arm_dim],
-                current_jointstate[left_arm_dim + 1:left_arm_dim + right_arm_dim + 1],
-            )
-            left_path = np.vstack((left_current_qpos, left_arm_actions))
-            right_path = np.vstack((right_current_qpos, right_arm_actions))
+            left_current_qpos = np.array(self.robot.get_left_arm_real_jointState()[:-1], dtype=np.float64)
+            right_current_qpos = np.array(self.robot.get_right_arm_real_jointState()[:-1], dtype=np.float64)
+            if left_current_qpos.shape[0] != left_arm_dim:
+                left_current_qpos = current_jointstate[:left_arm_dim]
+            if right_current_qpos.shape[0] != right_arm_dim:
+                right_current_qpos = current_jointstate[left_arm_dim + 1:left_arm_dim + right_arm_dim + 1]
 
-            # ========== TOPP ==========
-            # TODO
+            dt = 1.0 / 250.0
+            try:
+                scene_dt = float(self.scene.get_timestep())
+                if scene_dt > 0:
+                    dt = scene_dt
+            except Exception:
+                pass
+
+            def _clip_arm_targets(arm_tag, arm_targets):
+                targets = np.array(arm_targets, dtype=np.float64, copy=True)
+                if targets.ndim == 1:
+                    targets = targets.reshape(1, -1)
+                arm_joints = self.robot.left_arm_joints if arm_tag == "left" else self.robot.right_arm_joints
+                for joint_idx, joint in enumerate(arm_joints[: targets.shape[1]]):
+                    targets[:, joint_idx] = [
+                        self.robot._clip_joint_target_to_limits(joint, val)
+                        for val in targets[:, joint_idx]
+                    ]
+                return targets
+
+            def _linear_arm_path(path, min_steps=20):
+                path = np.asarray(path, dtype=np.float64)
+                if path.ndim != 2 or path.shape[0] < 2:
+                    pos = np.repeat(path.reshape(1, -1), max(2, int(min_steps)), axis=0)
+                    vel = np.zeros_like(pos)
+                    return {"position": pos, "velocity": vel}
+
+                segments = []
+                for waypoint_idx in range(1, path.shape[0]):
+                    start = path[waypoint_idx - 1]
+                    target = path[waypoint_idx]
+                    max_delta = float(np.max(np.abs(target - start)))
+                    if max_delta < 1e-9:
+                        num_step = 2
+                    else:
+                        approx_speed = 1.0
+                        num_step = max(
+                            int(min_steps),
+                            int(np.ceil(max_delta / max(dt * approx_speed, 1e-6))),
+                        )
+                    segments.append(np.linspace(start, target, num=num_step + 1, dtype=np.float64)[1:])
+
+                pos = np.vstack(segments)
+                prev = np.vstack([path[:1], pos[:-1]]) if pos.shape[0] > 1 else path[:1]
+                vel = (pos - prev) / dt
+                vel[-1] = 0.0
+                return {"position": pos, "velocity": vel}
+
+            def _warn_topp_fallback(arm_tag, reason):
+                warn_attr = f"_take_action_qpos_{arm_tag}_topp_fallback_warned"
+                if getattr(self, warn_attr, False):
+                    return
+                print(f"[Base_Task.take_action] {arm_tag} arm TOPP fallback to linear: {reason}")
+                setattr(self, warn_attr, True)
+
+            def _plan_qpos_arm(arm_tag, current_qpos, arm_targets):
+                targets = _clip_arm_targets(arm_tag, arm_targets)
+                path = np.vstack((current_qpos, targets))
+                topp_planner = (
+                    getattr(self.robot, "left_mplib_planner", None)
+                    if arm_tag == "left"
+                    else getattr(self.robot, "right_mplib_planner", None)
+                )
+
+                if self.need_plan and topp_planner is not None:
+                    try:
+                        topp_path = path
+                        strip_torso_column = False
+                        expected_dof = None
+                        try:
+                            expected_dof = len(topp_planner.planner.joint_vel_limits)
+                        except Exception:
+                            expected_dof = None
+                        if expected_dof == path.shape[1] + 1:
+                            torso_now = self._get_torso_joint_state_now()
+                            torso_val = (
+                                float(torso_now[0])
+                                if np.asarray(torso_now).reshape(-1).shape[0] > 0
+                                else 0.0
+                            )
+                            torso_col = np.full((path.shape[0], 1), torso_val, dtype=np.float64)
+                            topp_path = np.hstack((torso_col, path))
+                            strip_torso_column = True
+
+                        _, pos, vel, _, _ = topp_planner.TOPP(topp_path, dt, verbose=True)
+                        if pos is not None and vel is not None and pos.shape[0] > 0:
+                            if strip_torso_column:
+                                pos = pos[:, 1:]
+                                vel = vel[:, 1:]
+                            return {"position": pos, "velocity": vel}
+                        _warn_topp_fallback(arm_tag, "TOPP returned an empty trajectory")
+                    except Exception as e:
+                        _warn_topp_fallback(arm_tag, e)
+                else:
+                    _warn_topp_fallback(arm_tag, "TOPP planner is not initialized")
+
+                return _linear_arm_path(path)
+
+            left_result = _plan_qpos_arm("left", left_current_qpos, left_arm_actions)
+            right_result = _plan_qpos_arm("right", right_current_qpos, right_arm_actions)
+            left_n_step = left_result["position"].shape[0]
+            right_n_step = right_result["position"].shape[0]
             topp_left_flag, topp_right_flag = True, True
-
-            try:
-                times, left_pos, left_vel, acc, duration = (self.robot.left_mplib_planner.TOPP(left_path,
-                                                                                            1 / 250,
-                                                                                            verbose=True))
-                left_result = dict()
-                left_result["position"], left_result["velocity"] = left_pos, left_vel
-                left_n_step = left_result["position"].shape[0]
-            except Exception as e:
-                # print("left arm TOPP error: ", e)
-                topp_left_flag = False
-                left_n_step = 50  # fixed
-
-            if left_n_step == 0:
-                topp_left_flag = False
-                left_n_step = 50  # fixed
-
-            try:
-                times, right_pos, right_vel, acc, duration = (self.robot.right_mplib_planner.TOPP(right_path,
-                                                                                                1 / 250,
-                                                                                                verbose=True))
-                right_result = dict()
-                right_result["position"], right_result["velocity"] = right_pos, right_vel
-                right_n_step = right_result["position"].shape[0]
-            except Exception as e:
-                # print("right arm TOPP error: ", e)
-                topp_right_flag = False
-                right_n_step = 50  # fixed
-
-            if right_n_step == 0:
-                topp_right_flag = False
-                right_n_step = 50  # fixed
 
         elif action_type == 'ee':
 

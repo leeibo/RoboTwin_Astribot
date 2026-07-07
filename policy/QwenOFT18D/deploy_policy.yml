@@ -1,0 +1,42 @@
+# Basic experiment configuration
+policy_name: QwenOFT18D
+task_name: null
+ckpt_setting: QwenOFT18D
+seed: 0
+instruction_type: unseen
+eval_config: policy/QwenOFT18D/deploy_policy.yml
+task_config: demo_randomized_easy_ep200_r5_easy
+
+policy_name: QwenOFT18D
+test_num: 40
+
+# QwenOFT18D websocket server.
+host: "127.0.0.1"
+port: 5701
+request_timeout: 300.0
+
+# Server input. The model was trained with current 18D qpos state; disable only
+# when intentionally evaluating image+instruction-only inference.
+send_state: true
+
+# Current QwenOFT18D checkpoints were trained on LeRobot videos whose R/B
+# channels were swapped during conversion. Keep this enabled to match that
+# training distribution; disable after retraining on corrected RGB videos.
+swap_rgb_channels: false
+
+# Execute at most this many actions from each predicted chunk. The model was
+# trained with horizon 16.
+max_actions_per_call: 16
+
+# Print one timing line after each action chunk finishes.
+log_chunk_timing: true
+
+# Save every request image plus prompt/state/action JSONL, matching the
+# ActiveQwenVLM eval debug style.
+log_request_debug: true
+temp_root: "/tmp/QwenOFT18D_robotwin"
+
+# 18D order expected by the model:
+# [left7, left_gripper, right7, right_gripper, torso_joint_4, head_joint_2]
+torso_index: 0
+head2_index: 1

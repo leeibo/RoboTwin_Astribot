@@ -1,0 +1,22 @@
+# Basic experiment configuration
+policy_name: fast_subtask_action_12_wos
+task_name: null
+task_config: null
+ckpt_setting: fast_subtask_action_12_wos
+seed: null
+instruction_type: unseen
+
+# StarVLA websocket policy server. Start it before running eval:
+#   bash /private/zjb/workspace/starVLA-A/examples/RoboTwin_Astribot/train_files/managed_runs/fast_subtask_action_12_wos/run_policy_server.sh
+host: "127.0.0.1"
+port: 7901
+unnorm_key: null
+image_size: [224, 224]
+history_frames: 12
+action_steps: 16
+action_type: qpos
+request_log_path: "policy/fast_subtask_action_12_wos/logs/requests.jsonl"
+request_image_dir: "policy/fast_subtask_action_12_wos/logs/images"
+
+# Informational path only; model loading happens in the StarVLA policy server.
+policy_ckpt_path: "/private/zjb/workspace/starVLA-A/results/fast_subtask_action_12_wos/final_model/pytorch_model.pt"

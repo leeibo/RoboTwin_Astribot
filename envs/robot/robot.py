@@ -7,6 +7,8 @@ import toppra as ta
 import math
 import yaml
 import os
+import tempfile
+import xml.etree.ElementTree as ET
 import transforms3d as t3d
 from copy import deepcopy
 from collections import OrderedDict
@@ -102,7 +104,7 @@ class Robot:
         left_robot_file = kwargs["left_robot_file"]
         right_robot_file = kwargs["right_robot_file"]
 
-        self.need_topp = False
+        self.need_topp = bool(need_topp)
 
         self.left_urdf_path = os.path.join(left_robot_file, left_embodiment_args["urdf_path"])
         self.left_srdf_path = left_embodiment_args.get("srdf_path", None)
@@ -1094,14 +1096,34 @@ class Robot:
         except UnicodeDecodeError:
             ascii_abs = abs_urdf + ".mplib_ascii.urdf"
             try:
+                if os.path.exists(ascii_abs) and os.path.getsize(ascii_abs) > 0:
+                    try:
+                        ET.parse(ascii_abs)
+                        print(f"[Robot.TOPP] use ASCII URDF for MPlib: {ascii_abs}")
+                        return ascii_abs
+                    except ET.ParseError:
+                        pass
+
                 with open(abs_urdf, "r", encoding="utf-8") as f:
                     txt = f.read()
                 ascii_txt = txt.encode("ascii", errors="ignore").decode("ascii")
-                with open(ascii_abs, "w", encoding="ascii") as f:
+                ascii_dir = os.path.dirname(ascii_abs)
+                with tempfile.NamedTemporaryFile(
+                    "w",
+                    encoding="ascii",
+                    dir=ascii_dir,
+                    prefix=os.path.basename(ascii_abs) + ".",
+                    suffix=".tmp",
+                    delete=False,
+                ) as f:
+                    tmp_abs = f.name
                     f.write(ascii_txt)
+                os.replace(tmp_abs, ascii_abs)
                 print(f"[Robot.TOPP] use ASCII URDF for MPlib: {ascii_abs}")
                 return ascii_abs
             except Exception as e:
+                if "tmp_abs" in locals() and os.path.exists(tmp_abs):
+                    os.remove(tmp_abs)
                 print(f"[Robot.TOPP] failed to create ASCII URDF fallback, use original. err={e}")
                 return abs_urdf
 
