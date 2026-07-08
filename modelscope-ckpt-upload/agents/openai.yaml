@@ -1,4 +1,0 @@
-interface:
-  display_name: "ModelScope Ckpt Upload"
-  short_description: "Robust checkpoint uploads to ModelScope"
-  default_prompt: "Use $modelscope-ckpt-upload to upload local checkpoint folders to conroy1201/robotwin-ckpt with retries, .pt splitting, and SHA verification."

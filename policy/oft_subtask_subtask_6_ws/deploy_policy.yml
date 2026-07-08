@@ -1,0 +1,39 @@
+policy_name: oft_subtask_subtask_6_ws
+task_name: null
+task_config: null
+ckpt_setting: oft_subtask_subtask_6_ws
+seed: null
+instruction_type: unseen
+
+host: "127.0.0.1"
+port: 7980
+unnorm_key: null
+image_size: [224, 224]
+action_steps: 16
+action_type: qpos
+history_mode: subtask_keyframe
+history_frames: 6
+history_stride: 16
+send_state: true
+swap_rgb_channels: false
+clip_grippers: true
+motion_min_interval: 16
+motion_state_delta_threshold: 0.05
+subtask_fallback_interval: 0
+request_log_path: "policy/oft_subtask_subtask_6_ws/logs/requests.jsonl"
+request_image_dir: "policy/oft_subtask_subtask_6_ws/logs/images"
+torso_index: 0
+head2_index: 1
+log_chunk_timing: true
+return_vlm_text: true
+vlm_text_max_new_tokens: 128
+subtask_planner_enabled: true
+subtask_planner_backend: http
+subtask_planner_url: "http://127.0.0.1:7991/classify"
+subtask_planner_model_path: "/data/lmz/code/starVLA-A/playground/Pretrained_models/Qwen3-VL-30B-A3B-Instruct"
+subtask_planner_timeout: 30.0
+subtask_planner_max_new_tokens: 192
+subtask_planner_output_keys: ["subtask", "current_subtask", "subtask_instruction", "vlm_text", "text", "output", "generated_text"]
+subtask_planner_use_annotation: false
+subtask_planner_fail_open: true
+policy_ckpt_path: "/data/lmz/code/starVLA-A/results/Checkpoints/oft_subtask_subtask_6_ws"
