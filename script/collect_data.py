@@ -13,6 +13,7 @@ import json
 import traceback
 import os
 import time
+from contextlib import contextmanager
 from argparse import ArgumentParser
 
 current_file_path = os.path.abspath(__file__)
@@ -30,11 +31,51 @@ def _env_flag(name, default=False):
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def class_decorator(task_name):
-    envs_module = importlib.import_module(f"envs.{task_name}")
+def _debug_timing_enabled():
+    return _env_flag("ROBOTWIN_DEBUG_TIMING", default=True)
+
+
+def _debug_now():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _debug_log(message, **fields):
+    if not _debug_timing_enabled():
+        return
+    field_text = ""
+    if fields:
+        field_text = " " + " ".join(f"{key}={value}" for key, value in fields.items())
+    print(f"[DebugTiming {_debug_now()}] {message}{field_text}", flush=True)
+
+
+@contextmanager
+def _debug_stage(stage, **fields):
+    start = time.perf_counter()
+    _debug_log(f"START {stage}", **fields)
     try:
-        env_class = getattr(envs_module, task_name)
-        env_instance = env_class()
+        yield
+    except Exception as exc:
+        elapsed = time.perf_counter() - start
+        _debug_log(
+            f"FAIL {stage}",
+            elapsed=f"{elapsed:.3f}s",
+            exception_type=type(exc).__name__,
+            exception_message=str(exc),
+            **fields,
+        )
+        raise
+    else:
+        elapsed = time.perf_counter() - start
+        _debug_log(f"END {stage}", elapsed=f"{elapsed:.3f}s", **fields)
+
+
+def class_decorator(task_name):
+    with _debug_stage("class_decorator.import_task", task=task_name):
+        envs_module = importlib.import_module(f"envs.{task_name}")
+    try:
+        with _debug_stage("class_decorator.instantiate_task", task=task_name):
+            env_class = getattr(envs_module, task_name)
+            env_instance = env_class()
     except:
         raise SystemExit("No such task")
     return env_instance
@@ -42,8 +83,9 @@ def class_decorator(task_name):
 
 def get_embodiment_config(robot_file):
     robot_config_file = os.path.join(robot_file, "config.yml")
-    with open(robot_config_file, "r", encoding="utf-8") as f:
-        embodiment_args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    with _debug_stage("get_embodiment_config", path=robot_config_file):
+        with open(robot_config_file, "r", encoding="utf-8") as f:
+            embodiment_args = yaml.load(f.read(), Loader=yaml.FullLoader)
     return embodiment_args
 
 
@@ -130,7 +172,8 @@ def write_collection_failure_report(save_path, payload):
 def clear_collection_failure_report(save_path):
     report_path = get_collection_failure_report_path(save_path)
     if os.path.exists(report_path):
-        os.remove(report_path)
+        with _debug_stage("clear_collection_failure_report", path=report_path):
+            os.remove(report_path)
 
 
 def make_json_safe(value):
@@ -153,36 +196,53 @@ def make_json_safe(value):
 
 
 def safe_close_env(task_env, render_freq, clear_cache=False):
+    start = time.perf_counter()
+    _debug_log("START safe_close_env.close_env", clear_cache=clear_cache, render_freq=render_freq)
     try:
         task_env.close_env(clear_cache=clear_cache)
     except Exception:
         traceback.print_exc()
+    finally:
+        _debug_log(
+            "END safe_close_env.close_env",
+            elapsed=f"{time.perf_counter() - start:.3f}s",
+            clear_cache=clear_cache,
+            render_freq=render_freq,
+        )
 
     if render_freq:
         viewer = getattr(task_env, "viewer", None)
         if viewer is not None:
+            start = time.perf_counter()
+            _debug_log("START safe_close_env.viewer_close")
             try:
                 viewer.close()
             except Exception:
                 traceback.print_exc()
+            finally:
+                _debug_log("END safe_close_env.viewer_close", elapsed=f"{time.perf_counter() - start:.3f}s")
 
 
 def main(task_name=None, task_config=None):
 
+    _debug_log("main.start", task=task_name, task_config=task_config, debug_timing=_debug_timing_enabled())
     task = class_decorator(task_name)
     config_path = f"./task_config/{task_config}.yml"
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    with _debug_stage("main.load_task_config", path=config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            args = yaml.load(f.read(), Loader=yaml.FullLoader)
 
     args['task_name'] = task_name
-    args = apply_task_table_config(task, args)
+    with _debug_stage("main.apply_task_table_config", task=task_name):
+        args = apply_task_table_config(task, args)
 
     embodiment_type = args.get("embodiment")
     embodiment_config_path = os.path.join(CONFIGS_PATH, "_embodiment_config.yml")
 
-    with open(embodiment_config_path, "r", encoding="utf-8") as f:
-        _embodiment_types = yaml.load(f.read(), Loader=yaml.FullLoader)
+    with _debug_stage("main.load_embodiment_types", path=embodiment_config_path):
+        with open(embodiment_config_path, "r", encoding="utf-8") as f:
+            _embodiment_types = yaml.load(f.read(), Loader=yaml.FullLoader)
 
     def get_embodiment_file(embodiment_type):
         robot_file = _embodiment_types[embodiment_type]["file_path"]
@@ -244,7 +304,8 @@ def main(task_name=None, task_config=None):
     clear_collection_failure_report(args["save_path"])
 
     try:
-        return run(task, args)
+        with _debug_stage("main.run", task=args["task_name"], save_path=args["save_path"]):
+            return run(task, args)
     except Exception as exc:
         traceback.print_exc()
         report = {
@@ -263,6 +324,7 @@ def main(task_name=None, task_config=None):
 
 
 def run(TASK_ENV, args):
+    run_start = time.perf_counter()
     epid, suc_num, fail_num, seed_list = 0, 0, 0, []
     last_failure = None
     max_seed_tries = args.get("max_seed_tries", DEFAULT_MAX_SEED_TRIES)
@@ -270,29 +332,53 @@ def run(TASK_ENV, args):
     skip_episode_instructions = _env_flag("ROBOTWIN_SKIP_INSTRUCTIONS", default=False)
 
     print(f"Task Name: \033[34m{args['task_name']}\033[0m")
+    _debug_log(
+        "run.start",
+        task=args["task_name"],
+        save_path=args["save_path"],
+        episode_num=args["episode_num"],
+        use_seed=args["use_seed"],
+        collect_data=args["collect_data"],
+        max_seed_tries=("unlimited" if max_seed_tries is None else max_seed_tries),
+        skip_annotated_video=skip_annotated_video,
+        skip_episode_instructions=skip_episode_instructions,
+    )
 
     # =========== Collect Seed ===========
-    os.makedirs(args["save_path"], exist_ok=True)
+    with _debug_stage("run.ensure_save_path", path=args["save_path"]):
+        os.makedirs(args["save_path"], exist_ok=True)
 
     if not args["use_seed"]:
         print("\033[93m" + "[Start Seed and Pre Motion Data Collection]" + "\033[0m")
         args["need_plan"] = True
 
         if os.path.exists(os.path.join(args["save_path"], "seed.txt")):
-            with open(os.path.join(args["save_path"], "seed.txt"), "r") as file:
-                seed_list = file.read().split()
-                if len(seed_list) != 0:
-                    seed_list = [int(i) for i in seed_list]
-                    suc_num = len(seed_list)
-                    epid = max(seed_list) + 1
-                elif os.environ.get("ROBOTWIN_START_SEED") is not None:
-                    epid = int(os.environ["ROBOTWIN_START_SEED"])
+            seed_path = os.path.join(args["save_path"], "seed.txt")
+            with _debug_stage("seed_stage.read_seed_file", path=seed_path):
+                with open(seed_path, "r") as file:
+                    seed_list = file.read().split()
+                    if len(seed_list) != 0:
+                        seed_list = [int(i) for i in seed_list]
+                        suc_num = len(seed_list)
+                        epid = max(seed_list) + 1
+                    elif os.environ.get("ROBOTWIN_START_SEED") is not None:
+                        epid = int(os.environ["ROBOTWIN_START_SEED"])
             print(f"Exist seed file, Start from: {epid} / {suc_num}")
         elif os.environ.get("ROBOTWIN_START_SEED") is not None:
             epid = int(os.environ["ROBOTWIN_START_SEED"])
             print(f"Start from env seed: {epid}")
 
         while suc_num < args["episode_num"]:
+            attempt_start = time.perf_counter()
+            attempt_status = "unknown"
+            _debug_log(
+                "seed_attempt.begin",
+                task=args["task_name"],
+                episode=suc_num,
+                seed=epid,
+                success=suc_num,
+                failed=fail_num,
+            )
             if max_seed_tries is not None and epid > max_seed_tries:
                 report = {
                     "task_name": args["task_name"],
@@ -319,15 +405,28 @@ def run(TASK_ENV, args):
                 return SEED_LIMIT_EXCEEDED_EXIT_CODE
 
             try:
-                TASK_ENV.setup_demo(now_ep_num=suc_num, seed=epid, **args)
-                TASK_ENV.play_once()
+                with _debug_stage("seed_attempt.setup_demo", task=args["task_name"], episode=suc_num, seed=epid):
+                    TASK_ENV.setup_demo(now_ep_num=suc_num, seed=epid, **args)
+                with _debug_stage("seed_attempt.play_once", task=args["task_name"], episode=suc_num, seed=epid):
+                    TASK_ENV.play_once()
 
-                if TASK_ENV.plan_success and TASK_ENV.check_success():
+                with _debug_stage(
+                    "seed_attempt.check_success",
+                    task=args["task_name"],
+                    episode=suc_num,
+                    seed=epid,
+                    plan_success=TASK_ENV.plan_success,
+                ):
+                    episode_success = TASK_ENV.plan_success and TASK_ENV.check_success()
+
+                if episode_success:
                     print(f"simulate data episode {suc_num} success! (seed = {epid})")
                     seed_list.append(epid)
-                    TASK_ENV.save_traj_data(suc_num)
+                    with _debug_stage("seed_attempt.save_traj_data", task=args["task_name"], episode=suc_num, seed=epid):
+                        TASK_ENV.save_traj_data(suc_num)
                     suc_num += 1
                     last_failure = None
+                    attempt_status = "success"
                 else:
                     print(f"simulate data episode {suc_num} fail! (seed = {epid})")
                     fail_num += 1
@@ -335,9 +434,12 @@ def run(TASK_ENV, args):
                         "type": "plan_or_success_check_failed",
                         "seed": epid,
                     }
+                    attempt_status = "plan_or_success_check_failed"
 
-                safe_close_env(TASK_ENV, args["render_freq"])
+                with _debug_stage("seed_attempt.safe_close_env", task=args["task_name"], seed=epid):
+                    safe_close_env(TASK_ENV, args["render_freq"])
             except UnStableError as e:
+                attempt_status = type(e).__name__
                 print(" -------------")
                 print(f"simulate data episode {suc_num} fail! (seed = {epid})")
                 traceback.print_exc()
@@ -348,9 +450,12 @@ def run(TASK_ENV, args):
                     "seed": epid,
                     "message": str(e),
                 }
-                safe_close_env(TASK_ENV, args["render_freq"])
-                time.sleep(0.3)
+                with _debug_stage("seed_attempt.safe_close_env_after_unstable", task=args["task_name"], seed=epid):
+                    safe_close_env(TASK_ENV, args["render_freq"])
+                with _debug_stage("seed_attempt.sleep_after_unstable", task=args["task_name"], seed=epid, seconds=0.3):
+                    time.sleep(0.3)
             except Exception as e:
+                attempt_status = type(e).__name__
                 # stack_trace = traceback.format_exc()
                 print(" -------------")
                 print(f"simulate data episode {suc_num} fail! (seed = {epid})")
@@ -362,21 +467,37 @@ def run(TASK_ENV, args):
                     "seed": epid,
                     "message": str(e),
                 }
-                safe_close_env(TASK_ENV, args["render_freq"])
-                time.sleep(1)
+                with _debug_stage("seed_attempt.safe_close_env_after_exception", task=args["task_name"], seed=epid):
+                    safe_close_env(TASK_ENV, args["render_freq"])
+                with _debug_stage("seed_attempt.sleep_after_exception", task=args["task_name"], seed=epid, seconds=1):
+                    time.sleep(1)
+            finally:
+                _debug_log(
+                    "seed_attempt.end",
+                    task=args["task_name"],
+                    seed=epid,
+                    status=attempt_status,
+                    elapsed=f"{time.perf_counter() - attempt_start:.3f}s",
+                    success=suc_num,
+                    failed=fail_num,
+                )
 
             epid += 1
 
-            with open(os.path.join(args["save_path"], "seed.txt"), "w") as file:
-                for sed in seed_list:
-                    file.write("%s " % sed)
+            seed_path = os.path.join(args["save_path"], "seed.txt")
+            with _debug_stage("seed_stage.write_seed_file", path=seed_path, seed_count=len(seed_list), next_seed=epid):
+                with open(seed_path, "w") as file:
+                    for sed in seed_list:
+                        file.write("%s " % sed)
 
         print(f"\nComplete simulation, failed \033[91m{fail_num}\033[0m times / {epid} tries \n")
     else:
         print("\033[93m" + "Use Saved Seeds List".center(30, "-") + "\033[0m")
-        with open(os.path.join(args["save_path"], "seed.txt"), "r") as file:
-            seed_list = file.read().split()
-            seed_list = [int(i) for i in seed_list]
+        seed_path = os.path.join(args["save_path"], "seed.txt")
+        with _debug_stage("use_seed.read_seed_file", path=seed_path):
+            with open(seed_path, "r") as file:
+                seed_list = file.read().split()
+                seed_list = [int(i) for i in seed_list]
 
     if len(seed_list) < args["episode_num"]:
         report = {
@@ -415,53 +536,102 @@ def run(TASK_ENV, args):
             file_path = os.path.join(args["save_path"], 'data', f'episode{idx}.hdf5')
             return os.path.exists(file_path)
 
-        while exist_hdf5(st_idx):
-            st_idx += 1
+        with _debug_stage("data_stage.scan_existing_hdf5", save_path=args["save_path"]):
+            while exist_hdf5(st_idx):
+                st_idx += 1
+        _debug_log("data_stage.start_index", st_idx=st_idx, episode_num=args["episode_num"])
 
         for episode_idx in range(st_idx, args["episode_num"]):
+            episode_start = time.perf_counter()
+            seed = seed_list[episode_idx]
+            _debug_log("data_episode.begin", task=args["task_name"], episode=episode_idx, seed=seed)
             print(f"\033[34mTask name: {args['task_name']}\033[0m")
 
-            TASK_ENV.setup_demo(now_ep_num=episode_idx, seed=seed_list[episode_idx], **args)
+            with _debug_stage("data_episode.setup_demo", task=args["task_name"], episode=episode_idx, seed=seed):
+                TASK_ENV.setup_demo(now_ep_num=episode_idx, seed=seed, **args)
 
-            traj_data = TASK_ENV.load_tran_data(episode_idx)
+            with _debug_stage("data_episode.load_tran_data", task=args["task_name"], episode=episode_idx):
+                traj_data = TASK_ENV.load_tran_data(episode_idx)
             args["left_joint_path"] = traj_data["left_joint_path"]
             args["right_joint_path"] = traj_data["right_joint_path"]
-            TASK_ENV.set_path_lst(args)
+            with _debug_stage(
+                "data_episode.set_path_lst",
+                task=args["task_name"],
+                episode=episode_idx,
+                left_path_len=len(args["left_joint_path"]),
+                right_path_len=len(args["right_joint_path"]),
+            ):
+                TASK_ENV.set_path_lst(args)
 
             info_file_path = os.path.join(args["save_path"], "scene_info.json")
 
             if not os.path.exists(info_file_path):
-                with open(info_file_path, "w", encoding="utf-8") as file:
-                    json.dump({}, file, ensure_ascii=False)
+                with _debug_stage("data_episode.init_scene_info", path=info_file_path):
+                    with open(info_file_path, "w", encoding="utf-8") as file:
+                        json.dump({}, file, ensure_ascii=False)
 
-            with open(info_file_path, "r", encoding="utf-8") as file:
-                info_db = json.load(file)
+            with _debug_stage("data_episode.read_scene_info", path=info_file_path):
+                with open(info_file_path, "r", encoding="utf-8") as file:
+                    info_db = json.load(file)
 
-            info = make_json_safe(TASK_ENV.play_once())
+            with _debug_stage("data_episode.play_once", task=args["task_name"], episode=episode_idx, seed=seed):
+                info_raw = TASK_ENV.play_once()
+            with _debug_stage("data_episode.make_json_safe", task=args["task_name"], episode=episode_idx):
+                info = make_json_safe(info_raw)
             info_db[f"episode_{episode_idx}"] = info
-            subtask_metadata_path = TASK_ENV.save_rotate_subtask_metadata(episode_idx)
+            with _debug_stage("data_episode.save_rotate_subtask_metadata", task=args["task_name"], episode=episode_idx):
+                subtask_metadata_path = TASK_ENV.save_rotate_subtask_metadata(episode_idx)
             if subtask_metadata_path is not None:
                 info_db[f"episode_{episode_idx}"]["subtask_metadata_path"] = subtask_metadata_path
-            annotated_video_path = None if skip_annotated_video else TASK_ENV.get_rotate_annotated_video_path(episode_idx)
+            with _debug_stage(
+                "data_episode.resolve_annotated_video_path",
+                task=args["task_name"],
+                episode=episode_idx,
+                skip_annotated_video=skip_annotated_video,
+            ):
+                annotated_video_path = None if skip_annotated_video else TASK_ENV.get_rotate_annotated_video_path(episode_idx)
             if annotated_video_path is not None and len(getattr(TASK_ENV, "saved_frame_annotations", [])) > 0:
                 info_db[f"episode_{episode_idx}"]["annotated_video_path"] = annotated_video_path
 
-            with open(info_file_path, "w", encoding="utf-8") as file:
-                json.dump(info_db, file, ensure_ascii=False, indent=4)
+            with _debug_stage("data_episode.write_scene_info", path=info_file_path, episode=episode_idx):
+                with open(info_file_path, "w", encoding="utf-8") as file:
+                    json.dump(info_db, file, ensure_ascii=False, indent=4)
 
-            TASK_ENV.close_env(clear_cache=((episode_idx + 1) % clear_cache_freq == 0))
-            TASK_ENV.merge_pkl_to_hdf5_video()
-            TASK_ENV.remove_data_cache()
-            assert TASK_ENV.check_success(), "Collect Error"
+            clear_cache_this_episode = ((episode_idx + 1) % clear_cache_freq == 0)
+            with _debug_stage(
+                "data_episode.close_env",
+                task=args["task_name"],
+                episode=episode_idx,
+                clear_cache=clear_cache_this_episode,
+            ):
+                TASK_ENV.close_env(clear_cache=clear_cache_this_episode)
+            with _debug_stage("data_episode.merge_pkl_to_hdf5_video", task=args["task_name"], episode=episode_idx):
+                TASK_ENV.merge_pkl_to_hdf5_video()
+            with _debug_stage("data_episode.remove_data_cache", task=args["task_name"], episode=episode_idx):
+                TASK_ENV.remove_data_cache()
+            with _debug_stage("data_episode.check_success", task=args["task_name"], episode=episode_idx):
+                assert TASK_ENV.check_success(), "Collect Error"
+            _debug_log(
+                "data_episode.end",
+                task=args["task_name"],
+                episode=episode_idx,
+                seed=seed,
+                elapsed=f"{time.perf_counter() - episode_start:.3f}s",
+            )
 
         if not skip_episode_instructions:
             command = (
                 "cd description && bash gen_episode_instructions.sh "
                 f"{args['task_name']} {args['storage_setting']} {args['language_num']} {args['task_config']}"
             )
-            os.system(command)
+            with _debug_stage("data_stage.generate_episode_instructions", command=command):
+                instruction_exit_code = os.system(command)
+            _debug_log("data_stage.generate_episode_instructions.exit", exit_code=instruction_exit_code)
+        else:
+            _debug_log("data_stage.generate_episode_instructions.skip")
 
     clear_collection_failure_report(args["save_path"])
+    _debug_log("run.end", task=args["task_name"], elapsed=f"{time.perf_counter() - run_start:.3f}s")
     return 0
 
 

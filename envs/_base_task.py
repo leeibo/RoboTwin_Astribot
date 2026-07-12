@@ -26,6 +26,7 @@ from pathlib import Path
 import trimesh
 import imageio
 import glob
+from contextlib import contextmanager
 
 
 from ._GLOBAL_CONFIGS import *
@@ -51,6 +52,44 @@ def _parse_bool_config(value, default=False):
         if normalized in {"0", "false", "no", "n", "off", "none", ""}:
             return False
     return bool(value)
+
+def _debug_timing_enabled():
+    raw = os.environ.get("ROBOTWIN_DEBUG_TIMING", "1")
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _debug_now():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _debug_log(message, **fields):
+    if not _debug_timing_enabled():
+        return
+    field_text = ""
+    if fields:
+        field_text = " " + " ".join(f"{key}={value}" for key, value in fields.items())
+    print(f"[DebugTiming {_debug_now()}] {message}{field_text}", flush=True)
+
+
+@contextmanager
+def _debug_stage(stage, **fields):
+    start = time.perf_counter()
+    _debug_log(f"START {stage}", **fields)
+    try:
+        yield
+    except Exception as exc:
+        elapsed = time.perf_counter() - start
+        _debug_log(
+            f"FAIL {stage}",
+            elapsed=f"{elapsed:.3f}s",
+            exception_type=type(exc).__name__,
+            exception_message=str(exc),
+            **fields,
+        )
+        raise
+    else:
+        elapsed = time.perf_counter() - start
+        _debug_log(f"END {stage}", elapsed=f"{elapsed:.3f}s", **fields)
 
 
 TASK_USED_CLUTTER_OBJECT_NAMES = {
@@ -189,8 +228,19 @@ class Base_Task(gym.Env):
         - `self.right_arm_joint_id`: [7,15,19,23,27,31].
         - `self.render_fre`: Render frequency.
         """
+        init_debug_fields = {
+            "task": kwags.get("task_name", None),
+            "episode": kwags.get("now_ep_num", 0),
+            "seed": kwags.get("seed", 0),
+            "need_plan": kwags.get("need_plan", True),
+            "save_data": kwags.get("save_data", False),
+        }
+        init_start = time.perf_counter()
+        _debug_log("Base_Task._init_task_env_.begin", **init_debug_fields)
+
         super().__init__()
-        ta.setup_logging("CRITICAL")  # hide logging
+        with _debug_stage("base_init.toppra_setup_logging", **init_debug_fields):
+            ta.setup_logging("CRITICAL")  # hide logging
         self.seed = kwags.get("seed", 0)
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
@@ -227,7 +277,8 @@ class Base_Task(gym.Env):
         self.fix_gripper = False
         # Pass through task config so scene physics params (e.g., friction/timestep)
         # can be tuned from config files.
-        self.setup_scene(**kwags)
+        with _debug_stage("base_init.setup_scene", **init_debug_fields):
+            self.setup_scene(**kwags)
 
         self.left_js = None
         self.right_js = None
@@ -275,6 +326,10 @@ class Base_Task(gym.Env):
         )
 
         self.eval_success = False
+        self.eval_failed = False
+        self.eval_failure_reason = None
+        self.eval_failure_detail = None
+        self.eval_failure_step = None
         self.table_z_bias = (np.random.uniform(low=-self.random_table_height, high=0) + table_height_bias)  # TODO
         self.need_plan = kwags.get("need_plan", True)
         upper_place_return_with_curobo_default = getattr(self, "UPPER_PLACE_RETURN_WITH_CUROBO", False)
@@ -349,15 +404,17 @@ class Base_Task(gym.Env):
             live_frame_log_path = (Path(parent_directory).parent / live_frame_log_path).resolve()
         self.live_frame_log_path = live_frame_log_path
         self._live_frame_log_seq = 0
-        self.live_frame_log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._append_live_frame_log({
+        with _debug_stage("base_init.ensure_live_frame_log_dir", path=str(self.live_frame_log_path.parent), **init_debug_fields):
+            self.live_frame_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with _debug_stage("base_init.append_live_frame_session_start", path=str(self.live_frame_log_path), **init_debug_fields):
+            self._append_live_frame_log({
             "event": "session_start",
             "timestamp": time.time(),
             "task_name": self.task_name,
             "episode": int(self.ep_num),
             "seed": int(kwags.get("seed", 0)),
             "log_path": str(self.live_frame_log_path),
-        })
+            })
         if self.verbose_live_frame_log:
             print(f"[LiveFrame] logging to {self.live_frame_log_path}")
 
@@ -366,18 +423,25 @@ class Base_Task(gym.Env):
 
         self.instruction = None  # for Eval
 
-        self.create_table_and_wall(table_xy_bias=table_xy_bias, table_height=0.74, **kwags)
-        self.load_robot(**kwags)
-        self.load_camera(**kwags)
-        self.robot.move_to_homestate()
+        with _debug_stage("base_init.create_table_and_wall", **init_debug_fields):
+            self.create_table_and_wall(table_xy_bias=table_xy_bias, table_height=0.74, **kwags)
+        with _debug_stage("base_init.load_robot", **init_debug_fields):
+            self.load_robot(**kwags)
+        with _debug_stage("base_init.load_camera", **init_debug_fields):
+            self.load_camera(**kwags)
+        with _debug_stage("base_init.robot_move_to_homestate.initial", **init_debug_fields):
+            self.robot.move_to_homestate()
 
         render_freq = self.render_freq
         self.render_freq = 0
-        self.together_open_gripper(save_freq=None)
+        with _debug_stage("base_init.together_open_gripper", **init_debug_fields):
+            self.together_open_gripper(save_freq=None)
         self.render_freq = render_freq
 
-        self.robot.set_origin_endpose()
-        self._init_rotate_subtask_runtime_state()
+        with _debug_stage("base_init.robot_set_origin_endpose.initial", **init_debug_fields):
+            self.robot.set_origin_endpose()
+        with _debug_stage("base_init.init_rotate_subtask_runtime_state", **init_debug_fields):
+            self._init_rotate_subtask_runtime_state()
         self.rotate_head_joint2_name = str(kwags.get("rotate_head_joint2_name", "astribot_head_joint_2"))
         head_scan_offsets = np.array(
             kwags.get("rotate_stage1_head_scan_offsets_rad", [-0.55, 0.0, 0.35]),
@@ -394,27 +458,35 @@ class Base_Task(gym.Env):
             0.0,
         )
         self.rotate_stage2_head_refine_iters = max(int(kwags.get("rotate_stage2_head_refine_iters", 2)), 1)
-        self.load_actors()
+        with _debug_stage("base_init.load_actors", **init_debug_fields):
+            self.load_actors()
 
         if self.cluttered_table:
-            self.get_cluttered_table(cluttered_numbers=self.rotate_cluttered_numbers, layer="lower")
+            with _debug_stage("base_init.get_cluttered_table.lower", cluttered_numbers=self.rotate_cluttered_numbers, **init_debug_fields):
+                self.get_cluttered_table(cluttered_numbers=self.rotate_cluttered_numbers, layer="lower")
             if str(getattr(self, "rotate_table_shape", "")).lower() == "fan_double":
-                self.get_cluttered_table(
-                    cluttered_numbers=self.rotate_upper_cluttered_numbers,
-                    layer="upper",
-                    reset_record=False,
-                )
+                with _debug_stage("base_init.get_cluttered_table.upper", cluttered_numbers=self.rotate_upper_cluttered_numbers, **init_debug_fields):
+                    self.get_cluttered_table(
+                        cluttered_numbers=self.rotate_upper_cluttered_numbers,
+                        layer="upper",
+                        reset_record=False,
+                    )
 
-        is_stable, unstable_list = self.check_stable()
+        with _debug_stage("base_init.check_stable", **init_debug_fields):
+            is_stable, unstable_list = self.check_stable()
         if not is_stable:
             raise UnStableError(
                 f'Objects is unstable in seed({kwags.get("seed", 0)}), unstable objects: {", ".join(unstable_list)}')
         # check_stable() runs many simulation steps; reset robot pose again so episode
         # starts exactly from configured homestate.
-        self.robot.move_to_homestate()
-        self.robot.set_origin_endpose()
-        self._reset_rotate_waist_heading_reference()
-        self._sync_curobo_tabletop_collisions()
+        with _debug_stage("base_init.robot_move_to_homestate.after_stable", **init_debug_fields):
+            self.robot.move_to_homestate()
+        with _debug_stage("base_init.robot_set_origin_endpose.after_stable", **init_debug_fields):
+            self.robot.set_origin_endpose()
+        with _debug_stage("base_init.reset_rotate_waist_heading_reference", **init_debug_fields):
+            self._reset_rotate_waist_heading_reference()
+        with _debug_stage("base_init.sync_curobo_tabletop_collisions", **init_debug_fields):
+            self._sync_curobo_tabletop_collisions()
 
         if self.eval_mode:
             with open(os.path.join(CONFIGS_PATH, "_eval_step_limit.yml"), "r") as f:
@@ -435,6 +507,11 @@ class Base_Task(gym.Env):
         self.info["info"] = {}
 
         self.stage_success_tag = False
+        _debug_log(
+            "Base_Task._init_task_env_.end",
+            elapsed=f"{time.perf_counter() - init_start:.3f}s",
+            **init_debug_fields,
+        )
 
     def _init_rotate_subtask_runtime_state(self):
         self.object_registry = OrderedDict()
@@ -829,11 +906,27 @@ class Base_Task(gym.Env):
                         break
 
         is_stable = True
-        for _ in range(2000):
-            self.scene.step()
+        debug_fields = {
+            "task": getattr(self, "task_name", None),
+            "episode": getattr(self, "ep_num", None),
+            "seed": getattr(self, "seed", None),
+            "actor_count": len(actors_list),
+        }
+        _debug_log("check_stable.begin", **debug_fields)
+        with _debug_stage("check_stable.pre_settle_steps", steps=2000, **debug_fields):
+            for _ in range(2000):
+                self.scene.step()
         for idx, actor in enumerate(actors_list):
             actors_pose_list.append([actor.get_pose()])
-        check(500)
+        with _debug_stage("check_stable.window", steps=500, **debug_fields):
+            check(500)
+        _debug_log(
+            "check_stable.end",
+            is_stable=is_stable,
+            unstable_count=len(unstable_list),
+            unstable_objects=",".join(unstable_list[:10]),
+            **debug_fields,
+        )
         return is_stable, unstable_list
 
     def play_once(self):
@@ -841,6 +934,31 @@ class Base_Task(gym.Env):
 
     def check_success(self):
         pass
+
+    def check_failure(self):
+        return None
+
+    @property
+    def eval_done(self):
+        return bool(self.eval_success or self.eval_failed)
+
+    def mark_eval_failure(self, failure):
+        if isinstance(failure, dict):
+            detail = dict(failure)
+            reason = str(detail.get("reason", "task_failure"))
+        else:
+            reason = str(failure or "task_failure")
+            detail = {"reason": reason}
+
+        failure_step = int(getattr(self, "take_action_cnt", 0))
+        detail.setdefault("reason", reason)
+        detail.setdefault("step", failure_step)
+        self.eval_success = False
+        self.eval_failed = True
+        self.eval_failure_reason = reason
+        self.eval_failure_detail = detail
+        self.eval_failure_step = failure_step
+        print(f"\n[EvalFailure] {reason}: {detail}", flush=True)
 
     def setup_scene(self, **kwargs):
         """
@@ -1908,7 +2026,13 @@ class Base_Task(gym.Env):
         return metadata_path
 
     def merge_pkl_to_hdf5_video(self):
+        debug_fields = {
+            "task": getattr(self, "task_name", None),
+            "episode": getattr(self, "ep_num", None),
+            "seed": getattr(self, "seed", None),
+        }
         if not self.save_data:
+            _debug_log("merge_pkl_to_hdf5_video.skip", reason="save_data_false", **debug_fields)
             return
         skip_annotated_video = str(os.environ.get("ROBOTWIN_SKIP_ANNOTATED_VIDEO", "0")).strip().lower() in {
             "1", "true", "yes", "on"
@@ -1916,6 +2040,14 @@ class Base_Task(gym.Env):
         cache_path = self.folder_path["cache"]
         target_file_path = f"{self.save_dir}/data/episode{self.ep_num}.hdf5"
         target_video_path = f"{self.save_dir}/video/episode{self.ep_num}.mp4"
+        _debug_log(
+            "merge_pkl_to_hdf5_video.begin",
+            cache_path=cache_path,
+            target_file_path=target_file_path,
+            target_video_path=target_video_path,
+            skip_annotated_video=skip_annotated_video,
+            **debug_fields,
+        )
         target_annotated_video_path = (
             None if skip_annotated_video else self.get_rotate_annotated_video_path(self.ep_num)
         )
@@ -1951,27 +2083,46 @@ class Base_Task(gym.Env):
                 "subtask_instruction_map": rotate_metadata.get("subtask_instruction_map", {}),
                 "object_key_to_name": rotate_metadata.get("object_key_to_name", {}),
             }
-        process_folder_to_hdf5_video(
-            cache_path,
-            target_file_path,
-            video_path=target_video_path,
-            video_camera_names=video_camera_names,
-            video_path_map=target_video_path_map,
-            main_video_camera="camera_head",
-            annotated_video_path=(target_annotated_video_path if annotated_video_metadata is not None else None),
-            annotated_video_camera="camera_head",
-            annotated_video_metadata=annotated_video_metadata,
-        )
+        with _debug_stage(
+            "merge_pkl_to_hdf5_video.process_folder_to_hdf5_video",
+            cache_path=cache_path,
+            target_file_path=target_file_path,
+            target_video_path=target_video_path,
+            video_camera_count=len(video_camera_names),
+            auxiliary_video_count=len(target_video_path_map),
+            annotated_video=target_annotated_video_path if annotated_video_metadata is not None else None,
+            **debug_fields,
+        ):
+            process_folder_to_hdf5_video(
+                cache_path,
+                target_file_path,
+                video_path=target_video_path,
+                video_camera_names=video_camera_names,
+                video_path_map=target_video_path_map,
+                main_video_camera="camera_head",
+                annotated_video_path=(target_annotated_video_path if annotated_video_metadata is not None else None),
+                annotated_video_camera="camera_head",
+                annotated_video_metadata=annotated_video_metadata,
+            )
+        _debug_log("merge_pkl_to_hdf5_video.end", **debug_fields)
 
     def remove_data_cache(self):
         folder_path = self.folder_path["cache"]
         GREEN = "\033[92m"
         RED = "\033[91m"
         RESET = "\033[0m"
+        debug_fields = {
+            "task": getattr(self, "task_name", None),
+            "episode": getattr(self, "ep_num", None),
+            "seed": getattr(self, "seed", None),
+            "folder_path": folder_path,
+        }
         try:
-            shutil.rmtree(folder_path)
+            with _debug_stage("remove_data_cache.rmtree", **debug_fields):
+                shutil.rmtree(folder_path)
             print(f"{GREEN}Folder {folder_path} deleted successfully.{RESET}")
         except OSError as e:
+            _debug_log("remove_data_cache.error", error=str(e), **debug_fields)
             print(f"{RED}Error: {folder_path} is not empty or does not exist.{RESET}")
 
     def set_instruction(self, instruction=None):
@@ -2000,11 +2151,20 @@ class Base_Task(gym.Env):
         return None
 
     def close_env(self, clear_cache=False):
-        if clear_cache:
-            # for actor in self.scene.get_all_actors():
-            #     self.scene.remove_actor(actor)
-            sapien_clear_cache()
-        self.close()
+        debug_fields = {
+            "task": getattr(self, "task_name", None),
+            "episode": getattr(self, "ep_num", None),
+            "seed": getattr(self, "seed", None),
+            "clear_cache": clear_cache,
+        }
+        with _debug_stage("Base_Task.close_env", **debug_fields):
+            if clear_cache:
+                # for actor in self.scene.get_all_actors():
+                #     self.scene.remove_actor(actor)
+                with _debug_stage("Base_Task.close_env.sapien_clear_cache", **debug_fields):
+                    sapien_clear_cache()
+            with _debug_stage("Base_Task.close_env.close", **debug_fields):
+                self.close()
 
     def _del_eval_video_ffmpeg(self):
         if self.eval_video_ffmpeg:
@@ -6252,7 +6412,7 @@ class Base_Task(gym.Env):
         return True  # TODO: maybe need try error
 
     def take_action(self, action, action_type:Literal['qpos', 'ee']='qpos'):  # action_type: qpos or ee
-        if self.take_action_cnt == self.step_lim or self.eval_success:
+        if self.take_action_cnt >= self.step_lim or self.eval_done:
             return
 
         eval_video_freq = 1  # fixed
@@ -6540,6 +6700,17 @@ class Base_Task(gym.Env):
 
             self.scene.step()
             self._update_render()
+
+            failure = self.check_failure()
+            if failure is not None:
+                self.mark_eval_failure(failure)
+                self.get_obs()  # update obs
+                if self.eval_video_path is not None:
+                    frame = self._get_eval_video_frame()
+                    if frame is not None:
+                        self.eval_video_ffmpeg.stdin.write(frame.tobytes())
+                self._record_left_live_frame_snapshot("take_action_failure")
+                return
 
             if self.check_success():
                 self.eval_success = True

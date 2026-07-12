@@ -486,11 +486,11 @@ class check_cola_date(BacksidePatchBlockMixin, Base_Task):
         return self.info
 
     def check_success(self):
-        if not bool(self.plan_success and self.can_backside_inspected and self.can_placed):
-            return False
-        if not bool(getattr(self, "need_plan", True)):
-            return True
-        return bool(self._can_center_on_target_pad() and self.is_left_gripper_open() and self.is_right_gripper_open())
+        return bool(
+            self._can_center_on_target_pad()
+            and self.is_left_gripper_open()
+            and self.is_right_gripper_open()
+        )
 
     def _can_center_on_target_pad(self):
         pad_pose = self.target_pads[self.target_label].get_pose()

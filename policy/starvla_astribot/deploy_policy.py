@@ -1016,12 +1016,12 @@ def eval(TASK_ENV, model: StarVLAOFTClient, observation: dict[str, Any]):
     sim_start = time.perf_counter()
     executed_steps = 0
     for action in actions:
-        if TASK_ENV.take_action_cnt >= TASK_ENV.step_lim or TASK_ENV.eval_success:
+        if TASK_ENV.take_action_cnt >= TASK_ENV.step_lim or TASK_ENV.eval_done:
             break
         env_action = adapt_model_action_to_robotwin(action, TASK_ENV)
         TASK_ENV.take_action(env_action, action_type=model.action_type)
         executed_steps += 1
-        if TASK_ENV.take_action_cnt < TASK_ENV.step_lim and not TASK_ENV.eval_success:
+        if TASK_ENV.take_action_cnt < TASK_ENV.step_lim and not TASK_ENV.eval_done:
             observation = TASK_ENV.get_obs()
             model.observe_frame(TASK_ENV, observation)
     sim_sec = time.perf_counter() - sim_start

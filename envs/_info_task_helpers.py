@@ -132,6 +132,65 @@ class RMBenchButtonMixin:
         threshold = float(self.BUTTON_PRESS_THRESHOLD if threshold is None else threshold)
         return bool(self._get_button_qpos(button_actor, joint_name=joint_name) < threshold)
 
+    def _get_pressed_button_values(self, buttons):
+        return [
+            int(value)
+            for value, button in buttons.items()
+            if self._is_button_pressed(button)
+        ]
+
+    def _get_wrong_button_failure(
+        self,
+        buttons,
+        target_value,
+        pressed_value_attr="pressed_button_value",
+    ):
+        try:
+            target_value = int(target_value)
+        except (TypeError, ValueError):
+            return None
+
+        pressed_values = self._get_pressed_button_values(buttons)
+        wrong_values = [value for value in pressed_values if value != target_value]
+        if not wrong_values:
+            return None
+
+        setattr(self, str(pressed_value_attr), int(wrong_values[0]))
+        return {
+            "reason": "wrong_button_pressed",
+            "target_button": target_value,
+            "pressed_buttons": pressed_values,
+            "wrong_buttons": wrong_values,
+        }
+
+    def _check_matching_button_success(
+        self,
+        buttons,
+        target_value,
+        pressed_value_attr="pressed_button_value",
+    ):
+        """Check scripted or physical button presses against the target value."""
+        try:
+            target_value = int(target_value)
+        except (TypeError, ValueError):
+            return False
+
+        physically_pressed_values = self._get_pressed_button_values(buttons)
+        if physically_pressed_values:
+            pressed_value = (
+                target_value
+                if target_value in physically_pressed_values
+                else physically_pressed_values[0]
+            )
+            setattr(self, str(pressed_value_attr), pressed_value)
+        else:
+            pressed_value = getattr(self, str(pressed_value_attr), None)
+
+        try:
+            return int(pressed_value) == target_value
+        except (TypeError, ValueError):
+            return False
+
     def _update_button_reset_flag(self, button_actor, flag_attr, joint_name=None, threshold=None):
         threshold = float(self.BUTTON_RESET_THRESHOLD if threshold is None else threshold)
         if self._get_button_qpos(button_actor, joint_name=joint_name) > threshold:

@@ -13,3 +13,10 @@ class match_backside_two_blocks(MatchBacksideBlocksBase):
     )
     INFO_BLOCKS = "two gray backside-marked blocks"
     INFO_PADS = "two matching color pads"
+
+    def check_success(self):
+        return bool(
+            super().check_success()
+            and self.is_left_gripper_open()
+            and self.is_right_gripper_open()
+        )

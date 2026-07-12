@@ -20,6 +20,7 @@ import argparse
 import pdb
 
 from generate_episode_instructions import *
+from eval_policy import load_eval_seed_entries, resolve_eval_seed_list_path
 
 
 import sys
@@ -322,12 +323,22 @@ def main(usr_args):
     usr_args["left_arm_dim"] = len(args["left_embodiment_config"]["arm_joints_name"][0])
     usr_args["right_arm_dim"] = len(args["right_embodiment_config"]["arm_joints_name"][1])
 
-    seed = usr_args["seed"]
+    seed = int(usr_args["seed"])
 
     st_seed = 100000 * (1 + seed)
     suc_nums = []
-    test_num = 100
+    test_num = int(usr_args.get("test_num", usr_args.get("eval_test_num", 100)))
     topk = 1
+    eval_seed_entries = None
+    eval_seed_list_path = resolve_eval_seed_list_path(usr_args, task_name, task_config)
+    if eval_seed_list_path is not None:
+        eval_seed_entries = load_eval_seed_entries(eval_seed_list_path)
+        if len(eval_seed_entries) < test_num:
+            raise ValueError(
+                f"eval seed list {eval_seed_list_path} has {len(eval_seed_entries)} seeds, "
+                f"but test_num={test_num}"
+            )
+        print(f"[EvalSeedList] Using {eval_seed_list_path} ({len(eval_seed_entries)} seeds)")
 
     # model = get_model(usr_args)
     model = ModelClient(port=port)
@@ -339,7 +350,8 @@ def main(usr_args):
                                    test_num=test_num,
                                    video_size=video_size,
                                    instruction_type=instruction_type,
-                                   policy_conda_env=policy_conda_env)
+                                   policy_conda_env=policy_conda_env,
+                                   eval_seed_entries=eval_seed_entries)
     suc_nums.append(suc_num)
 
     topk_success_rate = sorted(suc_nums, reverse=True)[:topk]
@@ -363,11 +375,12 @@ def eval_policy(task_name,
                 test_num=100,
                 video_size=None,
                 instruction_type=None,
-                policy_conda_env=None):
+                policy_conda_env=None,
+                eval_seed_entries=None):
     print(f"\033[34mTask Name: {args['task_name']}\033[0m")
     print(f"\033[34mPolicy Name: {args['policy_name']}\033[0m")
 
-    expert_check = True
+    expert_check = eval_seed_entries is None
     TASK_ENV.suc = 0
     TASK_ENV.test_num = 0
 
@@ -387,8 +400,21 @@ def eval_policy(task_name,
     while succ_seed < test_num:
         render_freq = args["render_freq"]
         args["render_freq"] = 0
+        seed_selected = False
 
-        if expert_check:
+        if eval_seed_entries is not None:
+            if succ_seed >= len(eval_seed_entries):
+                raise RuntimeError(
+                    f"eval seed list exhausted at index {succ_seed}; "
+                    f"need test_num={test_num}"
+                )
+            seed_entry = eval_seed_entries[succ_seed]
+            now_seed = int(seed_entry["seed"])
+            episode_info = {"info": seed_entry.get("info", {}) or {}}
+            succ_seed += 1
+            suc_test_seed_list.append(now_seed)
+            seed_selected = True
+        elif expert_check:
             try:
                 TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)
                 episode_info = TASK_ENV.play_once()
@@ -412,7 +438,9 @@ def eval_policy(task_name,
                 print("error occurs !")
                 continue
 
-        if (not expert_check) or (TASK_ENV.plan_success and TASK_ENV.check_success()):
+        if seed_selected:
+            pass
+        elif (not expert_check) or (TASK_ENV.plan_success and TASK_ENV.check_success()):
             succ_seed += 1
             suc_test_seed_list.append(now_seed)
         else:
@@ -423,8 +451,14 @@ def eval_policy(task_name,
         args["render_freq"] = render_freq
 
         TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)
-        episode_info_list = [episode_info["info"]]
+        TASK_ENV.eval_seed = now_seed
+        episode_info_list = [episode_info.get("info", {})]
         results = generate_episode_descriptions(args["task_name"], episode_info_list, test_num)
+        if not results or instruction_type not in results[0] or not results[0][instruction_type]:
+            raise RuntimeError(
+                f"No {instruction_type!r} instruction generated for task={args['task_name']} "
+                f"seed={now_seed}. Check eval seed list info payload."
+            )
         instruction = np.random.choice(results[0][instruction_type])
         TASK_ENV.set_instruction(instruction=instruction)  # set language instruction
 
@@ -459,7 +493,7 @@ def eval_policy(task_name,
 
         succ = False
         model.call(func_name='reset_model')
-        while TASK_ENV.take_action_cnt < TASK_ENV.step_lim:
+        while TASK_ENV.take_action_cnt < TASK_ENV.step_lim and not TASK_ENV.eval_done:
             observation = TASK_ENV.get_obs()
             eval_func(TASK_ENV, model, observation)
             if TASK_ENV.eval_success:
@@ -472,6 +506,11 @@ def eval_policy(task_name,
         if succ:
             TASK_ENV.suc += 1
             print("\033[92mSuccess!\033[0m")
+        elif TASK_ENV.eval_failed:
+            print(
+                f"\033[91mFail! {TASK_ENV.eval_failure_reason}: "
+                f"{TASK_ENV.eval_failure_detail}\033[0m"
+            )
         else:
             print("\033[91mFail!\033[0m")
 

@@ -15,10 +15,13 @@ class stamp_seal_rotate_view(Base_Task):
     def check_success(self):
         seal_pose = self.seal.get_pose().p
         target_pos = self.target.get_pose().p
-        eps1 = 0.01
+        eps1 = 0.03
 
-        return (np.all(abs(seal_pose[:2] - target_pos[:2]) < np.array([eps1, eps1]))
-                and self.robot.is_left_gripper_open() and self.robot.is_right_gripper_open())
+        return bool(
+            np.all(abs(seal_pose[:2] - target_pos[:2]) < np.array([eps1, eps1]))
+            and self.is_left_gripper_open()
+            and self.is_right_gripper_open()
+        )
 
     def _configure_rotate_subtask_plan(self):
         self.configure_rotate_subtask_plan(

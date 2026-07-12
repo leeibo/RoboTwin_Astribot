@@ -251,4 +251,7 @@ class count_random_object_press_button(RMBenchButtonMixin, PolarCountLayoutMixin
         }
 
     def check_success(self):
-        return bool(int(getattr(self, "pressed_button_value", -1)) == int(self.target_count))
+        return self._check_matching_button_success(self.buttons, self.target_count)
+
+    def check_failure(self):
+        return self._get_wrong_button_failure(self.buttons, self.target_count)

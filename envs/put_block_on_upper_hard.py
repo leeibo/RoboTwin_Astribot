@@ -25,7 +25,7 @@ class put_block_on_upper_hard(PutBlockFanDoubleMixin, Base_Task):
     }
 
     PLATE_LAYER = "upper"
-    PLATE_LOWER_LAYER_PROB = 1
+    PLATE_LOWER_LAYER_PROB = 0.2
     PLATE_LAYER_SPECS = {
         "lower": {
             "r": 0.44,

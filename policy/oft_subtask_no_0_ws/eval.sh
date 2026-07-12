@@ -3,11 +3,11 @@ set -euo pipefail
 
 policy_name="$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
 task_name=${1:?task_name}
-task_config=${2:?task_config}
-ckpt_setting=${3:-${policy_name}}
-seed=${4:-0}
-gpu_id=${5:-0}
-port=${6:-7980}
+gpu_id=${2:-5}
+port=${3:-19001}
+task_config=${4:-info_gathering_demo}
+ckpt_setting=${5:-${policy_name}}
+seed=${6:-0}
 python_bin=${ROBOTWIN_PYTHON:-${ROBOTWIN_PY:-python}}
 
 export CUDA_VISIBLE_DEVICES="${gpu_id}"
@@ -27,4 +27,3 @@ PYTHONWARNINGS=ignore::UserWarning "${python_bin}" script/eval_policy.py \
     --seed "${seed}" \
     --policy_name "${policy_name}" \
     --port "${port}"
-

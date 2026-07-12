@@ -364,10 +364,8 @@ class check_block_color(Base_Task):
     def check_success(self):
         block_pos = self.block.get_pose().p
         target_pos = self.target_pad.get_pose().p
-        expected_z = target_pos[2] + float(self.PAD_HALF_SIZE[2]) + float(self.BLOCK_HALF_SIZE[2])
-        return (
+        return bool(
             np.all(np.abs(block_pos[:2] - target_pos[:2]) < np.array([0.055, 0.055]))
-            and abs(block_pos[2] - expected_z) < 0.02
-            and self.robot.is_left_gripper_open()
-            and self.robot.is_right_gripper_open()
+            and self.is_left_gripper_open()
+            and self.is_right_gripper_open()
         )

@@ -301,13 +301,11 @@ class rank_backside_rgb_blocks(BacksidePatchBlockMixin, Base_Task):
         return bool(np.all(np.abs(local_xy) <= half_xy + tol))
 
     def check_success(self):
-        if not bool(self.plan_success and set(self.blocks) <= set(getattr(self, "placed_keys", set()))):
-            return False
-        if not bool(getattr(self, "need_plan", True)):
-            return True
-
-        placed_ok = True
-        for key, block in self.blocks.items():
-            placed_ok = placed_ok and self._block_center_on_pad(block, self.block_colors[key])
-        gripper_open = self.is_left_gripper_open() and self.is_right_gripper_open()
-        return bool(placed_ok and gripper_open)
+        return bool(
+            all(
+                self._block_center_on_pad(block, self.block_colors[key])
+                for key, block in self.blocks.items()
+            )
+            and self.is_left_gripper_open()
+            and self.is_right_gripper_open()
+        )

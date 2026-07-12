@@ -32,7 +32,7 @@ rotate_clutter_max_tries: 300
 rotate_clutter_is_static: true
 rotate_clutter_object_pool: unused_task_objects
 difficulty_tag: info_gathering_demo
-episode_num: 1
+episode_num: 2
 max_seed_tries: 600
 use_seed: false
 save_freq: 15

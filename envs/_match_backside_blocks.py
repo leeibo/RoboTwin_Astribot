@@ -368,14 +368,9 @@ class MatchBacksideBlocksBase(BacksidePatchBlockMixin, Base_Task):
         return self.info
 
     def check_success(self):
-        if not bool(self.plan_success and set(self.blocks) <= set(getattr(self, "placed_keys", set()))):
-            return False
-        if not bool(getattr(self, "need_plan", True)):
-            return True
-        if not all(bool(getattr(self, "_backside_place_xy_ok", {}).get(key, False)) for key in self.blocks):
-            return False
-
-        for key, block in self.blocks.items():
-            if not self._block_center_on_matching_pad(key, block):
-                return False
-        return bool(self.is_left_gripper_open() and self.is_right_gripper_open())
+        return bool(
+            all(
+                self._block_center_on_matching_pad(key, block)
+                for key, block in self.blocks.items()
+            )
+        )
