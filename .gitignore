@@ -34,3 +34,11 @@ envs/curobo/*
 /*.json*
 /*.txt
 policy/fast_subtask_action_12_wos/parallel_eval_logs
+
+# Local tooling and environment backups
+.agents/
+.feishu/
+.lark/
+feishu-cli/
+lark-cli/
+envs/curobo*_backup_*/

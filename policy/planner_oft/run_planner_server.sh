@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROBOTWIN_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+STARGVLA_ROOT="${STARGVLA_REPO_ROOT:-${ROBOTWIN_ROOT}/../starVLA-A}"
+STARVLA_PYTHON="${STARVLA_PYTHON:-python}"
+PLANNER_CKPT_PATH=${PLANNER_CKPT_PATH:?PLANNER_CKPT_PATH is required}
+PLANNER_PORT=${PLANNER_PORT:-20000}
+PLANNER_GPU_ID=${PLANNER_GPU_ID:-0}
+IDLE_TIMEOUT=${IDLE_TIMEOUT:--1}
+
+cd "${ROBOTWIN_ROOT}"
+export PYTHONPATH="${STARGVLA_ROOT}:${ROBOTWIN_ROOT}:${PYTHONPATH:-}"
+exec env CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-${PLANNER_GPU_ID}}" \
+    "${STARVLA_PYTHON}" "${SCRIPT_DIR}/planner_server.py" \
+    --ckpt-path "${PLANNER_CKPT_PATH}" \
+    --port "${PLANNER_PORT}" \
+    --idle-timeout "${IDLE_TIMEOUT}"

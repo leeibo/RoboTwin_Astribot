@@ -25,9 +25,9 @@ request_image_dir: "policy/planner_oft/logs/images"
 torso_index: 0
 head2_index: 1
 log_chunk_timing: true
-return_vlm_text: true
+return_vlm_text: false
 vlm_text_max_new_tokens: 128
-subtask_planner_enabled: true
+subtask_planner_enabled: false
 subtask_planner_backend: http
 subtask_planner_url: "http://127.0.0.1:7991/classify"
 subtask_planner_model_path: "/data/lmz/code/starVLA-A/playground/Pretrained_models/Qwen3-VL-30B-A3B-Instruct"
@@ -36,4 +36,10 @@ subtask_planner_max_new_tokens: 192
 subtask_planner_output_keys: ["subtask", "current_subtask", "subtask_instruction", "vlm_text", "text", "output", "generated_text"]
 subtask_planner_use_annotation: false
 subtask_planner_fail_open: true
+planner_oft_enabled: true
+planner_oft_host: "127.0.0.1"
+planner_oft_port: 20000
+planner_oft_max_history_frames: 12
+planner_oft_max_new_tokens: 192
+planner_oft_fail_open: false
 policy_ckpt_path: "/data/lmz/code/starVLA-A/results/Checkpoints/planner_oft"

@@ -9,28 +9,50 @@ Environment variables:
   GPU_LIST                  GPU ids, comma- or space-separated (default: all GPUs)
   SERVER_READY_TIMEOUT      Seconds to wait for each server (default: 900)
   TASK_TIMEOUT_SECONDS      Per-task timeout; 0 disables it (default: 0)
+  TASK_LIMIT                Only run the first N whitelisted tasks; 0 means all (default: 0)
+  EVAL_TEST_NUM             Episodes per task (default: deploy config or 100)
   CONTINUE_ON_ERROR         Continue after an eval failure (default: 1)
   SERVER_START_STAGGER_SEC  Delay between worker launches (default: 1)
+  RESUME_FROM_RUN           Prior run root; successful tasks are imported and skipped
+  PLANNER_MODEL_NAME        Paired planner checkpoint name (default: planner_oft_planner)
+  STARVLA_ROOT              starVLA-A repository (default: sibling of RoboTwin_Astribot)
+  STARVLA_PYTHON            starVLA environment Python (default: conda env starVLA)
+  STARGVLA_BASE_VLM         Local action-token base VLM (default: under starVLA-A/playground)
+  STARGVLA_FAST_TOKENIZER   Local physical-intelligence/fast tokenizer directory
   ROBOTWIN_PYTHON           RoboTwin environment Python (default: conda env RoboTwin)
   TMUX_MONITOR              Open one tmux window per GPU (default: 1)
   DRY_RUN                   Validate inputs without starting servers (default: 0)
 EOF
 }
 
-MODEL_NAME=${1:-}
-if [[ -z "${MODEL_NAME}" ]]; then
+REQUESTED_MODEL_NAME=${1:-}
+if [[ -z "${REQUESTED_MODEL_NAME}" ]]; then
     usage >&2
     exit 2
 fi
-if [[ ! "${MODEL_NAME}" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    echo "Invalid model name: ${MODEL_NAME}" >&2
+if [[ ! "${REQUESTED_MODEL_NAME}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "Invalid model name: ${REQUESTED_MODEL_NAME}" >&2
     exit 2
+fi
+
+MODEL_NAME="${REQUESTED_MODEL_NAME}"
+JOINT_PLANNER=0
+if [[ "${MODEL_NAME}" == "planner_oft_planner" ]]; then
+    MODEL_NAME=planner_oft
+fi
+if [[ "${MODEL_NAME}" == "planner_oft" ]]; then
+    JOINT_PLANNER=1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROBOTWIN_ROOT="${SCRIPT_DIR}"
-STARVLA_ROOT="/private/zjb/workspace/starVLA-A"
+STARVLA_ROOT="${STARVLA_ROOT:-${SCRIPT_DIR}/../starVLA-A}"
+if [[ -d "${STARVLA_ROOT}" ]]; then
+    STARVLA_ROOT="$(cd "${STARVLA_ROOT}" && pwd)"
+fi
+STARGVLA_FAST_TOKENIZER="${STARGVLA_FAST_TOKENIZER:-${STARVLA_ROOT}/playground/Pretrained_models/fast}"
 RESULT_ROOT="${STARVLA_ROOT}/results/${MODEL_NAME}"
+RESULT_CONFIG="${RESULT_ROOT}/config.yaml"
 CKPT_MAPPING="${STARVLA_ROOT}/ckpt_mapping.yaml"
 MANAGED_RUN_ROOT="${STARVLA_ROOT}/examples/RoboTwin_Astribot/train_files/managed_runs/${MODEL_NAME}"
 SERVER_SCRIPT="${MANAGED_RUN_ROOT}/run_policy_server.sh"
@@ -40,15 +62,20 @@ DEPLOY_CONFIG="${POLICY_ROOT}/deploy_policy.yml"
 WHITELIST="${ROBOTWIN_ROOT}/task_config/eval_seed_task_whitelist.yml"
 TASK_CONFIG="info_gathering_randomized"
 EVAL_SEED_LIST_ROOT="${ROBOTWIN_ROOT}/eval_seed_lists"
+PLANNER_MODEL_NAME=${PLANNER_MODEL_NAME:-planner_oft_planner}
+PLANNER_RESULT_ROOT="${STARVLA_ROOT}/results/${PLANNER_MODEL_NAME}"
+PLANNER_SERVER_SCRIPT="${POLICY_ROOT}/run_planner_server.sh"
 
 SERVER_READY_TIMEOUT=${SERVER_READY_TIMEOUT:-900}
 TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-0}
+TASK_LIMIT=${TASK_LIMIT:-0}
 CONTINUE_ON_ERROR=${CONTINUE_ON_ERROR:-1}
 SERVER_START_STAGGER_SEC=${SERVER_START_STAGGER_SEC:-1}
 TMUX_MONITOR=${TMUX_MONITOR:-1}
 DRY_RUN=${DRY_RUN:-0}
+RESUME_FROM_RUN=${RESUME_FROM_RUN:-}
 
-required_commands=(awk find flock jq nvidia-smi sed setsid sort ss tail tee timeout)
+required_commands=(awk find flock nvidia-smi sed setsid sort ss tail tee timeout)
 for command_name in "${required_commands[@]}"; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
         echo "Required command was not found: ${command_name}" >&2
@@ -66,9 +93,60 @@ for path in "${RESULT_ROOT}" "${MANAGED_RUN_ROOT}" "${POLICY_ROOT}"; do
         exit 1
     fi
 done
-for path in "${CKPT_MAPPING}" "${SERVER_SCRIPT}" "${EVAL_SCRIPT}" "${DEPLOY_CONFIG}" "${WHITELIST}"; do
+for path in "${RESULT_CONFIG}" "${CKPT_MAPPING}" "${SERVER_SCRIPT}" "${EVAL_SCRIPT}" "${DEPLOY_CONFIG}" "${WHITELIST}"; do
     if [[ ! -f "${path}" ]]; then
         echo "Required file does not exist: ${path}" >&2
+        exit 1
+    fi
+done
+if [[ "${JOINT_PLANNER}" == "1" ]]; then
+    for path in "${PLANNER_RESULT_ROOT}" "${PLANNER_SERVER_SCRIPT}"; do
+        if [[ ! -e "${path}" ]]; then
+            echo "Required planner path does not exist: ${path}" >&2
+            exit 1
+        fi
+    done
+fi
+
+if [[ -z "${STARGVLA_BASE_VLM:-}" ]]; then
+    CONFIGURED_BASE_VLM="$(
+        awk '
+            $1 == "base_vlm:" {
+                value = $0
+                sub(/^[[:space:]]*base_vlm:[[:space:]]*/, "", value)
+                gsub(/^["'\'' ]+|["'\'' ]+$/, "", value)
+                print value
+                exit
+            }
+        ' "${RESULT_CONFIG}"
+    )"
+    if [[ -z "${CONFIGURED_BASE_VLM}" ]]; then
+        echo "Could not resolve framework.qwenvl.base_vlm from ${RESULT_CONFIG}." >&2
+        echo "Set STARGVLA_BASE_VLM explicitly." >&2
+        exit 1
+    fi
+    if [[ "${CONFIGURED_BASE_VLM}" == /* ]]; then
+        STARGVLA_BASE_VLM="${CONFIGURED_BASE_VLM}"
+    elif [[ "${CONFIGURED_BASE_VLM}" == ./* ]]; then
+        STARGVLA_BASE_VLM="${STARVLA_ROOT}/${CONFIGURED_BASE_VLM#./}"
+    else
+        echo "Configured base VLM is not a local path: ${CONFIGURED_BASE_VLM}" >&2
+        echo "Set STARGVLA_BASE_VLM to its local directory." >&2
+        exit 1
+    fi
+fi
+if [[ ! -d "${STARGVLA_BASE_VLM}" ]]; then
+    echo "Required base VLM does not exist: ${STARGVLA_BASE_VLM}" >&2
+    echo "Configured by ${RESULT_CONFIG}; set STARGVLA_BASE_VLM to override it." >&2
+    exit 1
+fi
+for path in \
+    "${STARGVLA_FAST_TOKENIZER}/processing_action_tokenizer.py" \
+    "${STARGVLA_FAST_TOKENIZER}/tokenizer.json" \
+    "${STARGVLA_FAST_TOKENIZER}/processor_config.json"; do
+    if [[ ! -f "${path}" ]]; then
+        echo "Required FAST tokenizer file does not exist: ${path}" >&2
+        echo "Set STARGVLA_FAST_TOKENIZER to a complete physical-intelligence/fast directory." >&2
         exit 1
     fi
 done
@@ -87,12 +165,43 @@ if [[ -z "${ROBOTWIN_PYTHON:-}" || ! -x "${ROBOTWIN_PYTHON}" ]]; then
     echo "Could not resolve the RoboTwin conda Python. Set ROBOTWIN_PYTHON explicitly." >&2
     exit 1
 fi
+ROBOTWIN_ENV_ROOT="$(cd "$(dirname "${ROBOTWIN_PYTHON}")/.." && pwd)"
+ROBOTWIN_CUROBO_SRC="${ROBOTWIN_CUROBO_SRC:-${ROBOTWIN_ROOT}/envs/curobo/src}"
+ROBOTWIN_CUDA_HOME="${ROBOTWIN_CUDA_HOME:-${ROBOTWIN_ENV_ROOT}}"
+if [[ ! -f "${ROBOTWIN_CUROBO_SRC}/curobo/types/math.py" ]]; then
+    echo "NVIDIA cuRobo source was not found: ${ROBOTWIN_CUROBO_SRC}" >&2
+    exit 1
+fi
+if [[ ! -x "${ROBOTWIN_CUDA_HOME}/bin/nvcc" ]]; then
+    echo "CUDA compiler was not found: ${ROBOTWIN_CUDA_HOME}/bin/nvcc" >&2
+    exit 1
+fi
 if ! "${ROBOTWIN_PYTHON}" -c 'import numpy, sapien, yaml' >/dev/null 2>&1; then
     echo "RoboTwin Python failed to import numpy, sapien, or yaml: ${ROBOTWIN_PYTHON}" >&2
     exit 1
 fi
 
-if ! CHECKPOINT_STEP="$("${ROBOTWIN_PYTHON}" - "${CKPT_MAPPING}" "${MODEL_NAME}" <<'PY'
+if [[ -z "${STARVLA_PYTHON:-}" ]]; then
+    if ! command -v conda >/dev/null 2>&1; then
+        echo "conda was not found; set STARVLA_PYTHON explicitly." >&2
+        exit 1
+    fi
+    STARVLA_ENV_ROOT="$(conda env list 2>/dev/null | awk '$1 == "starVLA" {print $NF; exit}')"
+    if [[ -n "${STARVLA_ENV_ROOT}" ]]; then
+        STARVLA_PYTHON="${STARVLA_ENV_ROOT}/bin/python"
+    fi
+fi
+if [[ -z "${STARVLA_PYTHON:-}" || ! -x "${STARVLA_PYTHON}" ]]; then
+    echo "Could not resolve the starVLA conda Python. Set STARVLA_PYTHON explicitly." >&2
+    exit 1
+fi
+if ! "${STARVLA_PYTHON}" -c 'import torch, yaml' >/dev/null 2>&1; then
+    echo "starVLA Python failed to import torch or yaml: ${STARVLA_PYTHON}" >&2
+    exit 1
+fi
+
+resolve_checkpoint_step() {
+    "${ROBOTWIN_PYTHON}" - "${CKPT_MAPPING}" "$1" <<'PY'
 import sys
 from pathlib import Path
 
@@ -126,13 +235,27 @@ if isinstance(step, bool) or not str(step).isdigit() or int(step) <= 0:
     raise SystemExit(1)
 print(int(step))
 PY
-)"; then
+}
+
+if ! CHECKPOINT_STEP="$(resolve_checkpoint_step "${MODEL_NAME}")"; then
     exit 1
 fi
 CHECKPOINT_PATH="${RESULT_ROOT}/checkpoints/steps_${CHECKPOINT_STEP}_pytorch_model.pt"
 if [[ ! -f "${CHECKPOINT_PATH}" ]]; then
     echo "Mapped checkpoint does not exist: ${CHECKPOINT_PATH}" >&2
     exit 1
+fi
+PLANNER_CHECKPOINT_STEP=""
+PLANNER_CHECKPOINT_PATH=""
+if [[ "${JOINT_PLANNER}" == "1" ]]; then
+    if ! PLANNER_CHECKPOINT_STEP="$(resolve_checkpoint_step "${PLANNER_MODEL_NAME}")"; then
+        exit 1
+    fi
+    PLANNER_CHECKPOINT_PATH="${PLANNER_RESULT_ROOT}/checkpoints/steps_${PLANNER_CHECKPOINT_STEP}_pytorch_model.pt"
+    if [[ ! -f "${PLANNER_CHECKPOINT_PATH}" ]]; then
+        echo "Mapped planner checkpoint does not exist: ${PLANNER_CHECKPOINT_PATH}" >&2
+        exit 1
+    fi
 fi
 
 if [[ -z "${GPU_LIST:-}" ]]; then
@@ -161,8 +284,9 @@ for gpu in "${GPUS[@]}"; do
     fi
     SEEN_GPUS[${gpu}]=1
     port=$((19000 + gpu))
-    if (( port > 65535 )); then
-        echo "GPU ${gpu} produces invalid port ${port}." >&2
+    planner_port=$((20000 + gpu))
+    if (( port > 65535 || planner_port > 65535 )); then
+        echo "GPU ${gpu} produces an invalid server port." >&2
         exit 2
     fi
 done
@@ -172,13 +296,29 @@ if (( ${#TASKS[@]} == 0 )); then
     echo "No tasks found in ${WHITELIST}." >&2
     exit 1
 fi
+if [[ ! "${TASK_LIMIT}" =~ ^[0-9]+$ ]]; then
+    echo "TASK_LIMIT must be a non-negative integer, got: ${TASK_LIMIT}" >&2
+    exit 2
+fi
+if (( TASK_LIMIT > 0 && TASK_LIMIT < ${#TASKS[@]} )); then
+    TASKS=("${TASKS[@]:0:TASK_LIMIT}")
+fi
 for task in "${TASKS[@]}"; do
     seed_list_path="${EVAL_SEED_LIST_ROOT}/${TASK_CONFIG}/${task}.json"
     if [[ ! -f "${seed_list_path}" ]]; then
         echo "Randomized eval seed list does not exist: ${seed_list_path}" >&2
         exit 1
     fi
-    seed_count="$(jq -r 'if (.entries | type) == "array" then (.entries | length) else (.seeds | length) end' "${seed_list_path}")"
+    seed_count="$("${ROBOTWIN_PYTHON}" - "${seed_list_path}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    payload = json.load(file)
+entries = payload.get("entries")
+print(len(entries if isinstance(entries, list) else payload.get("seeds", [])))
+PY
+)"
     if [[ ! "${seed_count}" =~ ^[0-9]+$ ]] || (( seed_count < 100 )); then
         echo "Randomized eval seed list needs at least 100 seeds: ${seed_list_path} (found ${seed_count})" >&2
         exit 1
@@ -193,13 +333,25 @@ write_markdown_report() {
 
     {
         printf '# RoboTwin Eval Report: %s\n\n' "${MODEL_NAME}"
-        printf -- '- Checkpoint: `%s`\n' "${CHECKPOINT_PATH}"
-        printf -- '- Checkpoint mapping: `%s` (step `%s`)\n' "${CKPT_MAPPING}" "${CHECKPOINT_STEP}"
+        printf -- '- Action checkpoint: `%s`\n' "${CHECKPOINT_PATH}"
+        printf -- '- Action checkpoint mapping: `%s` (step `%s`)\n' "${CKPT_MAPPING}" "${CHECKPOINT_STEP}"
+        if [[ "${JOINT_PLANNER}" == "1" ]]; then
+            printf -- '- Planner checkpoint: `%s`\n' "${PLANNER_CHECKPOINT_PATH}"
+            printf -- '- Planner checkpoint mapping: `%s` (step `%s`)\n' \
+                "${CKPT_MAPPING}" "${PLANNER_CHECKPOINT_STEP}"
+        fi
         printf -- '- Task whitelist: `%s`\n' "${WHITELIST}"
         printf -- '- Task config: `%s`\n' "${TASK_CONFIG}"
         printf -- '- Eval seed lists: `%s/%s`\n' "${EVAL_SEED_LIST_ROOT}" "${TASK_CONFIG}"
         printf -- '- RoboTwin Python: `%s`\n' "${ROBOTWIN_PYTHON}"
+        printf -- '- starVLA Python: `%s`\n' "${STARVLA_PYTHON}"
+        printf -- '- starVLA base VLM: `%s`\n' "${STARGVLA_BASE_VLM}"
+        printf -- '- FAST tokenizer: `%s`\n' "${STARGVLA_FAST_TOKENIZER}"
         printf -- '- Eval result root: `%s`\n' "${EVAL_RESULT_ROOT}"
+        printf -- '- Test episodes per new task: `%s`\n' "${EVAL_TEST_NUM}"
+        if [[ -n "${RESUME_FROM_RUN}" ]]; then
+            printf -- '- Resumed from: `%s` (successful tasks skipped)\n' "${RESUME_FROM_RUN}"
+        fi
         printf -- '- GPUs: `%s`\n' "${GPUS[*]}"
         if [[ "${TMUX_MONITOR}" == "1" ]]; then
             printf -- '- Tmux session: `%s`\n' "${TMUX_SESSION}"
@@ -235,12 +387,13 @@ write_markdown_report() {
 
 RUN_ID="$(date +%Y%m%d_%H%M%S)_$$"
 RUN_ROOT="${ROBOTWIN_ROOT}/logs/eval_seed_whitelist_randomized/${MODEL_NAME}/${RUN_ID}"
+TORCH_EXTENSIONS_DIR="${ROBOTWIN_TORCH_EXTENSIONS_DIR:-${ROBOTWIN_ROOT}/logs/torch_extensions}"
 TASK_LOG_ROOT="${RUN_ROOT}/tasks"
 SERVER_LOG_ROOT="${RUN_ROOT}/servers"
 GPU_CONSOLE_ROOT="${RUN_ROOT}/gpu_consoles"
 EVAL_RESULT_ROOT="${RUN_ROOT}/eval_result"
 TMUX_SESSION="robotwin_randomized_${MODEL_NAME}_${RUN_ID}"
-mkdir -p "${TASK_LOG_ROOT}" "${SERVER_LOG_ROOT}" "${GPU_CONSOLE_ROOT}" "${EVAL_RESULT_ROOT}"
+mkdir -p "${TASK_LOG_ROOT}" "${SERVER_LOG_ROOT}" "${GPU_CONSOLE_ROOT}" "${EVAL_RESULT_ROOT}" "${TORCH_EXTENSIONS_DIR}"
 WRITE_TEST_PATH="${EVAL_RESULT_ROOT}/.write_test"
 if ! printf 'ok\n' > "${WRITE_TEST_PATH}"; then
     echo "Eval result directory is not writable: ${EVAL_RESULT_ROOT}" >&2
@@ -256,17 +409,44 @@ SERVER_SUMMARY_FILE="${RUN_ROOT}/servers.tsv"
 SERVER_SUMMARY_LOCK="${RUN_ROOT}/servers.lock"
 REPORT_FILE="${RUN_ROOT}/report.md"
 STOP_FILE="${RUN_ROOT}/stop"
+CONFIG_TEST_NUM="$(awk '$1 == "test_num:" {print $2; exit}' "${DEPLOY_CONFIG}")"
+EVAL_TEST_NUM=${EVAL_TEST_NUM:-${CONFIG_TEST_NUM:-100}}
+if [[ ! "${EVAL_TEST_NUM}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "EVAL_TEST_NUM must be a positive integer, got: ${EVAL_TEST_NUM}" >&2
+    exit 2
+fi
 
 printf '0\n' > "${NEXT_INDEX_FILE}"
 printf 'idx\ttask\tgpu\tport\tstatus\tstart_time\tend_time\tseconds\tlog_path\tsuccess_rate\tresult_path\n' > "${SUMMARY_FILE}"
-printf 'gpu\tport\tstatus\tpid\tlog_path\n' > "${SERVER_SUMMARY_FILE}"
+if [[ -n "${RESUME_FROM_RUN}" ]]; then
+    RESUME_FROM_RUN="$(cd "${RESUME_FROM_RUN}" && pwd)"
+    RESUME_SUMMARY="${RESUME_FROM_RUN}/summary.tsv"
+    if [[ ! -f "${RESUME_SUMMARY}" ]]; then
+        echo "Resume summary does not exist: ${RESUME_SUMMARY}" >&2
+        exit 1
+    fi
+    awk -F '\t' 'NR > 1 && $5 == 0' "${RESUME_SUMMARY}" >> "${SUMMARY_FILE}"
+fi
+printf 'role\tgpu\tport\tstatus\tpid\tlog_path\n' > "${SERVER_SUMMARY_FILE}"
 write_markdown_report
 
-echo "[eval-launcher] model=${MODEL_NAME}"
-echo "[eval-launcher] checkpoint=${CHECKPOINT_PATH}"
-echo "[eval-launcher] checkpoint_mapping=${CKPT_MAPPING} step=${CHECKPOINT_STEP}"
+echo "[eval-launcher] model=${MODEL_NAME} requested_model=${REQUESTED_MODEL_NAME}"
+echo "[eval-launcher] action_checkpoint=${CHECKPOINT_PATH}"
+echo "[eval-launcher] action_checkpoint_mapping=${CKPT_MAPPING} step=${CHECKPOINT_STEP}"
+if [[ "${JOINT_PLANNER}" == "1" ]]; then
+    echo "[eval-launcher] planner_model=${PLANNER_MODEL_NAME}"
+    echo "[eval-launcher] planner_checkpoint=${PLANNER_CHECKPOINT_PATH}"
+    echo "[eval-launcher] planner_checkpoint_mapping=${CKPT_MAPPING} step=${PLANNER_CHECKPOINT_STEP}"
+fi
 echo "[eval-launcher] robotwin_python=${ROBOTWIN_PYTHON}"
+echo "[eval-launcher] starvla_python=${STARVLA_PYTHON}"
+echo "[eval-launcher] starvla_base_vlm=${STARGVLA_BASE_VLM}"
+echo "[eval-launcher] fast_tokenizer=${STARGVLA_FAST_TOKENIZER}"
 echo "[eval-launcher] eval_result_root=${EVAL_RESULT_ROOT}"
+echo "[eval-launcher] test_episodes_per_new_task=${EVAL_TEST_NUM}"
+if [[ -n "${RESUME_FROM_RUN}" ]]; then
+    echo "[eval-launcher] resume_from_run=${RESUME_FROM_RUN} successful_tasks_skipped=1"
+fi
 echo "[eval-launcher] task_config=${TASK_CONFIG}"
 echo "[eval-launcher] eval_seed_lists=${EVAL_SEED_LIST_ROOT}/${TASK_CONFIG}"
 echo "[eval-launcher] tasks=${#TASKS[@]} whitelist=${WHITELIST}"
@@ -284,11 +464,16 @@ for gpu in "${GPUS[@]}"; do
         echo "Port ${port} for GPU ${gpu} is already in use." >&2
         exit 1
     fi
+    planner_port=$((20000 + gpu))
+    if [[ "${JOINT_PLANNER}" == "1" ]] && port_is_listening "${planner_port}"; then
+        echo "Planner port ${planner_port} for GPU ${gpu} is already in use." >&2
+        exit 1
+    fi
 done
 
 if [[ "${DRY_RUN}" == "1" ]]; then
     for gpu in "${GPUS[@]}"; do
-        echo "[dry-run] gpu=${gpu} server_port=$((19000 + gpu))"
+        echo "[dry-run] gpu=${gpu} action_server_port=$((19000 + gpu)) planner_server_port=$((20000 + gpu))"
     done
     echo "[dry-run] validation passed; no server or eval process was started"
     exit 0
@@ -346,15 +531,23 @@ wait_for_server() {
 }
 
 get_next_task() {
-    local idx
+    local idx task
     exec 200>"${QUEUE_LOCK}"
     flock -x 200
-    idx="$(<"${NEXT_INDEX_FILE}")"
-    if (( idx >= ${#TASKS[@]} )); then
-        return 1
-    fi
-    printf '%s\n' "$((idx + 1))" > "${NEXT_INDEX_FILE}"
-    printf '%s\t%s\n' "${idx}" "${TASKS[${idx}]}"
+    while true; do
+        idx="$(<"${NEXT_INDEX_FILE}")"
+        if (( idx >= ${#TASKS[@]} )); then
+            return 1
+        fi
+        printf '%s\n' "$((idx + 1))" > "${NEXT_INDEX_FILE}"
+        task="${TASKS[${idx}]}"
+        if awk -F '\t' -v idx="${idx}" '$1 == idx && $5 == 0 {found=1} END {exit !found}' "${SUMMARY_FILE}"; then
+            printf '[queue] skip completed %s/%s %s\n' "$((idx + 1))" "${#TASKS[@]}" "${task}" >&2
+            continue
+        fi
+        printf '%s\t%s\n' "${idx}" "${task}"
+        return 0
+    done
 }
 
 append_summary() {
@@ -372,20 +565,23 @@ append_summary() {
 }
 
 append_server_summary() {
-    local gpu="$1" port="$2" status="$3" pid="$4" log_path="$5"
+    local role="$1" gpu="$2" port="$3" status="$4" pid="$5" log_path="$6"
     {
         flock -x 202
-        printf '%s\t%s\t%s\t%s\t%s\n' \
-            "${gpu}" "${port}" "${status}" "${pid}" "${log_path}" >> "${SERVER_SUMMARY_FILE}"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${role}" "${gpu}" "${port}" "${status}" "${pid}" "${log_path}" >> "${SERVER_SUMMARY_FILE}"
     } 202>"${SERVER_SUMMARY_LOCK}"
 }
 
 worker() {
     local gpu="$1"
     local port=$((19000 + gpu))
+    local planner_port=$((20000 + gpu))
     local server_log="${SERVER_LOG_ROOT}/gpu_${gpu}_port_${port}.log"
+    local planner_server_log="${SERVER_LOG_ROOT}/gpu_${gpu}_planner_port_${planner_port}.log"
     local gpu_console_log="${GPU_CONSOLE_ROOT}/gpu_${gpu}.log"
     local server_pid=""
+    local planner_server_pid=""
     local eval_pid=""
 
     cleanup_worker() {
@@ -397,13 +593,22 @@ worker() {
             kill -TERM -- "-${server_pid}" 2>/dev/null || true
             wait "${server_pid}" 2>/dev/null || true
         fi
+        if [[ -n "${planner_server_pid}" ]] && kill -0 "${planner_server_pid}" 2>/dev/null; then
+            kill -TERM -- "-${planner_server_pid}" 2>/dev/null || true
+            wait "${planner_server_pid}" 2>/dev/null || true
+        fi
     }
     trap cleanup_worker EXIT
     trap 'exit 130' INT TERM
 
     if port_is_listening "${port}"; then
         echo "[gpu ${gpu}] port ${port} is already in use; refusing to reuse an unknown server" >&2
-        append_server_summary "${gpu}" "${port}" "port_in_use" "-" "${server_log}"
+        append_server_summary action "${gpu}" "${port}" "port_in_use" "-" "${server_log}"
+        return 1
+    fi
+    if [[ "${JOINT_PLANNER}" == "1" ]] && port_is_listening "${planner_port}"; then
+        echo "[gpu ${gpu}] planner port ${planner_port} is already in use; refusing to reuse an unknown server" >&2
+        append_server_summary planner "${gpu}" "${planner_port}" "port_in_use" "-" "${planner_server_log}"
         return 1
     fi
 
@@ -411,6 +616,9 @@ worker() {
     printf '\n===== server start: gpu=%s port=%s =====\n' "${gpu}" "${port}" >> "${gpu_console_log}"
     setsid env \
         STARGVLA_REPO_ROOT="${STARVLA_ROOT}" \
+        STARGVLA_BASE_VLM="${STARGVLA_BASE_VLM}" \
+        STARGVLA_FAST_TOKENIZER="${STARGVLA_FAST_TOKENIZER}" \
+        STARVLA_PYTHON="${STARVLA_PYTHON}" \
         RUN_OUTPUT="${RESULT_ROOT}" \
         POLICY_CKPT_PATH="${CHECKPOINT_PATH}" \
         POLICY_PORT="${port}" \
@@ -422,12 +630,39 @@ worker() {
 
     if ! wait_for_server "${server_pid}" "${port}" "${SERVER_READY_TIMEOUT}"; then
         echo "[gpu ${gpu}] server failed to become ready; log=${server_log}" >&2
-        append_server_summary "${gpu}" "${port}" "not_ready" "${server_pid}" "${server_log}"
+        append_server_summary action "${gpu}" "${port}" "not_ready" "${server_pid}" "${server_log}"
         return 1
     fi
-    append_server_summary "${gpu}" "${port}" "ready" "${server_pid}" "${server_log}"
+    append_server_summary action "${gpu}" "${port}" "ready" "${server_pid}" "${server_log}"
     echo "[gpu ${gpu}] server ready pid=${server_pid} port=${port}"
     printf '===== server ready: pid=%s =====\n' "${server_pid}" >> "${gpu_console_log}"
+
+    if [[ "${JOINT_PLANNER}" == "1" ]]; then
+        echo "[gpu ${gpu}] starting planner server on port ${planner_port}"
+        printf '\n===== planner server start: gpu=%s port=%s =====\n' \
+            "${gpu}" "${planner_port}" >> "${gpu_console_log}"
+        setsid env \
+            STARGVLA_REPO_ROOT="${STARVLA_ROOT}" \
+            STARGVLA_BASE_VLM="${STARGVLA_BASE_VLM}" \
+            STARVLA_PYTHON="${STARVLA_PYTHON}" \
+            PLANNER_CKPT_PATH="${PLANNER_CHECKPOINT_PATH}" \
+            PLANNER_PORT="${planner_port}" \
+            PLANNER_GPU_ID="${gpu}" \
+            CUDA_VISIBLE_DEVICES="${gpu}" \
+            IDLE_TIMEOUT=-1 \
+            bash "${PLANNER_SERVER_SCRIPT}" > "${planner_server_log}" 2>&1 &
+        planner_server_pid=$!
+        if ! wait_for_server "${planner_server_pid}" "${planner_port}" "${SERVER_READY_TIMEOUT}"; then
+            echo "[gpu ${gpu}] planner server failed to become ready; log=${planner_server_log}" >&2
+            append_server_summary planner "${gpu}" "${planner_port}" "not_ready" \
+                "${planner_server_pid}" "${planner_server_log}"
+            return 1
+        fi
+        append_server_summary planner "${gpu}" "${planner_port}" "ready" \
+            "${planner_server_pid}" "${planner_server_log}"
+        echo "[gpu ${gpu}] planner server ready pid=${planner_server_pid} port=${planner_port}"
+        printf '===== planner server ready: pid=%s =====\n' "${planner_server_pid}" >> "${gpu_console_log}"
+    fi
 
     local item idx task task_dir stdout_log start_time end_time
     local start_seconds end_seconds elapsed_seconds status result_path success_rate
@@ -447,7 +682,10 @@ worker() {
         printf '\n===== task %s/%s start: %s =====\n' \
             "$((idx + 1))" "${#TASKS[@]}" "${task}" >> "${gpu_console_log}"
 
-        local eval_cmd=(bash "${EVAL_SCRIPT}" "${task}" "${gpu}" "${port}" "${TASK_CONFIG}")
+        local eval_cmd=(
+            bash "${EVAL_SCRIPT}" "${task}" "${gpu}" "${port}" "${TASK_CONFIG}"
+            "${MODEL_NAME}" 0 "${EVAL_TEST_NUM}"
+        )
         if [[ "${TASK_TIMEOUT_SECONDS}" != "0" ]]; then
             eval_cmd=(timeout --signal=TERM --kill-after=30 "${TASK_TIMEOUT_SECONDS}" "${eval_cmd[@]}")
         fi
@@ -463,6 +701,8 @@ worker() {
                 STARGVLA_REPO_ROOT="${STARVLA_ROOT}" \
                 STARGVLA_HOST=127.0.0.1 \
                 STARGVLA_PORT="${port}" \
+                PLANNER_OFT_HOST=127.0.0.1 \
+                PLANNER_OFT_PORT="${planner_port}" \
                 ROBOTWIN_USE_EVAL_SEED_LIST=1 \
                 ROBOTWIN_EVAL_SEED_LIST_PATH="${EVAL_SEED_LIST_ROOT}" \
                 ROBOTWIN_PYTHON="${ROBOTWIN_PYTHON}" \
@@ -470,6 +710,9 @@ worker() {
                 ROBOTWIN_EVAL_RESULT_ROOT="${EVAL_RESULT_ROOT}" \
                 ROBOTWIN_REQUEST_LOG_PATH="${task_dir}/requests.jsonl" \
                 ROBOTWIN_REQUEST_IMAGE_DIR= \
+                CUDA_HOME="${ROBOTWIN_CUDA_HOME}" \
+                TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR}" \
+                PYTHONPATH="${ROBOTWIN_CUROBO_SRC}:${PYTHONPATH:-}" \
                 PYTHONUNBUFFERED=1 \
                 "${eval_cmd[@]}" &
         eval_pid=$!
@@ -517,9 +760,15 @@ worker() {
             echo "[gpu ${gpu}] server exited unexpectedly; log=${server_log}" >&2
             return 1
         fi
+        if [[ "${JOINT_PLANNER}" == "1" ]] && ! kill -0 "${planner_server_pid}" 2>/dev/null; then
+            echo "[gpu ${gpu}] planner server exited unexpectedly; log=${planner_server_log}" >&2
+            return 1
+        fi
     done
     echo "[gpu ${gpu}] worker finished"
     printf '\n===== gpu %s queue finished =====\n' "${gpu}" >> "${gpu_console_log}"
+    cleanup_worker
+    trap - EXIT
 }
 
 worker_pids=()

@@ -4,6 +4,7 @@ task_config: null
 ckpt_setting: oft_no_no_0_wos
 seed: null
 instruction_type: unseen
+test_num: 50
 
 host: "127.0.0.1"
 port: 7980
@@ -26,4 +27,3 @@ torso_index: 0
 head2_index: 1
 log_chunk_timing: true
 policy_ckpt_path: "/data/lmz/code/starVLA-A/results/Checkpoints/oft_no_no_0_wos"
-

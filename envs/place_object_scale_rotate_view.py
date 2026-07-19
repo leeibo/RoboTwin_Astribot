@@ -101,6 +101,7 @@ class place_object_scale_rotate_view(Base_Task):
             if abs(obj_cyl[1]) < 0.25:
                 continue
             break
+        self.arm_tag = ArmTag("right" if object_pose.p[0] > 0 else "left")
 
         while True:
             scale_pose = rand_pose_cyl(
@@ -152,8 +153,6 @@ class place_object_scale_rotate_view(Base_Task):
             scan_z=0.88 + self.table_z_bias,
             joint_name_prefer="astribot_torso_joint_2",
         )
-
-        self.arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
         self.enter_rotate_action_stage(1, focus_object_key=(object_key or "B"))
         self.move(self.grasp_actor(self.object, arm_tag=self.arm_tag,gripper_pos=0.1))

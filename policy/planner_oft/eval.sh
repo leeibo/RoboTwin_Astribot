@@ -8,6 +8,7 @@ port=${3:-19001}
 task_config=${4:-info_gathering_demo}
 ckpt_setting=${5:-${policy_name}}
 seed=${6:-0}
+test_num=${7:-100}
 python_bin=${ROBOTWIN_PYTHON:-${ROBOTWIN_PY:-python}}
 
 export CUDA_VISIBLE_DEVICES="${gpu_id}"
@@ -26,4 +27,5 @@ PYTHONWARNINGS=ignore::UserWarning "${python_bin}" script/eval_policy.py \
     --ckpt_setting "${ckpt_setting}" \
     --seed "${seed}" \
     --policy_name "${policy_name}" \
-    --port "${port}"
+    --port "${port}" \
+    --test_num "${test_num}"

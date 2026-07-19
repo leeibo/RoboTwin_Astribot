@@ -4,6 +4,7 @@ task_config: null
 ckpt_setting: oft_subtask_action_12_ws
 seed: null
 instruction_type: unseen
+test_num: 50
 
 host: "127.0.0.1"
 port: 7980

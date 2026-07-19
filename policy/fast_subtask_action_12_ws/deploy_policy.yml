@@ -4,6 +4,8 @@ task_config: null
 ckpt_setting: fast_subtask_action_12_ws
 seed: null
 instruction_type: unseen
+test_num: 50
+hold_on_invalid_fast_action: true
 
 host: "127.0.0.1"
 port: 7980

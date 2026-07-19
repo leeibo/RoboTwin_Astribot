@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -47,6 +48,7 @@ SUBTASK_KEYFRAME_HISTORY_MODES = {
     "planner_memory",
     "subtask_window_memory",
 }
+INVALID_FAST_ACTION_ERROR_MARKER = "QwenFast generation produced invalid FAST action token sequence"
 
 
 @dataclass
@@ -57,6 +59,21 @@ class FrameRecord:
     annotation: dict[str, Any]
     subtask_keyframe: bool = False
     motion_keyframe: bool = False
+
+
+def _is_invalid_fast_action_error(error: BaseException) -> bool:
+    return INVALID_FAST_ACTION_ERROR_MARKER in str(error)
+
+
+def _hold_current_state_actions(records: list[FrameRecord], action_steps: int) -> np.ndarray:
+    if not records:
+        raise ValueError("Cannot build hold actions without a current frame record")
+    state = np.asarray(records[-1].state, dtype=np.float64).reshape(-1)
+    if state.shape != (18,):
+        raise ValueError(f"Expected current Astribot state shape (18,), got {state.shape}")
+    if not np.isfinite(state).all():
+        raise ValueError("Current Astribot state contains non-finite values")
+    return np.repeat(state[None, :], max(int(action_steps), 1), axis=0)
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -256,6 +273,13 @@ class StarVLAOFTClient:
         subtask_planner_output_keys: Optional[list[str]] = None,
         subtask_planner_use_annotation: bool = False,
         subtask_planner_fail_open: bool = True,
+        hold_on_invalid_fast_action: bool = False,
+        planner_oft_enabled: bool = False,
+        planner_oft_host: str = "127.0.0.1",
+        planner_oft_port: int = 20000,
+        planner_oft_max_history_frames: int = 12,
+        planner_oft_max_new_tokens: int = 192,
+        planner_oft_fail_open: bool = False,
     ) -> None:
         try:
             from deployment.model_server.tools.websocket_policy_client import WebsocketClientPolicy
@@ -293,6 +317,7 @@ class StarVLAOFTClient:
         self.return_vlm_text = bool(return_vlm_text)
         self.vlm_text_max_new_tokens = int(vlm_text_max_new_tokens)
         self.subtask_planner_enabled = bool(subtask_planner_enabled)
+        self.hold_on_invalid_fast_action = bool(hold_on_invalid_fast_action)
         self.subtask_planner_fail_open = bool(subtask_planner_fail_open)
         self.subtask_planner_use_annotation = bool(subtask_planner_use_annotation)
         self.subtask_planner_output_keys = list(
@@ -318,6 +343,24 @@ class StarVLAOFTClient:
                 self.subtask_planner_enabled = False
                 print("[StarVLAOFTClient] subtask planner init failed; disabled with fail_open=True", flush=True)
 
+        self.planner_oft_enabled = bool(planner_oft_enabled)
+        self.planner_oft_max_history_frames = max(int(planner_oft_max_history_frames), 0)
+        self.planner_oft_max_new_tokens = max(int(planner_oft_max_new_tokens), 1)
+        self.planner_oft_fail_open = bool(planner_oft_fail_open)
+        self.planner_oft_client = None
+        self.planner_oft_metadata: dict[str, Any] = {}
+        if self.planner_oft_enabled:
+            planner_host = os.environ.get("PLANNER_OFT_HOST", planner_oft_host)
+            planner_port = int(os.environ.get("PLANNER_OFT_PORT", planner_oft_port))
+            try:
+                self.planner_oft_client = WebsocketClientPolicy(host=planner_host, port=planner_port)
+                self.planner_oft_metadata = self.planner_oft_client.get_server_metadata()
+            except Exception:
+                if not self.planner_oft_fail_open:
+                    raise
+                self.planner_oft_enabled = False
+                print("[StarVLAOFTClient] planner_oft init failed; disabled with fail_open=True", flush=True)
+
         self.request_log_path = Path(request_log_path).expanduser() if request_log_path else None
         if self.request_log_path is not None:
             self.request_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -340,6 +383,8 @@ class StarVLAOFTClient:
         self.last_motion_keyframe_state: Optional[np.ndarray] = None
         self.last_subtask_keyframe_step: Optional[int] = None
         self.current_candidate_subtasks: list[str] = []
+        self.planner_memory_steps: set[int] = set()
+        self.last_planner_oft_subtask: Optional[str] = None
 
         print(
             "[StarVLAOFTClient] connected: "
@@ -349,7 +394,9 @@ class StarVLAOFTClient:
             f"swap_rgb_channels={self.swap_rgb_channels}, unnorm_key={self.unnorm_key}, "
             f"return_vlm_text={self.return_vlm_text}, "
             f"subtask_planner_enabled={self.subtask_planner_enabled}, "
-            f"metadata={self.server_metadata}",
+            f"planner_oft_enabled={self.planner_oft_enabled}, "
+            f"hold_on_invalid_fast_action={self.hold_on_invalid_fast_action}, "
+            f"metadata={self.server_metadata}, planner_metadata={self.planner_oft_metadata}",
             flush=True,
         )
 
@@ -368,12 +415,16 @@ class StarVLAOFTClient:
         self.last_request_sec = None
         self.last_chunk_size = None
         self.current_candidate_subtasks = []
+        self.planner_memory_steps.clear()
+        self.last_planner_oft_subtask = None
 
     def set_request_seed(self, seed: Any) -> None:
         self.request_seed = seed
 
     def close(self) -> None:
         self.client.close()
+        if self.planner_oft_client is not None:
+            self.planner_oft_client.close()
 
     def _annotation_from_env(self, task_env, observation: dict[str, Any]) -> dict[str, Any]:
         annotation: dict[str, Any] = {}
@@ -683,6 +734,133 @@ class StarVLAOFTClient:
             return self._select_keyframe_history(current, "subtask_keyframe")
         raise ValueError(f"Unsupported history_mode={self.history_mode!r}")
 
+    def _select_planner_oft_input(self, current: FrameRecord) -> list[FrameRecord]:
+        by_step = {record.step: record for record in self.records}
+        history: list[FrameRecord] = []
+        step = current.step - self.history_stride
+        while step >= 0 and len(history) < self.planner_oft_max_history_frames:
+            record = by_step.get(step)
+            if record is not None:
+                history.append(record)
+            step -= self.history_stride
+        return list(reversed(history)) + [current]
+
+    @staticmethod
+    def _planner_oft_text(response: dict[str, Any]) -> str:
+        if not response.get("ok", False):
+            raise RuntimeError(f"Planner OFT server inference failed: {response.get('error', response)}")
+        data = response.get("data", {})
+        value = data.get("planner_text") if isinstance(data, dict) else None
+        if isinstance(value, (list, tuple)):
+            value = value[0] if value else None
+        text = "" if value is None else str(value).strip()
+        if not text:
+            raise ValueError(f"Planner OFT response has no planner_text: {response}")
+        return text
+
+    @staticmethod
+    def _parse_planner_oft_output(text: str, num_frames: int) -> tuple[str, list[int]]:
+        subtask_match = re.search(r"<subtask>\s*(.*?)\s*</subtask>", text, flags=re.I | re.S)
+        retrieval_match = re.search(r"<retrieval>\s*(.*?)\s*</retrieval>", text, flags=re.I | re.S)
+        if subtask_match is None:
+            raise ValueError(f"Planner output is missing <subtask>: {text[:500]!r}")
+        if retrieval_match is None:
+            raise ValueError(f"Planner output is missing <retrieval>: {text[:500]!r}")
+
+        subtask = subtask_match.group(1).strip()
+        if not subtask:
+            raise ValueError(f"Planner output contains an empty <subtask>: {text[:500]!r}")
+        try:
+            retrieval_value = json.loads(retrieval_match.group(1).strip())
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Planner <retrieval> is not a JSON list: {text[:500]!r}") from exc
+        if not isinstance(retrieval_value, list):
+            raise ValueError(f"Planner <retrieval> must be a list, got {type(retrieval_value).__name__}")
+
+        retrieval: list[int] = []
+        for value in retrieval_value:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
+                raise ValueError(f"Planner retrieval index is not an integer: {value!r}")
+            index = int(value)
+            if num_frames > 0 and index == num_frames:
+                # The planner occasionally counts the current (last) frame as num_frames
+                # even though retrieval supervision is zero-based.
+                index = num_frames - 1
+            if not 0 <= index < num_frames:
+                # Retrieval is auxiliary memory selection. A hallucinated index must
+                # not abort the entire evaluation episode; the raw planner text is
+                # retained in the request log for diagnosis.
+                continue
+            if index not in retrieval:
+                retrieval.append(index)
+        return subtask, retrieval
+
+    def _request_planner_oft(
+        self,
+        current: FrameRecord,
+        instruction: str,
+    ) -> tuple[list[FrameRecord], str]:
+        if self.planner_oft_client is None:
+            raise RuntimeError("planner_oft is enabled but its websocket client is unavailable")
+        planner_records = self._select_planner_oft_input(current)
+        resized_images = self._resize_images([record.image for record in planner_records])
+        request_id = (
+            f"planner_oft_ep{self.episode_idx:04d}_chunk{self.chunk_idx:05d}_"
+            f"step{int(current.step):06d}"
+        )
+        response = self.planner_oft_client.predict_action(
+            {
+                "type": "infer",
+                "request_id": request_id,
+                "examples": [{"image": resized_images, "lang": str(instruction)}],
+                "max_new_tokens": self.planner_oft_max_new_tokens,
+            }
+        )
+        planner_text = self._planner_oft_text(response)
+        planner_parse_error = None
+        try:
+            subtask, retrieval = self._parse_planner_oft_output(planner_text, len(planner_records))
+        except ValueError as exc:
+            planner_parse_error = repr(exc)
+            subtask = self.last_planner_oft_subtask or str(instruction)
+            retrieval = []
+            print(
+                f"[StarVLAOFTClient] invalid planner output; reusing subtask without retrieval: "
+                f"{planner_parse_error}",
+                flush=True,
+            )
+
+        for index in retrieval:
+            record = planner_records[index]
+            record.subtask_keyframe = True
+            record.annotation["subtask_keyframe_reason"] = "planner_oft_retrieval"
+            self.planner_memory_steps.add(int(record.step))
+        self.last_planner_oft_subtask = subtask
+
+        memory = [
+            record
+            for record in self.records
+            if record.step < current.step and int(record.step) in self.planner_memory_steps
+        ]
+        memory.append(current)
+        self._write_jsonl(
+            {
+                "timestamp": time.time(),
+                "episode": int(self.episode_idx),
+                "chunk": int(self.chunk_idx),
+                "request_id": request_id,
+                "type": "planner_oft",
+                "instruction": str(instruction),
+                "planner_input_steps": [int(record.step) for record in planner_records],
+                "retrieval_indices": retrieval,
+                "memory_steps": [int(record.step) for record in memory],
+                "subtask": subtask,
+                "planner_text": planner_text,
+                "planner_parse_error": planner_parse_error,
+            }
+        )
+        return memory, subtask
+
     def _resize_images(self, images: list[np.ndarray]) -> list[np.ndarray]:
         width, height = self.image_size
         resized = []
@@ -822,6 +1000,7 @@ class StarVLAOFTClient:
                 self._update_subtask_keyframe_from_planner(records[-1], response, instruction, subtask_instruction)
         except Exception as exc:
             request_sec = time.perf_counter() - start
+            use_hold_fallback = self.hold_on_invalid_fast_action and _is_invalid_fast_action_error(exc)
             self._write_jsonl(
                 {
                     "timestamp": request_time,
@@ -851,9 +1030,21 @@ class StarVLAOFTClient:
                     },
                     "response": response,
                     "error": repr(exc),
+                    "fallback": "hold_current_state" if use_hold_fallback else None,
                 }
             )
-            raise
+            if not use_hold_fallback:
+                raise
+            actions = _hold_current_state_actions(records, self.action_steps)
+            self.last_request_id = request_id
+            self.last_request_sec = request_sec
+            self.last_chunk_size = int(actions.shape[0])
+            print(
+                f"[StarVLAOFTClient] invalid FAST action tokens; holding current state "
+                f"for {actions.shape[0]} steps request_id={request_id}",
+                flush=True,
+            )
+            return actions
 
         self.last_request_id = request_id
         self.last_request_sec = request_sec
@@ -914,8 +1105,18 @@ class StarVLAOFTClient:
         self.current_candidate_subtasks = self._candidate_subtask_instructions(task_env)
 
         current, camera_key, annotation = self.observe_frame(task_env, observation)
-        records = self._select_history(current)
-        subtask_instruction = self._subtask_instruction(task_env, annotation)
+        if self.planner_oft_enabled:
+            try:
+                records, subtask_instruction = self._request_planner_oft(current, instruction)
+            except Exception:
+                if not self.planner_oft_fail_open:
+                    raise
+                records = self._select_history(current)
+                subtask_instruction = self.last_planner_oft_subtask or instruction
+                print("[StarVLAOFTClient] planner_oft request failed; using fail-open history", flush=True)
+        else:
+            records = self._select_history(current)
+            subtask_instruction = self._subtask_instruction(task_env, annotation)
         return self._request_actions(records, instruction, camera_key, subtask_instruction)
 
     def observe_frame(self, task_env, observation: dict[str, Any]) -> tuple[FrameRecord, str, dict[str, Any]]:
@@ -1004,6 +1205,16 @@ def get_model(usr_args: dict[str, Any]):
         ),
         subtask_planner_use_annotation=_as_bool(_arg(usr_args, "subtask_planner_use_annotation", False), default=False),
         subtask_planner_fail_open=_as_bool(_arg(usr_args, "subtask_planner_fail_open", True), default=True),
+        hold_on_invalid_fast_action=_as_bool(
+            _arg(usr_args, "hold_on_invalid_fast_action", False),
+            default=False,
+        ),
+        planner_oft_enabled=_as_bool(_arg(usr_args, "planner_oft_enabled", False), default=False),
+        planner_oft_host=str(_arg(usr_args, "planner_oft_host", "127.0.0.1")),
+        planner_oft_port=int(_arg(usr_args, "planner_oft_port", 20000)),
+        planner_oft_max_history_frames=int(_arg(usr_args, "planner_oft_max_history_frames", 12)),
+        planner_oft_max_new_tokens=int(_arg(usr_args, "planner_oft_max_new_tokens", 192)),
+        planner_oft_fail_open=_as_bool(_arg(usr_args, "planner_oft_fail_open", False), default=False),
     )
 
 

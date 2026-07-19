@@ -9,8 +9,13 @@ Environment variables:
   GPU_LIST                  GPU ids, comma- or space-separated (default: all GPUs)
   SERVER_READY_TIMEOUT      Seconds to wait for each server (default: 900)
   TASK_TIMEOUT_SECONDS      Per-task timeout; 0 disables it (default: 0)
+  EVAL_TEST_NUM             Episodes per task (default: deploy config or 100)
   CONTINUE_ON_ERROR         Continue after an eval failure (default: 1)
   SERVER_START_STAGGER_SEC  Delay between worker launches (default: 1)
+  STARVLA_ROOT              starVLA-A repository (default: sibling of RoboTwin_Astribot)
+  STARVLA_PYTHON            starVLA environment Python (default: conda env starVLA)
+  STARGVLA_BASE_VLM         Local base VLM directory (default: resolved from result config)
+  STARGVLA_FAST_TOKENIZER   Local physical-intelligence/fast tokenizer directory
   ROBOTWIN_PYTHON           RoboTwin environment Python (default: conda env RoboTwin)
   TMUX_MONITOR              Open one tmux window per GPU (default: 1)
   DRY_RUN                   Validate inputs without starting servers (default: 0)
@@ -29,8 +34,13 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROBOTWIN_ROOT="${SCRIPT_DIR}"
-STARVLA_ROOT="/private/zjb/workspace/starVLA-A"
+STARVLA_ROOT="${STARVLA_ROOT:-${SCRIPT_DIR}/../starVLA-A}"
+if [[ -d "${STARVLA_ROOT}" ]]; then
+    STARVLA_ROOT="$(cd "${STARVLA_ROOT}" && pwd)"
+fi
+STARGVLA_FAST_TOKENIZER="${STARGVLA_FAST_TOKENIZER:-${STARVLA_ROOT}/playground/Pretrained_models/fast}"
 RESULT_ROOT="${STARVLA_ROOT}/results/${MODEL_NAME}"
+RESULT_CONFIG="${RESULT_ROOT}/config.yaml"
 CKPT_MAPPING="${STARVLA_ROOT}/ckpt_mapping.yaml"
 MANAGED_RUN_ROOT="${STARVLA_ROOT}/examples/RoboTwin_Astribot/train_files/managed_runs/${MODEL_NAME}"
 SERVER_SCRIPT="${MANAGED_RUN_ROOT}/run_policy_server.sh"
@@ -38,6 +48,8 @@ POLICY_ROOT="${ROBOTWIN_ROOT}/policy/${MODEL_NAME}"
 EVAL_SCRIPT="${POLICY_ROOT}/eval.sh"
 DEPLOY_CONFIG="${POLICY_ROOT}/deploy_policy.yml"
 WHITELIST="${ROBOTWIN_ROOT}/task_config/eval_seed_task_whitelist.yml"
+TASK_CONFIG="info_gathering_demo"
+EVAL_SEED_LIST_ROOT="${ROBOTWIN_ROOT}/eval_seed_lists"
 
 SERVER_READY_TIMEOUT=${SERVER_READY_TIMEOUT:-900}
 TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-0}
@@ -64,9 +76,48 @@ for path in "${RESULT_ROOT}" "${MANAGED_RUN_ROOT}" "${POLICY_ROOT}"; do
         exit 1
     fi
 done
-for path in "${CKPT_MAPPING}" "${SERVER_SCRIPT}" "${EVAL_SCRIPT}" "${DEPLOY_CONFIG}" "${WHITELIST}"; do
+for path in "${RESULT_CONFIG}" "${CKPT_MAPPING}" "${SERVER_SCRIPT}" "${EVAL_SCRIPT}" "${DEPLOY_CONFIG}" "${WHITELIST}"; do
     if [[ ! -f "${path}" ]]; then
         echo "Required file does not exist: ${path}" >&2
+        exit 1
+    fi
+done
+
+if [[ -z "${STARGVLA_BASE_VLM:-}" ]]; then
+    CONFIGURED_BASE_VLM="$(
+        awk '
+            $1 == "base_vlm:" {
+                value = $0
+                sub(/^[[:space:]]*base_vlm:[[:space:]]*/, "", value)
+                gsub(/^["'\'' ]+|["'\'' ]+$/, "", value)
+                print value
+                exit
+            }
+        ' "${RESULT_CONFIG}"
+    )"
+    if [[ -z "${CONFIGURED_BASE_VLM}" ]]; then
+        echo "Could not resolve framework.qwenvl.base_vlm from ${RESULT_CONFIG}." >&2
+        exit 1
+    fi
+    if [[ "${CONFIGURED_BASE_VLM}" == /* ]]; then
+        STARGVLA_BASE_VLM="${CONFIGURED_BASE_VLM}"
+    elif [[ "${CONFIGURED_BASE_VLM}" == ./* ]]; then
+        STARGVLA_BASE_VLM="${STARVLA_ROOT}/${CONFIGURED_BASE_VLM#./}"
+    else
+        echo "Configured base VLM is not a local path: ${CONFIGURED_BASE_VLM}" >&2
+        exit 1
+    fi
+fi
+if [[ ! -d "${STARGVLA_BASE_VLM}" ]]; then
+    echo "Required base VLM does not exist: ${STARGVLA_BASE_VLM}" >&2
+    exit 1
+fi
+for path in \
+    "${STARGVLA_FAST_TOKENIZER}/processing_action_tokenizer.py" \
+    "${STARGVLA_FAST_TOKENIZER}/tokenizer.json" \
+    "${STARGVLA_FAST_TOKENIZER}/processor_config.json"; do
+    if [[ ! -f "${path}" ]]; then
+        echo "Required FAST tokenizer file does not exist: ${path}" >&2
         exit 1
     fi
 done
@@ -85,8 +136,38 @@ if [[ -z "${ROBOTWIN_PYTHON:-}" || ! -x "${ROBOTWIN_PYTHON}" ]]; then
     echo "Could not resolve the RoboTwin conda Python. Set ROBOTWIN_PYTHON explicitly." >&2
     exit 1
 fi
+ROBOTWIN_ENV_ROOT="$(cd "$(dirname "${ROBOTWIN_PYTHON}")/.." && pwd)"
+ROBOTWIN_CUROBO_SRC="${ROBOTWIN_CUROBO_SRC:-${ROBOTWIN_ROOT}/envs/curobo/src}"
+ROBOTWIN_CUDA_HOME="${ROBOTWIN_CUDA_HOME:-${ROBOTWIN_ENV_ROOT}}"
+if [[ ! -f "${ROBOTWIN_CUROBO_SRC}/curobo/types/math.py" ]]; then
+    echo "NVIDIA cuRobo source was not found: ${ROBOTWIN_CUROBO_SRC}" >&2
+    exit 1
+fi
+if [[ ! -x "${ROBOTWIN_CUDA_HOME}/bin/nvcc" ]]; then
+    echo "CUDA compiler was not found: ${ROBOTWIN_CUDA_HOME}/bin/nvcc" >&2
+    exit 1
+fi
 if ! "${ROBOTWIN_PYTHON}" -c 'import numpy, sapien, yaml' >/dev/null 2>&1; then
     echo "RoboTwin Python failed to import numpy, sapien, or yaml: ${ROBOTWIN_PYTHON}" >&2
+    exit 1
+fi
+
+if [[ -z "${STARVLA_PYTHON:-}" ]]; then
+    if ! command -v conda >/dev/null 2>&1; then
+        echo "conda was not found; set STARVLA_PYTHON explicitly." >&2
+        exit 1
+    fi
+    STARVLA_ENV_ROOT="$(conda env list 2>/dev/null | awk '$1 == "starVLA" {print $NF; exit}')"
+    if [[ -n "${STARVLA_ENV_ROOT}" ]]; then
+        STARVLA_PYTHON="${STARVLA_ENV_ROOT}/bin/python"
+    fi
+fi
+if [[ -z "${STARVLA_PYTHON:-}" || ! -x "${STARVLA_PYTHON}" ]]; then
+    echo "Could not resolve the starVLA conda Python. Set STARVLA_PYTHON explicitly." >&2
+    exit 1
+fi
+if ! "${STARVLA_PYTHON}" -c 'import torch, yaml' >/dev/null 2>&1; then
+    echo "starVLA Python failed to import torch or yaml: ${STARVLA_PYTHON}" >&2
     exit 1
 fi
 
@@ -170,6 +251,27 @@ if (( ${#TASKS[@]} == 0 )); then
     echo "No tasks found in ${WHITELIST}." >&2
     exit 1
 fi
+for task in "${TASKS[@]}"; do
+    seed_list_path="${EVAL_SEED_LIST_ROOT}/${TASK_CONFIG}/${task}.json"
+    if [[ ! -f "${seed_list_path}" ]]; then
+        echo "Eval seed list does not exist: ${seed_list_path}" >&2
+        exit 1
+    fi
+    seed_count="$("${ROBOTWIN_PYTHON}" - "${seed_list_path}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    payload = json.load(file)
+entries = payload.get("entries")
+print(len(entries if isinstance(entries, list) else payload.get("seeds", [])))
+PY
+)"
+    if [[ ! "${seed_count}" =~ ^[0-9]+$ ]] || (( seed_count < 100 )); then
+        echo "Eval seed list needs at least 100 seeds: ${seed_list_path} (found ${seed_count})" >&2
+        exit 1
+    fi
+done
 
 write_markdown_report() {
     local tmp_path="${REPORT_FILE}.tmp"
@@ -182,8 +284,14 @@ write_markdown_report() {
         printf -- '- Checkpoint: `%s`\n' "${CHECKPOINT_PATH}"
         printf -- '- Checkpoint mapping: `%s` (step `%s`)\n' "${CKPT_MAPPING}" "${CHECKPOINT_STEP}"
         printf -- '- Task whitelist: `%s`\n' "${WHITELIST}"
+        printf -- '- Task config: `%s`\n' "${TASK_CONFIG}"
+        printf -- '- Eval seed lists: `%s/%s`\n' "${EVAL_SEED_LIST_ROOT}" "${TASK_CONFIG}"
         printf -- '- RoboTwin Python: `%s`\n' "${ROBOTWIN_PYTHON}"
+        printf -- '- starVLA Python: `%s`\n' "${STARVLA_PYTHON}"
+        printf -- '- starVLA base VLM: `%s`\n' "${STARGVLA_BASE_VLM}"
+        printf -- '- FAST tokenizer: `%s`\n' "${STARGVLA_FAST_TOKENIZER}"
         printf -- '- Eval result root: `%s`\n' "${EVAL_RESULT_ROOT}"
+        printf -- '- Test episodes per task: `%s`\n' "${EVAL_TEST_NUM}"
         printf -- '- GPUs: `%s`\n' "${GPUS[*]}"
         if [[ "${TMUX_MONITOR}" == "1" ]]; then
             printf -- '- Tmux session: `%s`\n' "${TMUX_SESSION}"
@@ -219,12 +327,13 @@ write_markdown_report() {
 
 RUN_ID="$(date +%Y%m%d_%H%M%S)_$$"
 RUN_ROOT="${ROBOTWIN_ROOT}/logs/eval_seed_whitelist/${MODEL_NAME}/${RUN_ID}"
+TORCH_EXTENSIONS_DIR="${ROBOTWIN_TORCH_EXTENSIONS_DIR:-${ROBOTWIN_ROOT}/logs/torch_extensions}"
 TASK_LOG_ROOT="${RUN_ROOT}/tasks"
 SERVER_LOG_ROOT="${RUN_ROOT}/servers"
 GPU_CONSOLE_ROOT="${RUN_ROOT}/gpu_consoles"
 EVAL_RESULT_ROOT="${RUN_ROOT}/eval_result"
 TMUX_SESSION="robotwin_${MODEL_NAME}_${RUN_ID}"
-mkdir -p "${TASK_LOG_ROOT}" "${SERVER_LOG_ROOT}" "${GPU_CONSOLE_ROOT}" "${EVAL_RESULT_ROOT}"
+mkdir -p "${TASK_LOG_ROOT}" "${SERVER_LOG_ROOT}" "${GPU_CONSOLE_ROOT}" "${EVAL_RESULT_ROOT}" "${TORCH_EXTENSIONS_DIR}"
 WRITE_TEST_PATH="${EVAL_RESULT_ROOT}/.write_test"
 if ! printf 'ok\n' > "${WRITE_TEST_PATH}"; then
     echo "Eval result directory is not writable: ${EVAL_RESULT_ROOT}" >&2
@@ -240,6 +349,12 @@ SERVER_SUMMARY_FILE="${RUN_ROOT}/servers.tsv"
 SERVER_SUMMARY_LOCK="${RUN_ROOT}/servers.lock"
 REPORT_FILE="${RUN_ROOT}/report.md"
 STOP_FILE="${RUN_ROOT}/stop"
+CONFIG_TEST_NUM="$(awk '$1 == "test_num:" {print $2; exit}' "${DEPLOY_CONFIG}")"
+EVAL_TEST_NUM=${EVAL_TEST_NUM:-${CONFIG_TEST_NUM:-100}}
+if [[ ! "${EVAL_TEST_NUM}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "EVAL_TEST_NUM must be a positive integer, got: ${EVAL_TEST_NUM}" >&2
+    exit 2
+fi
 
 printf '0\n' > "${NEXT_INDEX_FILE}"
 printf 'idx\ttask\tgpu\tport\tstatus\tstart_time\tend_time\tseconds\tlog_path\tsuccess_rate\tresult_path\n' > "${SUMMARY_FILE}"
@@ -250,7 +365,13 @@ echo "[eval-launcher] model=${MODEL_NAME}"
 echo "[eval-launcher] checkpoint=${CHECKPOINT_PATH}"
 echo "[eval-launcher] checkpoint_mapping=${CKPT_MAPPING} step=${CHECKPOINT_STEP}"
 echo "[eval-launcher] robotwin_python=${ROBOTWIN_PYTHON}"
+echo "[eval-launcher] starvla_python=${STARVLA_PYTHON}"
+echo "[eval-launcher] starvla_base_vlm=${STARGVLA_BASE_VLM}"
+echo "[eval-launcher] fast_tokenizer=${STARGVLA_FAST_TOKENIZER}"
 echo "[eval-launcher] eval_result_root=${EVAL_RESULT_ROOT}"
+echo "[eval-launcher] test_episodes_per_task=${EVAL_TEST_NUM}"
+echo "[eval-launcher] task_config=${TASK_CONFIG}"
+echo "[eval-launcher] eval_seed_lists=${EVAL_SEED_LIST_ROOT}/${TASK_CONFIG}"
 echo "[eval-launcher] tasks=${#TASKS[@]} whitelist=${WHITELIST}"
 echo "[eval-launcher] gpus=${GPUS[*]} ports=19000+gpu_id"
 echo "[eval-launcher] run_root=${RUN_ROOT}"
@@ -393,6 +514,9 @@ worker() {
     printf '\n===== server start: gpu=%s port=%s =====\n' "${gpu}" "${port}" >> "${gpu_console_log}"
     setsid env \
         STARGVLA_REPO_ROOT="${STARVLA_ROOT}" \
+        STARGVLA_BASE_VLM="${STARGVLA_BASE_VLM}" \
+        STARGVLA_FAST_TOKENIZER="${STARGVLA_FAST_TOKENIZER}" \
+        STARVLA_PYTHON="${STARVLA_PYTHON}" \
         RUN_OUTPUT="${RESULT_ROOT}" \
         POLICY_CKPT_PATH="${CHECKPOINT_PATH}" \
         POLICY_PORT="${port}" \
@@ -429,7 +553,10 @@ worker() {
         printf '\n===== task %s/%s start: %s =====\n' \
             "$((idx + 1))" "${#TASKS[@]}" "${task}" >> "${gpu_console_log}"
 
-        local eval_cmd=(bash "${EVAL_SCRIPT}" "${task}" "${gpu}" "${port}")
+        local eval_cmd=(
+            bash "${EVAL_SCRIPT}" "${task}" "${gpu}" "${port}" "${TASK_CONFIG}"
+            "${MODEL_NAME}" 0 "${EVAL_TEST_NUM}"
+        )
         if [[ "${TASK_TIMEOUT_SECONDS}" != "0" ]]; then
             eval_cmd=(timeout --signal=TERM --kill-after=30 "${TASK_TIMEOUT_SECONDS}" "${eval_cmd[@]}")
         fi
@@ -446,11 +573,15 @@ worker() {
                 STARGVLA_HOST=127.0.0.1 \
                 STARGVLA_PORT="${port}" \
                 ROBOTWIN_USE_EVAL_SEED_LIST=1 \
+                ROBOTWIN_EVAL_SEED_LIST_PATH="${EVAL_SEED_LIST_ROOT}" \
                 ROBOTWIN_PYTHON="${ROBOTWIN_PYTHON}" \
                 ROBOTWIN_PY="${ROBOTWIN_PYTHON}" \
                 ROBOTWIN_EVAL_RESULT_ROOT="${EVAL_RESULT_ROOT}" \
                 ROBOTWIN_REQUEST_LOG_PATH="${task_dir}/requests.jsonl" \
                 ROBOTWIN_REQUEST_IMAGE_DIR= \
+                CUDA_HOME="${ROBOTWIN_CUDA_HOME}" \
+                TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR}" \
+                PYTHONPATH="${ROBOTWIN_CUROBO_SRC}:${PYTHONPATH:-}" \
                 PYTHONUNBUFFERED=1 \
                 "${eval_cmd[@]}" &
         eval_pid=$!
