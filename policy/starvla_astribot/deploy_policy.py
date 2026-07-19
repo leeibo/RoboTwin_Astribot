@@ -13,6 +13,11 @@ import cv2
 import numpy as np
 
 try:
+    from .motion_keyframes import CausalMotionKeyframeDetector, MotionKeyframeConfig
+except ImportError:
+    from motion_keyframes import CausalMotionKeyframeDetector, MotionKeyframeConfig
+
+try:
     from .subtask_planner import (
         DEFAULT_QWEN3_30B_PATH,
         SubtaskPlannerError,
@@ -254,6 +259,15 @@ class StarVLAOFTClient:
         request_image_dir: Optional[str] = None,
         motion_min_interval: int = 16,
         motion_state_delta_threshold: float = 0.05,
+        motion_keyframe_strategy: str = "legacy",
+        motion_gripper_close_threshold: float = 0.2,
+        motion_gripper_open_threshold: float = 0.8,
+        motion_min_gripper_state_len: int = 2,
+        motion_rotation_delta_threshold: float = 0.005,
+        motion_min_rotation_motion_len: int = 4,
+        motion_rotation_merge_gap: int = 5,
+        motion_dedup_window: int = 5,
+        motion_mark_initial: bool = True,
         subtask_fallback_interval: int = 0,
         clip_grippers: bool = True,
         torso_index: int = 0,
@@ -270,6 +284,9 @@ class StarVLAOFTClient:
         subtask_planner_dtype: str = "bfloat16",
         subtask_planner_attn_implementation: str = "sdpa",
         subtask_planner_max_new_tokens: int = 192,
+        subtask_planner_model_name: str = "qwen3.5-9b",
+        subtask_planner_api_key: Optional[str] = None,
+        subtask_planner_disable_reasoning: bool = True,
         subtask_planner_output_keys: Optional[list[str]] = None,
         subtask_planner_use_annotation: bool = False,
         subtask_planner_fail_open: bool = True,
@@ -309,6 +326,30 @@ class StarVLAOFTClient:
         self.swap_rgb_channels = bool(swap_rgb_channels)
         self.motion_min_interval = max(int(motion_min_interval), 0)
         self.motion_state_delta_threshold = float(motion_state_delta_threshold)
+        self.motion_keyframe_strategy = str(motion_keyframe_strategy).strip().lower()
+        if self.motion_keyframe_strategy not in {"legacy", "causal_gripper_rotation"}:
+            raise ValueError(
+                "motion_keyframe_strategy must be 'legacy' or "
+                f"'causal_gripper_rotation', got {motion_keyframe_strategy!r}"
+            )
+        self.motion_keyframe_detector = None
+        if self.motion_keyframe_strategy == "causal_gripper_rotation":
+            self.motion_keyframe_detector = CausalMotionKeyframeDetector(
+                MotionKeyframeConfig(
+                    gripper_close_threshold=float(motion_gripper_close_threshold),
+                    gripper_open_threshold=float(motion_gripper_open_threshold),
+                    min_gripper_state_len=int(motion_min_gripper_state_len),
+                    rotation_delta_threshold=float(motion_rotation_delta_threshold),
+                    min_rotation_motion_len=int(motion_min_rotation_motion_len),
+                    rotation_merge_gap=int(motion_rotation_merge_gap),
+                    dedup_window=int(motion_dedup_window),
+                    mark_initial=bool(motion_mark_initial),
+                    left_gripper_index=7,
+                    right_gripper_index=15,
+                    torso_yaw_index=16,
+                    head_2_index=17,
+                )
+            )
         self.subtask_fallback_interval = max(int(subtask_fallback_interval), 0)
         self.clip_grippers = bool(clip_grippers)
         self.torso_index = int(torso_index)
@@ -336,6 +377,9 @@ class StarVLAOFTClient:
                     dtype=subtask_planner_dtype,
                     attn_implementation=subtask_planner_attn_implementation,
                     max_new_tokens=int(subtask_planner_max_new_tokens),
+                    model_name=subtask_planner_model_name,
+                    api_key=subtask_planner_api_key,
+                    disable_reasoning=subtask_planner_disable_reasoning,
                 )
             except Exception:
                 if not self.subtask_planner_fail_open:
@@ -391,6 +435,7 @@ class StarVLAOFTClient:
             f"host={host}, port={port}, action_chunk_size={self.action_chunk_size}, "
             f"action_steps={self.action_steps}, history_mode={self.history_mode}, "
             f"history_frames={self.max_history_frames}, send_state={self.send_state}, "
+            f"motion_keyframe_strategy={self.motion_keyframe_strategy}, "
             f"swap_rgb_channels={self.swap_rgb_channels}, unnorm_key={self.unnorm_key}, "
             f"return_vlm_text={self.return_vlm_text}, "
             f"subtask_planner_enabled={self.subtask_planner_enabled}, "
@@ -411,6 +456,8 @@ class StarVLAOFTClient:
         self.last_motion_keyframe_step = None
         self.last_motion_keyframe_state = None
         self.last_subtask_keyframe_step = None
+        if self.motion_keyframe_detector is not None:
+            self.motion_keyframe_detector.reset()
         self.last_request_id = None
         self.last_request_sec = None
         self.last_chunk_size = None
@@ -652,30 +699,59 @@ class StarVLAOFTClient:
 
         motion_keyframe = False
         motion_reason = None
-        if not self.records:
-            motion_keyframe = True
-            motion_reason = "first_frame"
-        elif reliable and motion_signature != self.last_motion_signature:
-            motion_keyframe = True
-            motion_reason = "annotation_segment_change"
-        elif self.last_motion_keyframe_state is not None and self.motion_state_delta_threshold > 0:
-            state_delta = float(np.max(np.abs(np.asarray(state, dtype=np.float32) - self.last_motion_keyframe_state)))
-            if state_delta >= self.motion_state_delta_threshold:
+        motion_detail = None
+        if self.motion_keyframe_detector is not None:
+            decision = self.motion_keyframe_detector.update(state)
+            motion_keyframe = bool(decision.is_keyframe)
+            motion_reason = ",".join(decision.reasons) if decision.reasons else None
+            motion_detail = {
+                "strategy": self.motion_keyframe_strategy,
+                "detector_frame_index": decision.frame_index,
+                "candidate": decision.is_candidate,
+                "reasons": list(decision.reasons),
+                "suppressed_by_frame": decision.suppressed_by_frame,
+            }
+        else:
+            if not self.records:
                 motion_keyframe = True
-                motion_reason = "state_delta"
+                motion_reason = "first_frame"
+            elif reliable and motion_signature != self.last_motion_signature:
+                motion_keyframe = True
+                motion_reason = "annotation_segment_change"
+            elif self.last_motion_keyframe_state is not None and self.motion_state_delta_threshold > 0:
+                state_delta = float(
+                    np.max(
+                        np.abs(
+                            np.asarray(state, dtype=np.float32)
+                            - self.last_motion_keyframe_state
+                        )
+                    )
+                )
+                if state_delta >= self.motion_state_delta_threshold:
+                    motion_keyframe = True
+                    motion_reason = "state_delta"
 
-        if not motion_keyframe and self.motion_min_interval > 0 and (
-            self.last_motion_keyframe_step is None
-            or env_step - self.last_motion_keyframe_step >= self.motion_min_interval
-        ):
-            motion_keyframe = True
-            motion_reason = "interval"
+            if not motion_keyframe and self.motion_min_interval > 0 and (
+                self.last_motion_keyframe_step is None
+                or env_step - self.last_motion_keyframe_step >= self.motion_min_interval
+            ):
+                motion_keyframe = True
+                motion_reason = "interval"
+
+        record_annotation = {
+            **annotation,
+            "subtask_keyframe_reason": subtask_reason,
+            "motion_keyframe_reason": motion_reason,
+            "motion_keyframe_strategy": self.motion_keyframe_strategy,
+        }
+        if motion_detail is not None:
+            record_annotation["motion_keyframe_detector"] = motion_detail
 
         record = FrameRecord(
             step=env_step,
             image=np.asarray(image),
             state=np.asarray(state, dtype=np.float32),
-            annotation={**annotation, "subtask_keyframe_reason": subtask_reason, "motion_keyframe_reason": motion_reason},
+            annotation=record_annotation,
             subtask_keyframe=bool(subtask_keyframe),
             motion_keyframe=bool(motion_keyframe),
         )
@@ -1183,6 +1259,29 @@ def get_model(usr_args: dict[str, Any]):
         request_image_dir=_arg(usr_args, "request_image_dir", default_images),
         motion_min_interval=int(_arg(usr_args, "motion_min_interval", 16)),
         motion_state_delta_threshold=float(_arg(usr_args, "motion_state_delta_threshold", 0.05)),
+        motion_keyframe_strategy=str(_arg(usr_args, "motion_keyframe_strategy", "legacy")),
+        motion_gripper_close_threshold=float(
+            _arg(usr_args, "motion_gripper_close_threshold", 0.2)
+        ),
+        motion_gripper_open_threshold=float(
+            _arg(usr_args, "motion_gripper_open_threshold", 0.8)
+        ),
+        motion_min_gripper_state_len=int(
+            _arg(usr_args, "motion_min_gripper_state_len", 2)
+        ),
+        motion_rotation_delta_threshold=float(
+            _arg(usr_args, "motion_rotation_delta_threshold", 0.005)
+        ),
+        motion_min_rotation_motion_len=int(
+            _arg(usr_args, "motion_min_rotation_motion_len", 4)
+        ),
+        motion_rotation_merge_gap=int(
+            _arg(usr_args, "motion_rotation_merge_gap", 5)
+        ),
+        motion_dedup_window=int(_arg(usr_args, "motion_dedup_window", 5)),
+        motion_mark_initial=_as_bool(
+            _arg(usr_args, "motion_mark_initial", True), default=True
+        ),
         subtask_fallback_interval=int(_arg(usr_args, "subtask_fallback_interval", 0)),
         clip_grippers=_as_bool(_arg(usr_args, "clip_grippers", True), default=True),
         torso_index=int(_arg(usr_args, "torso_index", 0)),
@@ -1199,6 +1298,11 @@ def get_model(usr_args: dict[str, Any]):
         subtask_planner_dtype=str(_arg(usr_args, "subtask_planner_dtype", "bfloat16")),
         subtask_planner_attn_implementation=str(_arg(usr_args, "subtask_planner_attn_implementation", "sdpa")),
         subtask_planner_max_new_tokens=int(_arg(usr_args, "subtask_planner_max_new_tokens", 192)),
+        subtask_planner_model_name=str(_arg(usr_args, "subtask_planner_model_name", "qwen3.5-9b")),
+        subtask_planner_api_key=_arg(usr_args, "subtask_planner_api_key", None),
+        subtask_planner_disable_reasoning=_as_bool(
+            _arg(usr_args, "subtask_planner_disable_reasoning", True), default=True
+        ),
         subtask_planner_output_keys=_as_str_list(
             _arg(usr_args, "subtask_planner_output_keys", None),
             default=["subtask", "current_subtask", "subtask_instruction", "vlm_text", "text", "output", "generated_text"],

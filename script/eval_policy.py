@@ -231,7 +231,8 @@ def main(usr_args):
     st_seed = 100000 * (1 + seed)
     # st_seed = seed
     suc_nums = []
-    test_num = int(usr_args.get("test_num", usr_args.get("eval_test_num", 100)))
+    default_test_num = os.environ.get("ROBOTWIN_EVAL_TEST_NUM", 100)
+    test_num = int(usr_args.get("test_num", usr_args.get("eval_test_num", default_test_num)))
     topk = 1
     eval_seed_entries = None
     eval_seed_list_path = resolve_eval_seed_list_path(usr_args, task_name, task_config)
@@ -464,8 +465,9 @@ def parse_args_and_config():
 
 
 if __name__ == "__main__":
-    from test_render import Sapien_TEST
-    Sapien_TEST()
+    if not _as_bool(os.environ.get("ROBOTWIN_SKIP_RENDER_TEST"), default=False):
+        from test_render import Sapien_TEST
+        Sapien_TEST()
 
     usr_args = parse_args_and_config()
 

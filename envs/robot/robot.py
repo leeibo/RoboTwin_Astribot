@@ -1,4 +1,5 @@
 import sapien.core as sapien
+import hashlib
 import numpy as np
 import pdb
 from .planner import MplibPlanner
@@ -106,7 +107,9 @@ class Robot:
 
         self.need_topp = bool(need_topp)
 
-        self.left_urdf_path = os.path.join(left_robot_file, left_embodiment_args["urdf_path"])
+        self.left_urdf_path = os.path.abspath(
+            os.path.join(left_robot_file, left_embodiment_args["urdf_path"])
+        )
         self.left_srdf_path = left_embodiment_args.get("srdf_path", None)
         self.left_curobo_yml_path = os.path.join(left_robot_file, "curobo.yml")
         if self.left_srdf_path is not None:
@@ -145,7 +148,9 @@ class Robot:
         _entity_origion_pose = sapien.Pose(_entity_origion_pose[:3], _entity_origion_pose[-4:])
         self.left_entity_origion_pose = deepcopy(_entity_origion_pose)
 
-        self.right_urdf_path = os.path.join(right_robot_file, right_embodiment_args["urdf_path"])
+        self.right_urdf_path = os.path.abspath(
+            os.path.join(right_robot_file, right_embodiment_args["urdf_path"])
+        )
         self.right_srdf_path = right_embodiment_args.get("srdf_path", None)
         if self.right_srdf_path is not None:
             self.right_srdf_path = os.path.join(right_robot_file, self.right_srdf_path)
@@ -185,6 +190,9 @@ class Robot:
         _entity_origion_pose = sapien.Pose(_entity_origion_pose[:3], _entity_origion_pose[-4:])
         self.right_entity_origion_pose = deepcopy(_entity_origion_pose)
         self.is_dual_arm = kwargs["dual_arm_embodied"]
+
+        left_sapien_urdf = self._get_absolute_resource_urdf_for_sapien(self.left_urdf_path)
+        right_sapien_urdf = self._get_absolute_resource_urdf_for_sapien(self.right_urdf_path)
 
         self.left_rotate_lim = left_embodiment_args.get("rotate_lim", [0, 0])
         self.right_rotate_lim = right_embodiment_args.get("rotate_lim", [0, 0])
@@ -232,7 +240,7 @@ class Robot:
         if self.is_dual_arm:
             loader: sapien.URDFLoader = scene.create_urdf_loader()
             loader.fix_root_link = True
-            self._entity = loader.load(self.left_urdf_path)
+            self._entity = loader.load(left_sapien_urdf)
             self.left_entity = self._entity
             self.right_entity = self._entity
         else:
@@ -243,8 +251,8 @@ class Robot:
             left_loader.fix_root_link = True
             right_loader: sapien.URDFLoader = scene.create_urdf_loader()
             right_loader.fix_root_link = True
-            self.left_entity = left_loader.load(self.left_urdf_path)
-            self.right_entity = right_loader.load(self.right_urdf_path)
+            self.left_entity = left_loader.load(left_sapien_urdf)
+            self.right_entity = right_loader.load(right_sapien_urdf)
 
         self.left_entity.set_root_pose(self.left_entity_origion_pose)
         self.right_entity.set_root_pose(self.right_entity_origion_pose)
@@ -269,6 +277,57 @@ class Robot:
                 f"damping={len(self.right_joint_damping_per_joint)}"
             )
         self._print_left_right_symmetry_debug()
+
+    @staticmethod
+    def _get_absolute_resource_urdf_for_sapien(urdf_path: str) -> str:
+        """Return a cached URDF whose relative resource paths are absolute.
+
+        SAPIEN can intermittently resolve a relative mesh path against the
+        process working directory after many scene reloads.  Keeping the
+        generated file in /tmp and making every resource path absolute avoids
+        that process-global resolver state while leaving the source asset
+        untouched.
+        """
+        abs_urdf = os.path.abspath(urdf_path)
+        stat = os.stat(abs_urdf)
+        cache_key = hashlib.sha256(
+            f"{abs_urdf}:{stat.st_mtime_ns}:{stat.st_size}".encode("utf-8")
+        ).hexdigest()[:20]
+        cache_dir = os.path.join(tempfile.gettempdir(), "robotwin_sapien_urdf")
+        cache_path = os.path.join(cache_dir, f"{cache_key}.urdf")
+
+        if os.path.isfile(cache_path):
+            try:
+                ET.parse(cache_path)
+                return cache_path
+            except ET.ParseError:
+                pass
+
+        tree = ET.parse(abs_urdf)
+        urdf_dir = os.path.dirname(abs_urdf)
+        for element in tree.getroot().iter():
+            for attribute in ("filename", "url"):
+                resource_path = element.get(attribute)
+                if not resource_path or os.path.isabs(resource_path):
+                    continue
+                if "://" in resource_path or resource_path.startswith("package://"):
+                    continue
+                absolute_resource = os.path.abspath(os.path.join(urdf_dir, resource_path))
+                if not os.path.exists(absolute_resource):
+                    raise FileNotFoundError(
+                        f"URDF resource does not exist: {resource_path} "
+                        f"(resolved from {abs_urdf})"
+                    )
+                element.set(attribute, absolute_resource)
+
+        os.makedirs(cache_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "wb", dir=cache_dir, prefix=f"{cache_key}.", suffix=".tmp", delete=False
+        ) as handle:
+            tmp_path = handle.name
+            tree.write(handle, encoding="utf-8", xml_declaration=True)
+        os.replace(tmp_path, cache_path)
+        return cache_path
 
     def _set_entity_disable_gravity(self, entity, disable_gravity):
         if entity is None:

@@ -7,12 +7,19 @@ Usage: bash eval_seed_whitelist_randomized.sh MODEL_NAME
 
 Environment variables:
   GPU_LIST                  GPU ids, comma- or space-separated (default: all GPUs)
+  TASK_LIST                 Optional comma- or space-separated whitelist subset
   SERVER_READY_TIMEOUT      Seconds to wait for each server (default: 900)
   TASK_TIMEOUT_SECONDS      Per-task timeout; 0 disables it (default: 0)
   TASK_LIMIT                Only run the first N whitelisted tasks; 0 means all (default: 0)
-  EVAL_TEST_NUM             Episodes per task (default: deploy config or 100)
+  EVAL_TEST_NUM             Episodes per task (default: 100)
+  EARLY_STOP_ZERO_EPISODES  Stop after this many episodes if successes stay at 0
+                            and assume the final rate is 0 (default: 40; 0 disables)
   CONTINUE_ON_ERROR         Continue after an eval failure (default: 1)
   SERVER_START_STAGGER_SEC  Delay between worker launches (default: 1)
+  SERVER_POST_READY_SETTLE_SEC
+                             Delay after all servers are ready (default: 10)
+  EVAL_WORKER_START_STAGGER_SEC
+                             Delay between first eval starts (default: 0)
   RESUME_FROM_RUN           Prior run root; successful tasks are imported and skipped
   PLANNER_MODEL_NAME        Paired planner checkpoint name (default: planner_oft_planner)
   STARVLA_ROOT              starVLA-A repository (default: sibling of RoboTwin_Astribot)
@@ -20,6 +27,7 @@ Environment variables:
   STARGVLA_BASE_VLM         Local action-token base VLM (default: under starVLA-A/playground)
   STARGVLA_FAST_TOKENIZER   Local physical-intelligence/fast tokenizer directory
   ROBOTWIN_PYTHON           RoboTwin environment Python (default: conda env RoboTwin)
+  SKIP_PYTHON_IMPORT_CHECK  Skip the startup-only numpy/sapien/yaml probe (default: 0)
   TMUX_MONITOR              Open one tmux window per GPU (default: 1)
   DRY_RUN                   Validate inputs without starting servers (default: 0)
 EOF
@@ -60,6 +68,7 @@ POLICY_ROOT="${ROBOTWIN_ROOT}/policy/${MODEL_NAME}"
 EVAL_SCRIPT="${POLICY_ROOT}/eval.sh"
 DEPLOY_CONFIG="${POLICY_ROOT}/deploy_policy.yml"
 WHITELIST="${ROBOTWIN_ROOT}/task_config/eval_seed_task_whitelist.yml"
+STEP_LIMITS="${ROBOTWIN_ROOT}/task_config/_eval_step_limit.yml"
 TASK_CONFIG="info_gathering_randomized"
 EVAL_SEED_LIST_ROOT="${ROBOTWIN_ROOT}/eval_seed_lists"
 PLANNER_MODEL_NAME=${PLANNER_MODEL_NAME:-planner_oft_planner}
@@ -69,11 +78,33 @@ PLANNER_SERVER_SCRIPT="${POLICY_ROOT}/run_planner_server.sh"
 SERVER_READY_TIMEOUT=${SERVER_READY_TIMEOUT:-900}
 TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-0}
 TASK_LIMIT=${TASK_LIMIT:-0}
+EVAL_TEST_NUM=${EVAL_TEST_NUM:-100}
+EARLY_STOP_ZERO_EPISODES=${EARLY_STOP_ZERO_EPISODES:-40}
 CONTINUE_ON_ERROR=${CONTINUE_ON_ERROR:-1}
 SERVER_START_STAGGER_SEC=${SERVER_START_STAGGER_SEC:-1}
+SERVER_POST_READY_SETTLE_SEC=${SERVER_POST_READY_SETTLE_SEC:-10}
+EVAL_WORKER_START_STAGGER_SEC=${EVAL_WORKER_START_STAGGER_SEC:-0}
 TMUX_MONITOR=${TMUX_MONITOR:-1}
 DRY_RUN=${DRY_RUN:-0}
 RESUME_FROM_RUN=${RESUME_FROM_RUN:-}
+SKIP_PYTHON_IMPORT_CHECK=${SKIP_PYTHON_IMPORT_CHECK:-0}
+
+if [[ ! "${EARLY_STOP_ZERO_EPISODES}" =~ ^[0-9]+$ ]]; then
+    echo "EARLY_STOP_ZERO_EPISODES must be a non-negative integer, got: ${EARLY_STOP_ZERO_EPISODES}" >&2
+    exit 2
+fi
+if [[ ! "${EVAL_TEST_NUM}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "EVAL_TEST_NUM must be a positive integer, got: ${EVAL_TEST_NUM}" >&2
+    exit 2
+fi
+if [[ ! "${SERVER_POST_READY_SETTLE_SEC}" =~ ^[0-9]+$ ]]; then
+    echo "SERVER_POST_READY_SETTLE_SEC must be a non-negative integer, got: ${SERVER_POST_READY_SETTLE_SEC}" >&2
+    exit 2
+fi
+if [[ ! "${EVAL_WORKER_START_STAGGER_SEC}" =~ ^[0-9]+$ ]]; then
+    echo "EVAL_WORKER_START_STAGGER_SEC must be a non-negative integer, got: ${EVAL_WORKER_START_STAGGER_SEC}" >&2
+    exit 2
+fi
 
 required_commands=(awk find flock nvidia-smi sed setsid sort ss tail tee timeout)
 for command_name in "${required_commands[@]}"; do
@@ -93,7 +124,8 @@ for path in "${RESULT_ROOT}" "${MANAGED_RUN_ROOT}" "${POLICY_ROOT}"; do
         exit 1
     fi
 done
-for path in "${RESULT_CONFIG}" "${CKPT_MAPPING}" "${SERVER_SCRIPT}" "${EVAL_SCRIPT}" "${DEPLOY_CONFIG}" "${WHITELIST}"; do
+for path in "${RESULT_CONFIG}" "${CKPT_MAPPING}" "${SERVER_SCRIPT}" "${EVAL_SCRIPT}" \
+    "${DEPLOY_CONFIG}" "${WHITELIST}" "${STEP_LIMITS}"; do
     if [[ ! -f "${path}" ]]; then
         echo "Required file does not exist: ${path}" >&2
         exit 1
@@ -176,7 +208,8 @@ if [[ ! -x "${ROBOTWIN_CUDA_HOME}/bin/nvcc" ]]; then
     echo "CUDA compiler was not found: ${ROBOTWIN_CUDA_HOME}/bin/nvcc" >&2
     exit 1
 fi
-if ! "${ROBOTWIN_PYTHON}" -c 'import numpy, sapien, yaml' >/dev/null 2>&1; then
+if [[ "${SKIP_PYTHON_IMPORT_CHECK}" != "1" ]] \
+    && ! "${ROBOTWIN_PYTHON}" -c 'import numpy, sapien, yaml' >/dev/null 2>&1; then
     echo "RoboTwin Python failed to import numpy, sapien, or yaml: ${ROBOTWIN_PYTHON}" >&2
     exit 1
 fi
@@ -291,10 +324,26 @@ for gpu in "${GPUS[@]}"; do
     fi
 done
 
-mapfile -t TASKS < <(sed -n 's/^[[:space:]]*-[[:space:]]*//p' "${WHITELIST}")
-if (( ${#TASKS[@]} == 0 )); then
+mapfile -t WHITELIST_TASKS < <(sed -n 's/^[[:space:]]*-[[:space:]]*//p' "${WHITELIST}")
+if (( ${#WHITELIST_TASKS[@]} == 0 )); then
     echo "No tasks found in ${WHITELIST}." >&2
     exit 1
+fi
+if [[ -n "${TASK_LIST:-}" ]]; then
+    normalized_task_list="${TASK_LIST//,/ }"
+    read -r -a TASKS <<< "${normalized_task_list}"
+    declare -A ALLOWED_TASKS=()
+    for task in "${WHITELIST_TASKS[@]}"; do
+        ALLOWED_TASKS["${task}"]=1
+    done
+    for task in "${TASKS[@]}"; do
+        if [[ -z "${ALLOWED_TASKS[${task}]:-}" ]]; then
+            echo "TASK_LIST contains a task outside ${WHITELIST}: ${task}" >&2
+            exit 2
+        fi
+    done
+else
+    TASKS=("${WHITELIST_TASKS[@]}")
 fi
 if [[ ! "${TASK_LIMIT}" =~ ^[0-9]+$ ]]; then
     echo "TASK_LIMIT must be a non-negative integer, got: ${TASK_LIMIT}" >&2
@@ -302,6 +351,51 @@ if [[ ! "${TASK_LIMIT}" =~ ^[0-9]+$ ]]; then
 fi
 if (( TASK_LIMIT > 0 && TASK_LIMIT < ${#TASKS[@]} )); then
     TASKS=("${TASKS[@]:0:TASK_LIMIT}")
+fi
+if (( ${#TASKS[@]} == 0 )); then
+    echo "TASK_LIST is empty." >&2
+    exit 2
+fi
+if ! "${ROBOTWIN_PYTHON}" - "${STEP_LIMITS}" "${TASKS[@]}" <<'PY'
+import sys
+from pathlib import Path
+
+import yaml
+
+path = Path(sys.argv[1])
+tasks = sys.argv[2:]
+try:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print(f"Failed to parse eval step limits {path}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not isinstance(payload, dict):
+    print(f"Eval step limits must be a mapping: {path}", file=sys.stderr)
+    raise SystemExit(1)
+
+missing = [task for task in tasks if task not in payload]
+invalid = {
+    task: payload.get(task)
+    for task in tasks
+    if task in payload
+    and (
+        isinstance(payload[task], bool)
+        or not isinstance(payload[task], int)
+        or payload[task] <= 0
+    )
+}
+if missing:
+    print(f"Tasks missing from {path}: {', '.join(missing)}", file=sys.stderr)
+if invalid:
+    print(f"Invalid eval step limits in {path}: {invalid}", file=sys.stderr)
+if missing or invalid:
+    raise SystemExit(1)
+
+print(f"[eval-launcher] validated eval step limits for {len(tasks)} tasks: {path}")
+PY
+then
+    exit 1
 fi
 for task in "${TASKS[@]}"; do
     seed_list_path="${EVAL_SEED_LIST_ROOT}/${TASK_CONFIG}/${task}.json"
@@ -319,8 +413,8 @@ entries = payload.get("entries")
 print(len(entries if isinstance(entries, list) else payload.get("seeds", [])))
 PY
 )"
-    if [[ ! "${seed_count}" =~ ^[0-9]+$ ]] || (( seed_count < 100 )); then
-        echo "Randomized eval seed list needs at least 100 seeds: ${seed_list_path} (found ${seed_count})" >&2
+    if [[ ! "${seed_count}" =~ ^[0-9]+$ ]] || (( seed_count < EVAL_TEST_NUM )); then
+        echo "Randomized eval seed list needs at least ${EVAL_TEST_NUM} seeds: ${seed_list_path} (found ${seed_count})" >&2
         exit 1
     fi
 done
@@ -341,18 +435,21 @@ write_markdown_report() {
                 "${CKPT_MAPPING}" "${PLANNER_CHECKPOINT_STEP}"
         fi
         printf -- '- Task whitelist: `%s`\n' "${WHITELIST}"
+        printf -- '- Eval step limits: `%s`\n' "${STEP_LIMITS}"
         printf -- '- Task config: `%s`\n' "${TASK_CONFIG}"
         printf -- '- Eval seed lists: `%s/%s`\n' "${EVAL_SEED_LIST_ROOT}" "${TASK_CONFIG}"
+        printf -- '- Episodes per task: `%s`\n' "${EVAL_TEST_NUM}"
         printf -- '- RoboTwin Python: `%s`\n' "${ROBOTWIN_PYTHON}"
         printf -- '- starVLA Python: `%s`\n' "${STARVLA_PYTHON}"
         printf -- '- starVLA base VLM: `%s`\n' "${STARGVLA_BASE_VLM}"
         printf -- '- FAST tokenizer: `%s`\n' "${STARGVLA_FAST_TOKENIZER}"
         printf -- '- Eval result root: `%s`\n' "${EVAL_RESULT_ROOT}"
-        printf -- '- Test episodes per new task: `%s`\n' "${EVAL_TEST_NUM}"
         if [[ -n "${RESUME_FROM_RUN}" ]]; then
             printf -- '- Resumed from: `%s` (successful tasks skipped)\n' "${RESUME_FROM_RUN}"
         fi
         printf -- '- GPUs: `%s`\n' "${GPUS[*]}"
+        printf -- '- Zero-success early stop: `%s` completed episodes (`0` disables)\n' \
+            "${EARLY_STOP_ZERO_EPISODES}"
         if [[ "${TMUX_MONITOR}" == "1" ]]; then
             printf -- '- Tmux session: `%s`\n' "${TMUX_SESSION}"
         fi
@@ -409,13 +506,6 @@ SERVER_SUMMARY_FILE="${RUN_ROOT}/servers.tsv"
 SERVER_SUMMARY_LOCK="${RUN_ROOT}/servers.lock"
 REPORT_FILE="${RUN_ROOT}/report.md"
 STOP_FILE="${RUN_ROOT}/stop"
-CONFIG_TEST_NUM="$(awk '$1 == "test_num:" {print $2; exit}' "${DEPLOY_CONFIG}")"
-EVAL_TEST_NUM=${EVAL_TEST_NUM:-${CONFIG_TEST_NUM:-100}}
-if [[ ! "${EVAL_TEST_NUM}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "EVAL_TEST_NUM must be a positive integer, got: ${EVAL_TEST_NUM}" >&2
-    exit 2
-fi
-
 printf '0\n' > "${NEXT_INDEX_FILE}"
 printf 'idx\ttask\tgpu\tport\tstatus\tstart_time\tend_time\tseconds\tlog_path\tsuccess_rate\tresult_path\n' > "${SUMMARY_FILE}"
 if [[ -n "${RESUME_FROM_RUN}" ]]; then
@@ -425,7 +515,14 @@ if [[ -n "${RESUME_FROM_RUN}" ]]; then
         echo "Resume summary does not exist: ${RESUME_SUMMARY}" >&2
         exit 1
     fi
-    awk -F '\t' 'NR > 1 && $5 == 0' "${RESUME_SUMMARY}" >> "${SUMMARY_FILE}"
+    for idx in "${!TASKS[@]}"; do
+        task="${TASKS[${idx}]}"
+        resume_row="$(awk -F '\t' -v task="${task}" \
+            'NR > 1 && $2 == task && $5 == 0 {print; exit}' "${RESUME_SUMMARY}")"
+        if [[ -n "${resume_row}" ]]; then
+            printf '%s\t%s\n' "${idx}" "${resume_row#*$'\t'}" >> "${SUMMARY_FILE}"
+        fi
+    done
 fi
 printf 'role\tgpu\tport\tstatus\tpid\tlog_path\n' > "${SERVER_SUMMARY_FILE}"
 write_markdown_report
@@ -449,8 +546,11 @@ if [[ -n "${RESUME_FROM_RUN}" ]]; then
 fi
 echo "[eval-launcher] task_config=${TASK_CONFIG}"
 echo "[eval-launcher] eval_seed_lists=${EVAL_SEED_LIST_ROOT}/${TASK_CONFIG}"
+echo "[eval-launcher] eval_test_num=${EVAL_TEST_NUM}"
 echo "[eval-launcher] tasks=${#TASKS[@]} whitelist=${WHITELIST}"
+echo "[eval-launcher] eval_step_limits=${STEP_LIMITS}"
 echo "[eval-launcher] gpus=${GPUS[*]} ports=19000+gpu_id"
+echo "[eval-launcher] early_stop_zero_episodes=${EARLY_STOP_ZERO_EPISODES}"
 echo "[eval-launcher] run_root=${RUN_ROOT}"
 
 port_is_listening() {
@@ -541,7 +641,9 @@ get_next_task() {
         fi
         printf '%s\n' "$((idx + 1))" > "${NEXT_INDEX_FILE}"
         task="${TASKS[${idx}]}"
-        if awk -F '\t' -v idx="${idx}" '$1 == idx && $5 == 0 {found=1} END {exit !found}' "${SUMMARY_FILE}"; then
+        if awk -F '\t' -v idx="${idx}" -v task="${task}" \
+            '$1 == idx && $2 == task && $5 == 0 {found=1} END {exit !found}' \
+            "${SUMMARY_FILE}"; then
             printf '[queue] skip completed %s/%s %s\n' "$((idx + 1))" "${#TASKS[@]}" "${task}" >&2
             continue
         fi
@@ -573,8 +675,32 @@ append_server_summary() {
     } 202>"${SERVER_SUMMARY_LOCK}"
 }
 
+monitor_zero_success() {
+    local eval_pid="$1" stdout_log="$2" gpu_console_log="$3" marker_path="$4"
+    local line successes completed
+
+    while IFS= read -r line; do
+        if [[ "${line}" =~ Success\ rate:\ ([0-9]+)/([0-9]+) ]]; then
+            successes="${BASH_REMATCH[1]}"
+            completed="${BASH_REMATCH[2]}"
+            if (( completed >= EARLY_STOP_ZERO_EPISODES && successes == 0 )); then
+                : > "${marker_path}"
+                printf '[eval-launcher] early stop: 0 successes after %s episodes; assuming the remaining episodes fail and final success rate is 0\n' \
+                    "${completed}" | tee -a "${stdout_log}" "${gpu_console_log}" >/dev/null
+                kill -TERM -- "-${eval_pid}" 2>/dev/null || true
+                return 0
+            fi
+        fi
+    done < <(
+        tail --pid="${eval_pid}" -n +1 -F "${stdout_log}" 2>/dev/null \
+            | sed -u -E $'s/\033\\[[0-9;]*[[:alpha:]]//g' \
+            | sed -u -n '/Success rate:/p'
+    )
+}
+
 worker() {
     local gpu="$1"
+    local worker_index="$2"
     local port=$((19000 + gpu))
     local planner_port=$((20000 + gpu))
     local server_log="${SERVER_LOG_ROOT}/gpu_${gpu}_port_${port}.log"
@@ -583,8 +709,13 @@ worker() {
     local server_pid=""
     local planner_server_pid=""
     local eval_pid=""
+    local early_stop_monitor_pid=""
 
     cleanup_worker() {
+        if [[ -n "${early_stop_monitor_pid}" ]] && kill -0 "${early_stop_monitor_pid}" 2>/dev/null; then
+            kill -TERM "${early_stop_monitor_pid}" 2>/dev/null || true
+            wait "${early_stop_monitor_pid}" 2>/dev/null || true
+        fi
         if [[ -n "${eval_pid}" ]] && kill -0 "${eval_pid}" 2>/dev/null; then
             kill -TERM -- "-${eval_pid}" 2>/dev/null || true
             wait "${eval_pid}" 2>/dev/null || true
@@ -664,7 +795,38 @@ worker() {
         printf '===== planner server ready: pid=%s =====\n' "${planner_server_pid}" >> "${gpu_console_log}"
     fi
 
-    local item idx task task_dir stdout_log start_time end_time
+    local all_servers_ready peer_gpu barrier_deadline
+    barrier_deadline=$((SECONDS + SERVER_READY_TIMEOUT))
+    while true; do
+        all_servers_ready=1
+        for peer_gpu in "${GPUS[@]}"; do
+            if ! port_is_listening "$((19000 + peer_gpu))" \
+                || { [[ "${JOINT_PLANNER}" == "1" ]] \
+                    && ! port_is_listening "$((20000 + peer_gpu))"; }; then
+                all_servers_ready=0
+                break
+            fi
+        done
+        if (( all_servers_ready )); then
+            break
+        fi
+        if (( SECONDS >= barrier_deadline )); then
+            echo "[gpu ${gpu}] timed out waiting for all policy servers" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    if (( SERVER_POST_READY_SETTLE_SEC > 0 )); then
+        sleep "${SERVER_POST_READY_SETTLE_SEC}"
+    fi
+    echo "[gpu ${gpu}] all policy servers ready"
+    local eval_start_delay=$((worker_index * EVAL_WORKER_START_STAGGER_SEC))
+    if (( eval_start_delay > 0 )); then
+        echo "[gpu ${gpu}] delaying first eval start by ${eval_start_delay}s"
+        sleep "${eval_start_delay}"
+    fi
+
+    local item idx task task_dir stdout_log start_time end_time early_stop_marker
     local start_seconds end_seconds elapsed_seconds status result_path success_rate
     while [[ ! -f "${STOP_FILE}" ]]; do
         if ! item="$(get_next_task)"; then
@@ -705,6 +867,7 @@ worker() {
                 PLANNER_OFT_PORT="${planner_port}" \
                 ROBOTWIN_USE_EVAL_SEED_LIST=1 \
                 ROBOTWIN_EVAL_SEED_LIST_PATH="${EVAL_SEED_LIST_ROOT}" \
+                ROBOTWIN_EVAL_TEST_NUM="${EVAL_TEST_NUM}" \
                 ROBOTWIN_PYTHON="${ROBOTWIN_PYTHON}" \
                 ROBOTWIN_PY="${ROBOTWIN_PYTHON}" \
                 ROBOTWIN_EVAL_RESULT_ROOT="${EVAL_RESULT_ROOT}" \
@@ -716,19 +879,41 @@ worker() {
                 PYTHONUNBUFFERED=1 \
                 "${eval_cmd[@]}" &
         eval_pid=$!
+        early_stop_marker="${task_dir}/early_stop_zero_success"
+        rm -f "${early_stop_marker}"
+        if (( EARLY_STOP_ZERO_EPISODES > 0 )); then
+            monitor_zero_success \
+                "${eval_pid}" "${stdout_log}" "${gpu_console_log}" "${early_stop_marker}" &
+            early_stop_monitor_pid=$!
+        fi
         if wait "${eval_pid}"; then
             status=0
         else
             status=$?
         fi
+        if [[ -n "${early_stop_monitor_pid}" ]]; then
+            kill -TERM "${early_stop_monitor_pid}" 2>/dev/null || true
+            wait "${early_stop_monitor_pid}" 2>/dev/null || true
+            early_stop_monitor_pid=""
+        fi
         eval_pid=""
+
+        if [[ -f "${early_stop_marker}" ]]; then
+            status=0
+        fi
 
         end_time="$(date '+%Y-%m-%d %H:%M:%S')"
         end_seconds="$(date +%s)"
         elapsed_seconds=$((end_seconds - start_seconds))
-        result_path="$(sed -n 's/^Data has been saved to //p' "${stdout_log}" | tail -n 1)"
-        success_rate="-"
-        if [[ -n "${result_path}" ]]; then
+        if [[ -f "${early_stop_marker}" ]]; then
+            result_path="${task_dir}/early_stop_assumed_result.txt"
+            printf '0\n' > "${result_path}"
+            success_rate=0
+        else
+            result_path="$(sed -n 's/^Data has been saved to //p' "${stdout_log}" | tail -n 1)"
+            success_rate="-"
+        fi
+        if [[ "${success_rate}" == "-" && -n "${result_path}" ]]; then
             if [[ "${result_path}" != /* ]]; then
                 result_path="${ROBOTWIN_ROOT}/${result_path}"
             fi
@@ -738,7 +923,7 @@ worker() {
             else
                 result_path="-"
             fi
-        else
+        elif [[ -z "${result_path}" ]]; then
             result_path="-"
         fi
         append_summary "${idx}" "${task}" "${gpu}" "${port}" "${status}" \
@@ -772,6 +957,7 @@ worker() {
 }
 
 worker_pids=()
+worker_index=0
 cleanup_main() {
     touch "${STOP_FILE}"
     if (( ${#worker_pids[@]} > 0 )); then
@@ -782,8 +968,9 @@ cleanup_main() {
 trap 'cleanup_main; exit 130' INT TERM
 
 for gpu in "${GPUS[@]}"; do
-    worker "${gpu}" &
+    worker "${gpu}" "${worker_index}" &
     worker_pids+=("$!")
+    worker_index=$((worker_index + 1))
     if [[ "${SERVER_START_STAGGER_SEC}" != "0" ]]; then
         sleep "${SERVER_START_STAGGER_SEC}"
     fi

@@ -42,3 +42,7 @@ policy/fast_subtask_action_12_wos/parallel_eval_logs
 feishu-cli/
 lark-cli/
 envs/curobo*_backup_*/
+
+# Local FastWAM runtime links and checkpoint aliases
+/.fastwam_eval_*.pt
+/policy/fastwam_policy

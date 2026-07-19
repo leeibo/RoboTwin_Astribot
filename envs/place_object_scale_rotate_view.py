@@ -130,6 +130,9 @@ class place_object_scale_rotate_view(Base_Task):
             model_id=self.selected_model_id,
         )
         self.object.set_mass(0.1)
+        # check_success() is evaluated from the first policy action, before
+        # play_once() has a chance to select an arm during data collection.
+        self.arm_tag = ArmTag("right" if self.object.get_pose().p[0] > 0 else "left")
 
         self.scale_id = int(np.random.choice([0, 1, 5, 6], 1)[0])
         self.scale = create_actor(

@@ -17,13 +17,23 @@ history_stride: 16
 send_state: true
 swap_rgb_channels: false
 clip_grippers: true
-motion_min_interval: 16
-motion_state_delta_threshold: 0.05
+motion_keyframe_strategy: causal_gripper_rotation
+motion_gripper_close_threshold: 0.2
+motion_gripper_open_threshold: 0.8
+motion_min_gripper_state_len: 2
+motion_rotation_delta_threshold: 0.005
+motion_min_rotation_motion_len: 4
+motion_rotation_merge_gap: 5
+motion_dedup_window: 5
+motion_mark_initial: true
+motion_min_interval: 0
+motion_state_delta_threshold: 0.0
 subtask_fallback_interval: 0
 request_log_path: "policy/oft_subtask_motion_12_ws/logs/requests.jsonl"
 request_image_dir: "policy/oft_subtask_motion_12_ws/logs/images"
 torso_index: 0
 head2_index: 1
 log_chunk_timing: true
+return_vlm_text: false
+subtask_planner_enabled: false
 policy_ckpt_path: "/data/lmz/code/starVLA-A/results/Checkpoints/oft_subtask_motion_12_ws"
-

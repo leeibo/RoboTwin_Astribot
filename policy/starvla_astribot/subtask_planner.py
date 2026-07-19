@@ -50,6 +50,12 @@ Return only one compact JSON object with these fields:
 {"same": true|false, "confidence": 0.0-1.0, "normalized_previous": "...", "normalized_current": "...", "reason": "..."}
 Keep reason under 12 words. If your reason mentions a changed object, goal, primitive, or relation, same must be false."""
 
+COMPACT_SYSTEM_PROMPT = """You judge robot subtask boundaries.
+Two texts are the same executable task only if the action, manipulated object and attributes,
+destination or spatial relation, and intended outcome all match. Synonyms count as the same.
+Return exactly one JSON object with one boolean field and no explanation:
+{\"same\":true} or {\"same\":false}."""
+
 
 @dataclass
 class SubtaskDecision:
@@ -350,6 +356,94 @@ class HTTPSubtaskPlanner:
         return decision
 
 
+class OpenAICompatibleSubtaskPlanner:
+    """Call an OpenAI-compatible text endpoint with only the two VLA texts."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        model_name: str,
+        timeout: float = 30.0,
+        max_new_tokens: int = 16,
+        api_key: Optional[str] = None,
+        disable_reasoning: bool = True,
+    ) -> None:
+        self.url = str(url)
+        self.model_name = str(model_name)
+        self.timeout = float(timeout)
+        self.max_new_tokens = int(max_new_tokens)
+        self.api_key = _clean_text(api_key) or None
+        self.disable_reasoning = bool(disable_reasoning)
+
+    def compare(
+        self,
+        previous_subtask: str,
+        current_subtask: str,
+        *,
+        task_instruction: Optional[str] = None,
+        candidate_subtasks: Optional[Iterable[str]] = None,
+    ) -> SubtaskDecision:
+        del task_instruction, candidate_subtasks
+        messages = [
+            {"role": "system", "content": COMPACT_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Previous text: {_clean_text(previous_subtask)}\n"
+                    f"Current text: {_clean_text(current_subtask)}\n"
+                    "Same executable robot subtask?"
+                ),
+            },
+        ]
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": self.max_new_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        if self.disable_reasoning:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request = urllib.request.Request(
+            self.url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        start = time.perf_counter()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise SubtaskPlannerError(
+                f"OpenAI-compatible planner returned HTTP {exc.code}: {detail[:500]}"
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise SubtaskPlannerError(f"OpenAI-compatible planner request failed: {exc}") from exc
+        latency = time.perf_counter() - start
+
+        try:
+            message = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise SubtaskPlannerError(
+                f"OpenAI-compatible planner response has no assistant message: {data}"
+            ) from exc
+        raw_text = message.get("content")
+        if not raw_text:
+            raw_text = message.get("reasoning") or message.get("reasoning_content")
+        if not raw_text:
+            raise SubtaskPlannerError(
+                f"OpenAI-compatible planner returned an empty assistant message: {data}"
+            )
+        return parse_subtask_decision(str(raw_text), latency_sec=latency)
+
+
 class TransformersQwenSubtaskPlanner:
     def __init__(
         self,
@@ -565,10 +659,22 @@ def build_subtask_planner(
     tensor_parallel_size: int = 2,
     gpu_memory_utilization: float = 0.85,
     max_model_len: int = 4096,
+    model_name: str = "qwen3.5-9b",
+    api_key: Optional[str] = None,
+    disable_reasoning: bool = True,
 ) -> Any:
     backend_l = str(backend or "http").lower()
     if backend_l in {"http", "server"}:
         return HTTPSubtaskPlanner(url=url, timeout=timeout)
+    if backend_l in {"openai", "openai_compatible", "vllm_server"}:
+        return OpenAICompatibleSubtaskPlanner(
+            url=url,
+            model_name=model_name,
+            timeout=timeout,
+            max_new_tokens=max_new_tokens,
+            api_key=api_key,
+            disable_reasoning=disable_reasoning,
+        )
     if backend_l in {"transformers", "local", "qwen", "qwen3"}:
         return TransformersQwenSubtaskPlanner(
             model_path=model_path,

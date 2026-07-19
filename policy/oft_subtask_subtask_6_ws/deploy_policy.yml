@@ -28,12 +28,13 @@ log_chunk_timing: true
 return_vlm_text: true
 vlm_text_max_new_tokens: 128
 subtask_planner_enabled: true
-subtask_planner_backend: http
-subtask_planner_url: "http://127.0.0.1:7991/classify"
-subtask_planner_model_path: "/data/lmz/code/starVLA-A/playground/Pretrained_models/Qwen3-VL-30B-A3B-Instruct"
+subtask_planner_backend: openai
+subtask_planner_url: "http://127.0.0.1:8000/v1/chat/completions"
+subtask_planner_model_name: "qwen3.5-9b"
 subtask_planner_timeout: 30.0
-subtask_planner_max_new_tokens: 192
+subtask_planner_max_new_tokens: 16
+subtask_planner_disable_reasoning: true
 subtask_planner_output_keys: ["subtask", "current_subtask", "subtask_instruction", "vlm_text", "text", "output", "generated_text"]
 subtask_planner_use_annotation: false
-subtask_planner_fail_open: true
+subtask_planner_fail_open: false
 policy_ckpt_path: "/data/lmz/code/starVLA-A/results/Checkpoints/oft_subtask_subtask_6_ws"
