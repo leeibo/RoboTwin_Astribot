@@ -1,0 +1,26 @@
+# HIF-VLA Astribot evaluation checkpoints.
+checkpoints:
+  hifvla_astribot35_150k:
+    stage: real
+    step: 150000
+    checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/HIF-VLA/hifvla_astribot35_150k
+    base_checkpoint: /root/autodl-tmp/ckpt/openvla/openvla-7b
+    hifvla_root: /root/autodl-tmp/HIF-VLA_eval/HIF-VLA/source/HiF-VLA
+    unnorm_key: astribot_35_mix
+    lora_rank: 32
+    history_length: 8
+    action_dim: 18
+    action_horizon: 8
+    required_base_files:
+      - config.json
+      - model.safetensors.index.json
+      - processor_config.json
+    required_files:
+      - lora_adapter/adapter_config.json
+      - lora_adapter/adapter_model.safetensors
+      - action_head--150000_checkpoint.pt
+      - proprio_projector--150000_checkpoint.pt
+      - motion_encoder--150000_checkpoint.pt
+      - motion_manager--150000_checkpoint.pt
+      - dataset_statistics.json
+unavailable: {}

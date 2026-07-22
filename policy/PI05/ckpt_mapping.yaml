@@ -1,0 +1,29 @@
+# PI05 evaluation checkpoints.
+checkpoints:
+  pi05_astribot_global_step_100000:
+    stage: real
+    checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/PI05/global_step_100000/actor
+    metadata_path: ""
+    source_path: /root/autodl-tmp/ckpt/baseline_model/REAL/PI05/global_step_100000
+    step: 100000
+    openpi_config_name: pi05_astribot
+    asset_id: robotwin_astribot_pi05
+    train_config_path: /root/autodl-tmp/PI05_eval/PI05/source/managed_runs/pi05_astribot/config.yaml
+    rlinf_root: /root/autodl-tmp/PI05_eval/PI05/source/RLinf
+    required_files:
+      - model_state_dict/full_weights.pt
+      - robotwin_astribot_pi05/norm_stats.json
+  pi05_astribot_global_step_20000_new:
+    stage: real
+    checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/PI05/global_step_20000_new/actor
+    metadata_path: ''
+    source_path: /root/autodl-tmp/ckpt/baseline_model/REAL/PI05/global_step_20000_new
+    step: 20000
+    openpi_config_name: pi05_astribot
+    asset_id: robotwin_astribot_pi05
+    train_config_path: /root/autodl-tmp/PI05_eval/PI05/source/managed_runs/pi05_astribot/config.yaml
+    rlinf_root: /root/autodl-tmp/PI05_eval/PI05/source/RLinf
+    required_files:
+      - model_state_dict/full_weights.pt
+      - robotwin_astribot_pi05/norm_stats.json
+unavailable: {}

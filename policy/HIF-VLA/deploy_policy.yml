@@ -1,0 +1,26 @@
+# RoboTwin client configuration for HIF-VLA Astribot evaluation.
+policy_name: HIF-VLA
+task_name: null
+task_config: info_gathering_randomized
+ckpt_setting: hifvla_astribot35_150k
+seed: 0
+instruction_type: unseen
+test_num: 50
+
+host: 127.0.0.1
+port: 5802
+request_timeout: 300.0
+request_retries: 2
+retry_backoff: 1.0
+
+action_horizon: 8
+action_dim: 18
+max_actions_per_call: 8
+action_semantics: absolute
+history_length: 8
+torso_index: 0
+head2_index: 1
+
+log_request_debug: true
+log_chunk_timing: true
+temp_root: /tmp/hifvla_robotwin_eval

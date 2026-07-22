@@ -1,0 +1,52 @@
+checkpoints:
+  memer_astribot_step_4500_18000:
+    stage: real
+    high_checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/MemER/high_policy/checkpoint-4500
+    high_base_model: Qwen/Qwen3-VL-4B-Instruct
+    low_checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/MemER/low_policy/global_step_18000/actor
+    memer_root: /root/autodl-tmp/MEMER_eval/MemER
+    rlinf_root: /root/autodl-tmp/MEMER_eval/MemER/source/low_level/RLinf
+    openpi_config_name: pi05_astribot_subtask
+    asset_id: robotwin_astribot_pi05_subtask
+    high_step: 4500
+    low_step: 18000
+    action_dim: 18
+    action_horizon: 50
+    required_high_files:
+      - config.json
+      - model.safetensors.index.json
+      - model-00001-of-00002.safetensors
+      - model-00002-of-00002.safetensors
+      - tokenizer_config.json
+    required_high_processor_files:
+      - preprocessor_config.json
+      - video_preprocessor_config.json
+    required_low_files:
+      - model_state_dict/full_weights.pt
+      - robotwin_astribot_pi05_subtask/norm_stats.json
+  memer_astribot_step_13500_18000:
+    stage: real
+    high_checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/MemER/high_policy/checkpoint-13500_old
+    high_base_model: Qwen/Qwen3-VL-4B-Instruct
+    low_checkpoint_dir: /root/autodl-tmp/ckpt/baseline_model/REAL/MemER/low_policy/global_step_18000/actor
+    memer_root: /root/autodl-tmp/MEMER_eval/MemER
+    rlinf_root: /root/autodl-tmp/MEMER_eval/MemER/source/low_level/RLinf
+    openpi_config_name: pi05_astribot_subtask
+    asset_id: robotwin_astribot_pi05_subtask
+    high_step: 13500
+    low_step: 18000
+    action_dim: 18
+    action_horizon: 50
+    required_high_files:
+      - config.json
+      - model.safetensors.index.json
+      - model-00001-of-00002.safetensors
+      - model-00002-of-00002.safetensors
+      - tokenizer_config.json
+    required_high_processor_files:
+      - preprocessor_config.json
+      - video_preprocessor_config.json
+    required_low_files:
+      - model_state_dict/full_weights.pt
+      - robotwin_astribot_pi05_subtask/norm_stats.json
+unavailable: {}

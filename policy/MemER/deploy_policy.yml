@@ -1,0 +1,31 @@
+policy_name: MemER
+task_name: null
+task_config: info_gathering_demo
+ckpt_setting: memer_astribot_step_4500_18000
+seed: 0
+instruction_type: unseen
+test_num: 50
+
+high_host: 127.0.0.1
+high_port: 5901
+low_host: 127.0.0.1
+low_port: 5902
+request_timeout: 300.0
+openpi_client_src: /root/autodl-tmp/MEMER_eval/MemER/source/low_level/openpi/packages/openpi-client/src
+
+action_horizon: 50
+action_dim: 18
+low_level_execution_horizon: 5
+high_level_replan_interval: 5
+replan_on_episode_start: true
+high_image_width: 320
+high_image_height: 180
+action_semantics: absolute
+torso_index: 0
+head2_index: 1
+environment_type: clean
+worker_id: worker-0
+
+log_request_debug: true
+log_chunk_timing: true
+temp_root: /tmp/memer_robotwin_eval
