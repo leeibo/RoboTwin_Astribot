@@ -970,14 +970,26 @@ class Base_Task(gym.Env):
         from sapien.render import set_global_config
 
         set_global_config(max_num_materials=50000, max_num_textures=50000)
+        render_device = os.environ.get("ROBOTWIN_SAPIEN_RENDER_DEVICE", "").strip()
+        if render_device:
+            print(
+                f"[SAPIEN] renderer device requested: {render_device}; "
+                "this SAPIEN build selects devices via CUDA_VISIBLE_DEVICES",
+                flush=True,
+            )
         self.renderer = sapien.SapienRenderer()
         # give renderer to sapien sim
         self.engine.set_renderer(self.renderer)
 
-        sapien.render.set_camera_shader_dir("rt")
-        sapien.render.set_ray_tracing_samples_per_pixel(32)
-        sapien.render.set_ray_tracing_path_depth(8)
-        sapien.render.set_ray_tracing_denoiser("oidn")
+        camera_shader_dir = os.environ.get("ROBOTWIN_SAPIEN_CAMERA_SHADER_DIR", "rt")
+        rt_samples = int(os.environ.get("ROBOTWIN_SAPIEN_RT_SAMPLES", "32"))
+        rt_path_depth = int(os.environ.get("ROBOTWIN_SAPIEN_RT_PATH_DEPTH", "8"))
+        rt_denoiser = os.environ.get("ROBOTWIN_SAPIEN_RT_DENOISER", "oidn").strip().lower()
+        sapien.render.set_camera_shader_dir(camera_shader_dir)
+        sapien.render.set_ray_tracing_samples_per_pixel(rt_samples)
+        sapien.render.set_ray_tracing_path_depth(rt_path_depth)
+        if rt_denoiser and rt_denoiser not in {"0", "false", "none", "off", "disable", "disabled"}:
+            sapien.render.set_ray_tracing_denoiser(rt_denoiser)
 
         # declare sapien scene
         scene_config = sapien.SceneConfig()
